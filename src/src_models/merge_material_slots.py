@@ -5,7 +5,11 @@ for 5 materials; the game's own has 5). With a vehicle skin (camo) applied, the 
 game (1.2 Test 9; fine with the default skin). Every slot that points at the same material is renamed to one
 slot (in the mesh material lists and the unit's material list), duplicates are dropped, and the list is written
 back in place (the unit keeps its size; the freed bytes are zeroed). Slots the game's own unit has keep their
-names, so vehicle skins still find them (e.g. the hull's a779745a, the Bastion cannon's ba24ab63)."""
+names, so vehicle skins still find them (e.g. the hull's a779745a, the Bastion cannon's ba24ab63).
+2.0.1: the list is written sorted by slot name, as in every one of the game's own units. The game looks slots up
+in it by binary search; 1.2-2.0.0 kept the order the slots were first seen, so a lookup could miss a slot that is
+there (e.g. the Maelstrom gun's f59bb44b and the pods' 169a6fc9, the slots a camo's mounted overrides name; the
+Bastion's lists happened to resolve). Suspected cause of the Maelstrom hull vanishing with a camo on."""
 import struct, sys
 
 UNIT = 0xe0a48d0be9a7453f
@@ -72,10 +76,11 @@ def fix_unit(uid, d):
         s = struct.unpack_from('<I', d, p)[0]
         assert s in rename, 'mesh uses slot %08x that is not in the list' % s
         if rename[s] != s: struct.pack_into('<I', d, p, rename[s]); changed += 1
-    new = []                                    # unique (slot, material), first-seen order
+    new = []                                    # unique (slot, material)
     for k in keys:
         pair = (rename[k], slot_mat[k])
         if pair not in new: new.append(pair)
+    new.sort()                                  # sorted by slot name, as the game's own units (binary search)
     end = ml + 4 + 12 * c
     d[ml:end] = b'\0' * (end - ml)
     struct.pack_into('<I', d, ml, len(new))
