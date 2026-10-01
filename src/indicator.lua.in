@@ -285,6 +285,7 @@ end
 local LAYER, DEPTH = 3, 0
 local TRI_MATERIAL = 'core/performance_hud/debug'   -- the engine's own debug GUI material (used if a plain triangle fails)
 local ov = {world = nil, gui = nil, ids = {}, bitmaps = {}, key = nil, style = nil, visible = nil}
+local draw_fails = 0                                -- drawing failures this session (turn it off at a limit)
 -- One look at the engine's world list: the overlay world (the one that is not the main world), and whether `w` is
 -- still in the list.
 local function scan_worlds(main, w)
@@ -298,7 +299,26 @@ local function scan_worlds(main, w)
     end
     return target, #worlds, live
 end
-local function clear_shapes()
+-- (2.0.1 review) Everything this addon keeps of a screen GUI, forgotten without touching the engine: for a GUI whose
+-- world is gone (2.0 forgot only part of it, then later destroyed the old skull and panel ids on the new GUI).
+local function forget_gui()
+    ov.gui, ov.world, ov.visible, ov.alive_frame = nil, nil, nil, nil
+    ov.ids, ov.bitmaps, ov.key = {}, {}, nil
+    ov.hud, ov.hud_t, ov.hkey, ov.hudl, ov.hudl_t, ov.lkey, ov.slots, ov.items = {}, {}, nil, {}, {}, nil, nil, nil
+end
+-- (2.0.1 review) Before shapes are destroyed or the GUI hidden outside the draw path (leaving the seat, errors): is the
+-- GUI's world still one of the engine's worlds? Checked at most once a frame; a GUI whose world is gone is forgotten,
+-- never touched. (The draw path relies on overlay_gui's own check, which also runs at once when the main world changes.)
+local function gui_alive()
+    if not ov.gui then return false end
+    if ov.alive_frame == S.frames then return true end
+    local _, _, live = scan_worlds(nil, ov.world)
+    if not live then forget_gui(); return false end
+    ov.alive_frame = S.frames
+    return true
+end
+local function clear_shapes(checked)
+    if ov.gui and not checked and not gui_alive() then return end
     if ov.gui then for _, id in ipairs(ov.ids) do pcall(G.destroy_triangle, ov.gui, id) end end
     if ov.gui and ov.bitmaps then for _, id in ipairs(ov.bitmaps) do pcall(G.destroy_bitmap, ov.gui, id) end end
     ov.ids, ov.key, ov.bitmaps = {}, nil, {}
@@ -332,7 +352,8 @@ local function clear_live()
     clear_texts(ov.hudl_t)
     ov.hudl, ov.hudl_t, ov.lkey = {}, {}, nil
 end
-local function clear_hud()
+local function clear_hud(checked)
+    if ov.gui and not checked and not gui_alive() then return end
     if ov.gui and ov.hud then for _, id in ipairs(ov.hud) do pcall(G.destroy_triangle, ov.gui, id) end end
     clear_texts(ov.hud_t)
     ov.hud, ov.hud_t, ov.hkey = {}, {}, nil
@@ -341,7 +362,7 @@ local function clear_hud()
     clear_items()
 end
 local function set_visible(v)
-    if ov.gui and ov.visible ~= v and G.set_visible then
+    if ov.gui and ov.visible ~= v and G.set_visible and gui_alive() then
         if pcall(G.set_visible, ov.gui, v) then ov.visible = v end
     end
 end
@@ -351,14 +372,19 @@ local function overlay_gui(main)
     if main == nil then return nil end
     ov.next_check = S.frames + RECHECK_EVERY
     local target, count, live = scan_worlds(main, ov.world)
-    if ov.gui and ov.world == target and live then return ov.gui end
+    -- (2.0.1 review) a GUI whose world is still there and isn't the main world is kept, even when another world now
+    -- comes first in the list (2.0 moved it to whichever non-main world came first)
+    if ov.gui and live and ov.world ~= main then ov.alive_frame = S.frames; return ov.gui end
     -- the old GUI goes with its world; a GUI in a world that is gone is forgotten, never touched
-    if ov.gui and live and W.destroy_gui then clear_shapes(); clear_hud(); pcall(W.destroy_gui, ov.world, ov.gui) end
-    ov.gui, ov.world, ov.ids, ov.key, ov.visible, ov.hud, ov.hkey = nil, nil, {}, nil, nil, {}, nil; ov.hud_t, ov.hudl, ov.hudl_t, ov.slots = {}, {}, {}, nil
+    if ov.gui and live then
+        clear_shapes(true); clear_hud(true)
+        if W.destroy_gui then pcall(W.destroy_gui, ov.world, ov.gui) else pcall(G.set_visible, ov.gui, false) end
+    end
+    forget_gui()
     if not target then S.gui = 'no overlay world (' .. tostring(count) .. ' world(s))'; return nil end
     local ok, g = pcall(W.create_screen_gui, target, 'scale', 1, 1)
     if not ok or g == nil then S.gui = 'create_screen_gui failed: ' .. tostring(g); return nil end
-    ov.gui, ov.world = g, target
+    ov.gui, ov.world, ov.alive_frame = g, target, S.frames
     S.gui = string.format('screen gui in the overlay world (%d world(s))', count)
     return g
 end
@@ -427,7 +453,7 @@ end
 --@@END
 
 -- a thick line from (x1,y1) to (x2,y2) as two triangles
-local function line(g, x1, y1, x2, y2, w, layer, color)
+local function line(g, x1, y1, x2, y2, w, color)
     local dx, dy = x2 - x1, y2 - y1
     local l = sqrt(dx * dx + dy * dy)
     if l < 1e-3 then return end
@@ -561,22 +587,26 @@ local function draw(g, sw, sh, set, angle, band)
     local skm, scale = skull_material(g, set)
     if skm then
         local size = L * scale
-        for pass = 1, 2 do
-            local col, layer = pass == 1 and SHADOW or YELLOW, pass == 1 and 902 or 903
-            line(g, cx, cy + L * 0.17, cx, cy + L * 0.6, pass == 1 and th * 1.4 + 1.5 or th * 1.4, layer, col)
-        end
         local okb, id = pcall(G.bitmap, g, skm, V3(cx - size / 2, cy - size / 2, LAYER + 2), V2(size, size), C(floor(255 * set.opacity + 0.5), 255, 255, 255))
-        if okb and id ~= nil then ov.bitmaps[#ov.bitmaps + 1] = id; S.skull = sk.pick.name .. ' (' .. sk.tried .. ')' else S.skull = 'octagon (bitmap refused: ' .. tostring(id) .. ')'; sk.off = true; sk.why = S.skull end
-        if okb and id ~= nil then return end
+        if okb and id ~= nil then
+            ov.bitmaps[#ov.bitmaps + 1] = id; S.skull = sk.pick.name .. ' (' .. sk.tried .. ')'
+            -- the gun line from the skull's top (drawn after the skull: the bitmap sits a layer above the lines anyway)
+            -- (2.0.1 review: drawn only once the skull is up, so a refused skull no longer leaves two gun lines)
+            for pass = 1, 2 do
+                line(g, cx, cy + L * 0.17, cx, cy + L * 0.6, pass == 1 and th * 1.4 + 1.5 or th * 1.4, pass == 1 and SHADOW or YELLOW)
+            end
+            return
+        end
+        S.skull = 'octagon (bitmap refused: ' .. tostring(id) .. ')'; sk.off = true; sk.why = S.skull
     end
     for pass = 1, 2 do
-        local col, rr, layer = pass == 1 and SHADOW or YELLOW, pass == 1 and r + 1 or r, pass == 1 and 902 or 903
+        local col, rr = pass == 1 and SHADOW or YELLOW, pass == 1 and r + 1 or r
         local c0 = P(cx, cy)
         for k = 0, 7 do
             local t1, t2 = k * pi / 4, (k + 1) * pi / 4
             tri(g, c0, P(cx + rr * cos(t1), cy + rr * sin(t1)), P(cx + rr * cos(t2), cy + rr * sin(t2)), col)
         end
-        line(g, cx, cy, cx, cy + L * 0.6, pass == 1 and th * 1.4 + 1.5 or th * 1.4, layer, col)
+        line(g, cx, cy, cx, cy + L * 0.6, pass == 1 and th * 1.4 + 1.5 or th * 1.4, col)
     end
 end
 --@@END
@@ -618,7 +648,7 @@ local fuel_full = {}                          -- litres when first seen, per tan
 local function glyph(g, ch, x, y, h, w, color)
     for _, stroke in ipairs(GLYPHS[ch] or {}) do
         for i = 1, #stroke - 3, 2 do
-            line(g, x + stroke[i] * h, y + stroke[i + 1] * h, x + stroke[i + 2] * h, y + stroke[i + 3] * h, w, 0, color)
+            line(g, x + stroke[i] * h, y + stroke[i + 1] * h, x + stroke[i + 2] * h, y + stroke[i + 3] * h, w, color)
         end
     end
 end
@@ -648,8 +678,18 @@ local function fontcheck(write)
     local t = f:read('*a'); f:close(); return t
 end
 local function font_ready(g, set)
+    -- (2.0.1 review: the setting is read first, so game_font = 0 takes effect while the font is in use too)
+    if set.game_font < 0.5 then
+        -- (2.0.1 final review) the font is let go of entirely, so nothing draws in it with ids from an earlier frame;
+        -- setting it back to 1 takes it up again with its usual checks
+        if ft.gui then
+            -- (the font worked until now: its marker says so, as when the panel is hidden normally)
+            if ft.ok and ft.key then fontcheck('ok ' .. ft.key .. ' ' .. MARK_TAG .. '\n'); ov.watch = 0 end
+            ft = {}
+        end
+        S.font = 'stroke letters (game_font = 0 in the settings file)'; return false
+    end
     if ft.gui == g then return ft.ok == true end
-    if set.game_font < 0.5 then S.font = 'stroke letters (game_font = 0 in the settings file)'; return false end
     local pub = rawget(_G, 'ArmoredOverhaulUIFont')
     if type(pub) ~= 'table' or not pub.font then S.font = 'stroke letters (the game\'s HUD font not read yet)'; return false end
     ft = {gui = g}
@@ -735,6 +775,9 @@ local function font_text(g, str, x, y, h, color, align, slot, key)
         local ok2 = pcall(G.update_text, g, held.text, str, ft.font, size, ft.material, at_t, color)
         if ok1 and ok2 then held.key = key; return end
         ov.no_update = true; note('Gui.update_text failed; values are redrawn instead')
+        -- (2.0.1 review) the held texts go now: 2.0 left them drawn under the new ones
+        pcall(G.destroy_text, g, held.shadow); pcall(G.destroy_text, g, held.text)
+        ov.slots[slot], held = nil, nil
     end
     local a = G.text(g, str, ft.font, size, ft.material, at_s, SHADOW)
     local b = G.text(g, str, ft.font, size, ft.material, at_t, color)
@@ -765,7 +808,9 @@ local function item_end() ov.sink, ov.item_prev = ov.item_prev, nil end
 -- (slot: a live value, kept and only redrawn when what it shows changes)
 local function text(g, str, x, y, h, w, color, align, slot)
     local key = slot and string.format('%s|%.1f|%.1f|%.2f|%s', str, x, y, h, color == YELLOW and 'y' or 'g')
-    if ft.ok and ft.gui == g and str ~= '^' then return font_text(g, str, x, y, h, color, align, slot, key) end
+    -- (2.0.1 final review) the font's ids are made fresh for the frame that draws (font_frame does nothing more when
+    -- they already are): engine ids from an earlier frame must never reach the engine
+    if ft.ok and ft.gui == g and str ~= '^' and font_frame(g) then return font_text(g, str, x, y, h, color, align, slot, key) end
     if slot and not item_begin(slot, key) then return end
     local tw = text_width(str, h)
     local x0 = align == 'c' and x - tw / 2 or (align == 'r' and x - tw or x)
@@ -782,8 +827,8 @@ local function rect(g, x1, y1, x2, y2, color)
     tri(g, a, b, c, color); tri(g, a, c, d, color)
 end
 local function frame_box(g, x1, y1, x2, y2, w, color)
-    line(g, x1, y1, x2, y1, w, 0, color); line(g, x2, y1, x2, y2, w, 0, color)
-    line(g, x2, y2, x1, y2, w, 0, color); line(g, x1, y2, x1, y1, w, 0, color)
+    line(g, x1, y1, x2, y1, w, color); line(g, x2, y1, x2, y2, w, color)
+    line(g, x2, y2, x1, y2, w, color); line(g, x1, y2, x1, y1, w, color)
 end
 local function bar(g, x1, x2, y, hgt, frac, w, color)
     rect(g, x1 - 1, y - 1, x2 + 1, y + hgt + 1, SHADOW)
@@ -879,7 +924,8 @@ end
 local input = {device = 'keyboard', next = 0, pads = nil, pads_next = 0, dev = {}}
 local PAD_AXES, MOUSE_AXES = {'left', 'right', 'left_trigger', 'right_trigger'}, {'mouse'}
 -- (sticks and triggers: past a third of their range; the mouse: a real movement, not a pixel of jitter)
-local function field(dev, k) local ok, v = pcall(function() return dev[k] end); return ok and v or nil end
+local function index_of(dev, k) return dev[k] end
+local function field(dev, k) local ok, v = pcall(index_of, dev, k); return ok and v or nil end
 -- an input object's functions and axis numbers, looked up once (safely: an object the engine gives as plain
 -- userdata can't be indexed without an error)
 local function device_fns(dev, names)
@@ -990,7 +1036,10 @@ local function tick()
 
     if not settings or S.frames >= next_settings then settings = read_settings(); next_settings = S.frames + 180 end
     local okw, world = pcall(A.main_world)
-    if not okw or world == nil then S.status = 'no world'; return end
+    -- (2.0.1 review) no main world: hidden, not left frozen on screen; a new main world (a mission loaded or left):
+    -- the screen GUI is checked at once rather than within the second
+    if not okw or world == nil then set_visible(false); S.status = 'no world'; return end
+    if world ~= ov.main then ov.main = world; ov.next_check = 0 end
     S.seat = seat_text(seat)
     local finds = TT.finds
     local angle, why = TT.shared_angle(world, seat.kind, S.frames, cf)
@@ -1014,8 +1063,9 @@ local function tick()
     local g = overlay_gui(world)
     if not g then S.status = 'no screen gui'; if S.status ~= last_logged then last_logged = S.status; log() end return end
     local sw, sh = screen_size()
-    -- rebuild the shapes only when something changed (half-degree steps)
-    local step = floor(angle * 360 / pi + 0.5)
+    -- rebuild the shapes only when something changed (1-degree steps; 2.0.1 review: 2.0 used half degrees, about a third
+    -- of a pixel at the default size, so a turning turret was redrawn every frame)
+    local step = floor(angle * 180 / pi + 0.5)
     local band = settings.health >= 0.5 and health_band(seat.health) or nil
     -- (2.0) docked next to the driver panel: redrawn when the panel moves, is resized, shown or hidden
     -- (compared as numbers: no text made every frame)
@@ -1025,11 +1075,13 @@ local function tick()
     elseif settings.dock >= 0.5 then dock = 1 end
     if not ov.key or step ~= ov.step or sw ~= ov.sw or sh ~= ov.sh or settings.sig ~= ov.sig or band ~= ov.band
         or dock ~= ov.dock or px ~= ov.px or py ~= ov.py or ps ~= ov.ps then
-        clear_shapes()
+        clear_shapes(true)
         local okd, err = pcall(draw, g, sw, sh, settings, angle, band)
         if not okd then
-            S.errors = S.errors + 1; S.last_error = 'drawing failed: ' .. tostring(err); clear_shapes()
-            if S.errors >= 5 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)' end
+            S.errors = S.errors + 1; S.last_error = 'drawing failed: ' .. tostring(err); clear_shapes(true)
+            -- (2.0.1 review) only drawing failures count towards turning it off (2.0 counted the tracker's too)
+            draw_fails = draw_fails + 1
+            if draw_fails >= 5 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)' end
             log(); return
         end
         ov.key, ov.step, ov.sw, ov.sh, ov.sig, ov.band, ov.dock, ov.px, ov.py, ov.ps = true, step, sw, sh, settings.sig, band, dock, px, py, ps
@@ -1105,6 +1157,11 @@ local function measure_speed(world_now, seat, key)
 end
 
 local panel = {}
+local hud_now, hud_was, live_now, live_was, live_gen = {}, {}, {}, {}, 0
+local function differs(a, b)
+    for i = 1, 7 do if a[i] ~= b[i] then return true end end
+    return false
+end
 -- (2.0) the font marker also says ok when the panel is hidden normally after 30 frames or more in the font (1.2.1-2.0
 -- Test 8: only after 600 frames, so leaving the seat sooner and quitting looked like a crash at the next start)
 local function font_proven(how)
@@ -1152,6 +1209,7 @@ local function tick()
     end
     local g = overlay_gui(world_now)
     if not g then
+        set_visible(false)                                  -- (2.0.1 review: not left frozen on screen)
         S.status = wc == false and 'no world' or 'no screen gui'
         if S.status ~= last_logged then last_logged = S.status; log() end
         return
@@ -1172,41 +1230,48 @@ local function tick()
     d.smoke_full = type(seat.smoke_full) == 'number' and seat.smoke_full or nil
     d.controller = input_device() == 'controller'
     d.remote = seat.remote == true
-    local hkey = string.format('%d|%d|%s|%s|%s|%s', sw, sh, settings.sig, d.controller and 'pad' or 'kbm', d.smoke and 'smoke' or '',
-        d.remote and 'remote' or '')
-    local lkey = string.format('%s|%s|%d|%d|%s|%s|%s/%s', tostring(d.gear), tostring(d.selector), floor(d.rpm / 50 + 0.5),
-        floor(d.speed + 0.5), d.fuel and floor(d.fuel + 0.5) or '-', hkey, tostring(d.smoke), tostring(d.smoke_full))
-    local okp, perr = true, nil
+    -- (2.0.1 review) What decides a redraw is compared value by value: the frame (screen, settings, keyboard or
+    -- controller, smoke, remote, font) and the live values. 2.0 built two long text keys every frame for this.
+    local H, Lv = hud_now, live_now
     -- the game font once it can be used (the panel is redrawn in it when it becomes ready)
-    if ft.ok and ft.gui == g and not font_frame(g) then
+    local font = font_ready(g, settings)
+    H[1], H[2], H[3], H[4], H[5], H[6], H[7] = sw, sh, settings.sig, d.controller, d.smoke ~= nil, d.remote, font
+    Lv[1], Lv[2], Lv[3], Lv[4] = d.gear or false, d.selector or false, floor(d.rpm / 50 + 0.5), floor(d.speed + 0.5)
+    Lv[5], Lv[6], Lv[7] = d.fuel and floor(d.fuel + 0.5) or false, d.smoke or false, d.smoke_full or false
+    local frame_due = not ov.hkey or differs(H, hud_was)
+    local live_due = frame_due or ((not ov.lkey or differs(Lv, live_was)) and S.frames >= (ov.lnext or 0))
+    -- (2.0.1 review) the font's ids are made only on frames that draw text (2.0: every frame)
+    if font and (frame_due or live_due) and not font_frame(g) then
         ft.ok = false; S.font = 'stroke letters (the game font ids could not be made)'
+        font, H[7], frame_due, live_due = false, false, true, true
     end
-    local fontkey = font_ready(g, settings) and 'font' or 'strokes'
-    hkey = hkey .. fontkey
-    lkey = lkey .. fontkey
-    if hkey ~= ov.hkey then
-        clear_hud()
+    local okp, perr = true, nil
+    if frame_due then
+        clear_hud(true)
         ov.sink, ov.tsink = ov.hud, ov.hud_t
         okp, perr = pcall(draw_panel, g, sw, sh, settings, d, 'frame')
         ov.sink, ov.tsink = nil, nil
-        ov.hkey = okp and hkey or nil
-        ov.lnext = 0                                        -- the values are drawn again in the same frame
+        ov.hkey = okp or nil
+        if okp then for i = 1, 7 do hud_was[i] = H[i] end end
     end
-    if okp and lkey ~= ov.lkey and S.frames >= (ov.lnext or 0) then
+    if okp and live_due then
         clear_live()
         ov.sink, ov.tsink = ov.hudl, ov.hudl_t
         okp, perr = pcall(draw_panel, g, sw, sh, settings, d, 'live')
         ov.sink, ov.tsink = nil, nil
-        ov.lkey, ov.lnext = okp and lkey or nil, S.frames + 6
+        live_gen = live_gen + 1
+        ov.lkey, ov.lnext = okp and live_gen or nil, S.frames + 6
+        if okp then for i = 1, 7 do live_was[i] = Lv[i] end end
     end
     if ft.ok and (ov.watch or 0) > 0 then
         ov.watch = ov.watch - 1
         if ov.watch == 0 then ov.watch = 1; font_proven('for 600 frames') end
     end
     if not okp then
-        S.errors = S.errors + 1; S.last_error = 'driver panel failed: ' .. tostring(perr); clear_hud()
+        S.errors = S.errors + 1; S.last_error = 'driver panel failed: ' .. tostring(perr); clear_hud(true)
         if ft.ok then ft.ok = false; S.font = 'stroke letters (the game font failed: ' .. tostring(perr) .. ')' end
-        if S.errors >= 20 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)'; log() end
+        draw_fails = draw_fails + 1
+        if draw_fails >= 20 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)'; log() end
         return
     end
     if ov.logged ~= ov.lkey then
@@ -1234,7 +1299,11 @@ local function after(ok, ...)
     if not ok then error((...), 0) end
     if not broken then
         local okT, err = pcall(tick)
-        if not okT then broken = true; S.errors = S.errors + 1; S.last_error = tostring(err); S.status = 'stopped after an error: ' .. tostring(err); log() end
+        if not okT then
+            broken = true; S.errors = S.errors + 1; S.last_error = tostring(err); S.status = 'stopped after an error: ' .. tostring(err)
+            pcall(set_visible, false)                       -- (2.0.1 review: not left frozen on screen)
+            log()
+        end
     end
     return ...
 end

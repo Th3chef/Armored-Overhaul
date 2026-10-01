@@ -24,7 +24,7 @@ if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true)
 if rawget(_G, 'ArmoredOverhaulMBTTurrets') then return end
 local TESTER = @@TESTER@@
 
-local byte, floor, min, max = string.byte, math.floor, math.min, math.max
+local byte, min, max = string.byte, math.min, math.max
 local TWO32 = 4294967296
 
 local GUNS = {
@@ -192,7 +192,7 @@ local function matches(s, start, mask)
 end
 
 -- ---------------------------------------------------------------- logging
-local function log(force)
+local function log()
     pcall(function()
         local f = loader.open_log and loader.open_log('ArmoredOverhaul-MBTTurrets.log')
         if not f then return end
@@ -455,6 +455,10 @@ end
 
 local settled = false          -- true once every gun and the camera match what the option asks for
 local function apply()
+    -- (2.0.1 review) the table is looked up again each time (two small reads): if the game ever rebuilds it (a mission
+    -- loading), the new one is used rather than the one found first
+    local b = table_base(acc)
+    if b ~= nil and num(b) ~= num(base) then base = b; tries = {} end
     opts = options()
     state.options = options_text(opts)
     local changed, open = 0, 0
@@ -538,7 +542,7 @@ local function tick()
             -- The settings table may not be loaded yet: retry the candidates every 2 seconds.
             state.status = string.format('waiting for the turret table (%d candidate accessors)', #scan.hits)
             next_check = state.frames + 120
-            log()
+            if state.status ~= shown then shown = state.status; log() end     -- (2.0.1 review: not every 2 s while waiting)
             return
         end
         if state.how == 'searching game code' then
@@ -554,8 +558,12 @@ local function tick()
         do
             local okA, changed = pcall(apply)
             if not okA then state.errors = state.errors + 1; state.last_error = tostring(changed); state.status = 'error: ' .. tostring(changed)
-            elseif changed > 0 or not state.status:find('^active') then
-                state.status = 'active' end
+            else
+                -- (2.0.1 review) 'active' only says so when every gun was found
+                local missing = 0
+                for _, g in ipairs(GUNS) do if state.guns[g.name] == 'not found' then missing = missing + 1 end end
+                state.status = missing == 0 and 'active' or string.format('active, %d gun(s) not found (see below)', missing)
+            end
             local summary = state.status .. state.camera .. state.errors .. state.options
             for _, g in ipairs(GUNS) do summary = summary .. (state.guns[g.name] or '') end
             if summary ~= shown then shown = summary; log() end

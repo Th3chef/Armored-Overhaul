@@ -23,8 +23,9 @@ function TT.api()
     if type(SR) ~= 'table' then return nil end
     return SR.Unit, SR.World, SR.Quaternion, SR.Camera, SR.Vector3
 end
+local function tt_xyz(v) return v.x, v.y, v.z end
 local function tt_comps(v)
-    local ok, x, y, z = pcall(function() return v.x, v.y, v.z end)
+    local ok, x, y, z = pcall(tt_xyz, v)             -- (2.0.1 review: no new function made on every call)
     if ok and type(x) == 'number' then return x, y, z end
     local V3 = select(5, TT.api())
     if V3 and type(V3.to_elements) == 'function' then return V3.to_elements(v) end
@@ -194,7 +195,14 @@ function TT.angle(world, kind, frame)
         f.misses, f.next_find = 0, 0
     end
     local oka, a = pcall(tt_read_angle)
-    if not oka then TT.errors = TT.errors + 1; TT.last_error = 'turret angle failed: ' .. tostring(a); f.unit = nil; return nil, 'error' end
+    if not oka then
+        -- (2.0.1 review) the next search waits as after a miss: 2.0 searched again every frame while the read kept
+        -- failing (on the Bastion a search can go through every unit)
+        TT.errors = TT.errors + 1; TT.last_error = 'turret angle failed: ' .. tostring(a); f.unit = nil
+        f.misses = f.misses + 1
+        f.next_find = frame + (f.misses >= TT.FIND_MISSES and TT.FIND_SLOW or TT.FIND_EVERY)
+        return nil, 'error'
+    end
     if not a then return nil, 'no angle' end
     return a
 end
