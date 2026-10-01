@@ -56,7 +56,7 @@ Get the latest zip from the [Releases page](../../releases) (the Armored-Overhau
 ## Install / update
 
 1. Install Bingus Shared Loader v15 or newer.
-2. Add Armored-Overhaul-2.0.0.zip in Arsenal or the HD2 Mod Manager and check the options you want.
+2. Add Armored-Overhaul-2.0.1.zip in Arsenal or the HD2 Mod Manager and check the options you want.
 3. Deploy, then restart the game.
 
 - Updating from 1.2: nothing to do; your settings are kept. The Turret indicator now sits next to the driver panel; set *dock* = 0 in its settings file to keep your own place. The new options start turned off, so check the ones you want.
@@ -80,7 +80,6 @@ Remove it in your mod manager and deploy. Nothing is left behind in the game; th
 - With two of the same tank out, the turret indicator follows the one nearest your camera.
 - Gunner Drive only works while nobody is in the driver seat. In multiplayer, the player who drove the tank last keeps control of it after getting out, so Gunner Drive can't move it; the driver panel then says another player controls the tank. Take the driver seat once, then go back to the gunner seat, and it's yours again.
 - Smoke from the gunner seat has been tested in my own games (solo and hosting). If it does nothing when you join someone else's game, please attach ArmoredOverhaul-GunnerDrive.log.
-- A player reported another player's Maelstrom showing only its turret up close in multiplayer. I'm looking into it; if it happens to you, turning off MBT Turrets brings the normal tank back, and a note of which camo it wore helps.
 - After a game update, the script options find what they need again by themselves. If an update changes the tanks' or FRVs' own models or physics, MBT Turrets, Tank suspension and FRV stability need an update from me, and I check this after every game patch.
 
 ## How it works
@@ -106,7 +105,7 @@ MBT Turrets' tank models and the Tank suspension and FRV stability presets are b
 
 ```
 cd src
-python tools/unpack_release.py Armored-Overhaul-2.0.0.zip
+python tools/unpack_release.py Armored-Overhaul-2.0.1.zip
 python build.py release
 ```
 
