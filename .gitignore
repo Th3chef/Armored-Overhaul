@@ -1,0 +1,9 @@
+# build outputs (made by src/build.py; the release zips are attached to GitHub Releases)
+src/build/
+# game-derived parts, unpacked from the release zip by src/tools/unpack_release.py
+src/models/
+src/physics/
+__pycache__/
+*.pyc
+# logs
+*.log
