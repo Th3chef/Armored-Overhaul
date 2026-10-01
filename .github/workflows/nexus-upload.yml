@@ -43,6 +43,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft >/dev/null 2>&1; then
+            echo "::error::No published release with the tag $TAG. A draft has no tag yet: publish the release (that runs this workflow by itself), or run it by hand with the tag of a release that is already published."
+            exit 1
+          fi
           # tags are v2.0.1, ...; the zip is Armored-Overhaul-2.0.1.zip and the Nexus version is 2.0.1
           VERSION="${TAG#v}"
           FILE="Armored-Overhaul-${VERSION}.zip"
