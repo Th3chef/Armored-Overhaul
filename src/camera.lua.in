@@ -1,0 +1,426 @@
+-- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
+-- Armored Overhaul @@VERSION@@ - Gunner camera option (@@PRESET_NAME@@): how far behind the turret the tank
+-- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
+--
+-- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
+-- id; the tank gunner preset is id 26 in the Sept 2026 build). Its camera offset from the turret pivot is +0x34
+-- side, +0x38 forward (negative = behind; -1 m for the gunner) and +0x3C up (2 m). This addon moves the camera half a
+-- metre lower and further back, then the picked number of metres further back along a shallow 10 degree rise, so you
+-- see more of the tank and around it. The game turns that offset with the hull, not the turret (at its own 1 m nobody notices; further back
+-- the camera ended up beside the turret when it turned): while you sit in a tank gunner seat the offset is turned
+-- with the turret every frame (the turret angle comes from the shared turret tracker; your seat from Tank Core), so
+-- the camera stays behind the turret. Height is not changed by the turning. (Tests: +0x24..+0x2C made no visible difference; +0x3C alone only raised the camera.) The turret
+-- limits in the same preset (+0x4C..+0x58) belong to MBT Turrets and are not touched here. The view uses the new distance from the next time you take the gunner seat.
+if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
+if rawget(_G, 'ArmoredOverhaulGunnerCamera') then return end
+local TESTER = @@TESTER@@
+local PRESET, PRESET_NAME = @@PRESET@@, '@@PRESET_NAME@@'
+
+local byte, min, max = string.byte, math.min, math.max
+local TWO32 = 4294967296
+
+local STRIDE = 0x90
+local KNOWN_RVA, KNOWN_ID, KNOWN_TIMESTAMP = 0x32F9990, 26, 0x6AB3B43F
+local FIELD = {side = 0x34, back = 0x38, up = 0x3C}
+local FIELD_NAMES = {'side', 'back', 'up'}
+local ANGLE_STEP = math.rad(0.25)    -- the offset is rewritten when the turret has turned this much
+local SEAT_FRESH, CORE_STALL = 45, 60
+-- the gunner preset's own values +0x04..+0x1F (they identify it in other game builds; neither option writes them)
+local PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
+local MAX_TRIES = 5
+-- (1.2.2) Every preset sits half a metre lower and half a metre further back than the game's gunner view (1 m back,
+-- 2 m up), and moves back along a 10 degree rise (1.2.0-1.2.1: from the game's view, along 25 degrees): more behind the
+-- tank and less above it, for more of the surroundings in view.
+local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
+local CHECK_EVERY, SETTLED_EVERY = 120, 600
+
+local state = {version = '@@VERSION@@', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+               applied = 0, errors = 0, frames = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
+               turns = 0, tank = 'none',
+               preset = string.format('%s (picked in the mod manager)', PRESET_NAME)}
+rawset(_G, 'ArmoredOverhaulGunnerCamera', state)
+
+local loader = rawget(_G, 'CowboyBingusModLoader')
+if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
+local ok_ffi, ffi = pcall(require, 'ffi')
+if not ok_ffi or not ffi.abi('win') or not ffi.abi('64bit') then return end
+
+-- Own function-pointer types, so another mod's declarations can't clash with ours.
+pcall(ffi.cdef, [[
+    typedef struct { void *base; void *allocation_base; uint32_t allocation_protection; uint16_t partition;
+        uint16_t reserved; size_t size; uint32_t state; uint32_t protection; uint32_t type; } TtRegion;
+]])
+-- The kernel32 functions below have to be declared before they can be looked up (1.1.0 relied on another mod having
+-- declared them, and failed to load without it: "missing declaration for symbol 'GetModuleHandleA'"). Each is
+-- declared on its own; if another mod already declared one (with its own types), that declaration is used, since
+-- the function is cast to this addon's own pointer type anyway.
+for _, decl in ipairs({'void *GetModuleHandleA(const char *);', 'void *GetCurrentProcess(void);',
+        'int ReadProcessMemory(void *, const void *, void *, size_t, size_t *);',
+        'size_t VirtualQuery(const void *, void *, size_t);', 'int VirtualProtect(void *, size_t, uint32_t, uint32_t *);'}) do
+    pcall(ffi.cdef, decl)
+end
+local k32 = ffi.load('kernel32')
+local GetModuleHandleA = ffi.cast('void *(*)(const char *)', k32.GetModuleHandleA)
+local GetCurrentProcess = ffi.cast('void *(*)(void)', k32.GetCurrentProcess)
+local ReadProcessMemory = ffi.cast('int (*)(void *, const void *, void *, size_t, size_t *)', k32.ReadProcessMemory)
+local VirtualQuery = ffi.cast('size_t (*)(const void *, void *, size_t)', k32.VirtualQuery)
+local VirtualProtect = ffi.cast('int (*)(void *, size_t, uint32_t, uint32_t *)', k32.VirtualProtect)
+local U8 = ffi.typeof('uint8_t *')
+local F32P = ffi.typeof('float *')
+local process = GetCurrentProcess()
+local BUF_SIZE = 0x40400
+local buf = ffi.new('uint8_t[?]', BUF_SIZE)
+local got = ffi.new('size_t[1]')
+local region = ffi.new('TtRegion[1]')
+
+local function num(p) return tonumber(ffi.cast('uintptr_t', p)) end
+local function read(address, size)
+    if address == nil or size <= 0 or size > BUF_SIZE then return nil end
+    if ReadProcessMemory(process, address, buf, size, got) == 0 or got[0] ~= size then return nil end
+    return ffi.string(buf, size)
+end
+local function u32(s, o)
+    if not s or o < 0 or o + 4 > #s then return nil end
+    local a, b, c, d = byte(s, o + 1, o + 4)
+    return a + b * 256 + c * 65536 + d * 16777216
+end
+local box = ffi.new('uint8_t[4]')
+local box_f = ffi.cast(F32P, box)
+local function f32(s, o)
+    if not s or o + 4 > #s then return nil end
+    box[0], box[1], box[2], box[3] = byte(s, o + 1, o + 4)
+    return tonumber(box_f[0])
+end
+-- Writes floats into game data. Read/write pages are written directly; read-only data pages are opened for the
+-- write and restored straight after. Code, guard, no-access and reserved memory are never touched.
+local old_prot = ffi.new('uint32_t[1]')
+local function page_info(address, size)
+    if VirtualQuery(address, region, ffi.sizeof('TtRegion')) == 0 then return nil end
+    local r = region[0]
+    if r.state ~= 0x1000 or num(address) + size > num(r.base) + tonumber(r.size) then return nil end
+    return r.protection, r.type
+end
+local function poke(address, values)
+    local p = ffi.cast(F32P, address)
+    for k, off in pairs(FIELD) do if values[k] then p[off / 4] = values[k] end end
+end
+local function write_floats(address, size, values)
+    local prot, kind = page_info(address, size)
+    if not prot then return false, 'memory not committed' end
+    local how = string.format('page 0x%X/0x%X', prot, kind)
+    if kind ~= 0x20000 and kind ~= 0x40000 and kind ~= 0x1000000 then return false, how end
+    if prot == 4 or prot == 8 then poke(address, values); return true, how end
+    if prot ~= 2 then return false, how end
+    local opened = VirtualProtect(address, size, 4, old_prot) ~= 0
+    if not opened then opened = VirtualProtect(address, size, 8, old_prot) ~= 0 end
+    if not opened then return false, how .. ', open refused' end
+    local restore = old_prot[0]
+    local ok = pcall(poke, address, values)
+    VirtualProtect(address, size, restore, old_prot)
+    return ok, how .. ' (opened for the write)'
+end
+
+-- ---------------------------------------------------------------- logging
+local function log()
+    pcall(function()
+        local f = loader.open_log and loader.open_log('ArmoredOverhaul-GunnerCamera.log')
+        if not f then return end
+        -- what a bug report needs: the game build, how the gunner preset was found, the preset picked, the distances
+        f:write('Armored Overhaul - Gunner Camera\n', 'version: ', state.version, '\n', 'status: ', state.status, '\n',
+            'game: ', state.game, '\n', 'found: ', state.how, '\n', 'preset: ', state.preset, '\n',
+            'gunner view: ', state.view, '\n', 'turning with the turret: ', state.turning, '\n',
+            'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
+        if TESTER then
+            f:write('-- tester details --\n', 'preset record: ', state.where, '\n', 'writes: ', state.applied, '\n',
+                'turn writes: ', state.turns, '\n', 'tank: ', state.tank, '\n', 'frames: ', state.frames, '\n')
+        end
+        f:close()
+    end)
+end
+
+-- ---------------------------------------------------------------- finding the gunner preset
+local game, image_size, timestamp
+local function build_tag() return string.format('%08X-%X', timestamp, image_size) end
+local CACHE_HEADER = 'armored overhaul gunner camera 1'
+local function cache_path()
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-GunnerCamera.cache') or nil
+end
+local function cache_load()
+    local path = cache_path()
+    local f = path and io and io.open and io.open(path, 'r')
+    if not f then return nil end
+    local text = f:read('*a'); f:close()
+    local head, tag, rva = text:match('^([^\n]*)\n([^\n]*)\npreset=(%x+)')
+    if head ~= CACHE_HEADER or tag ~= build_tag() then return nil end
+    return tonumber(rva, 16)
+end
+local function cache_save(rva)
+    local path = cache_path()
+    local f = path and io and io.open and io.open(path, 'w')
+    if not f then return end
+    f:write(CACHE_HEADER, '\n', build_tag(), '\n', string.format('preset=%X', rva), '\n')
+    f:close()
+end
+
+local function distances(s, o)
+    local v = {}
+    for _, k in ipairs(FIELD_NAMES) do
+        local x = f32(s, o + FIELD[k])
+        if not x or x < -200 or x > 200 then return nil end
+        v[k] = x
+    end
+    return v
+end
+-- A preset is accepted only with its own prefix and between its numbered neighbours (id - 1 and id + 1).
+-- `loose` (the known game build, at the known place): the prefix may differ - another camera mod may have changed the
+-- gunner view's other values (1.2.2: 1.2.0-1.2.1 then switched themselves off, and a user saw no change on Far).
+local prefix_differs = false
+local function check(rec, loose)
+    local s = read(rec - STRIDE, STRIDE * 3)
+    if not s then return nil end
+    local id = u32(s, STRIDE)
+    if not id or id < 1 or id > 0x1000 or u32(s, 0) ~= id - 1 or u32(s, STRIDE * 2) ~= id + 1 then return nil end
+    if s:sub(STRIDE + 5, STRIDE + 4 + #PREFIX) ~= PREFIX then
+        if not loose then return nil end
+        prefix_differs = true
+    end
+    return distances(s, STRIDE), id
+end
+
+-- Other builds: one 256 KB chunk of the game's writable data per frame, looking for the preset's prefix.
+local scan = {offset = 0x1000}
+local function scan_step()
+    local size = min(0x40000 + 0x40, image_size - scan.offset)
+    if size <= 0 then return true end
+    if VirtualQuery(game + scan.offset, region, ffi.sizeof('TtRegion')) == 0 then return true end
+    local r = region[0]
+    local region_end = num(r.base) + tonumber(r.size) - num(game)
+    if not (r.state == 0x1000 and (r.protection == 4 or r.protection == 8 or r.protection == 2)) then
+        scan.offset = max(scan.offset + 0x1000, region_end); return scan.offset >= image_size
+    end
+    size = min(size, region_end - scan.offset)
+    local s = read(game + scan.offset, size)
+    if s then
+        local at = 1
+        while true do
+            local f = s:find(PREFIX, at, true)
+            if not f then break end
+            local rec = game + scan.offset + f - 1 - 4
+            if check(rec) then scan.found = rec; return true end
+            at = f + 1
+        end
+    end
+    scan.offset = scan.offset + min(0x40000, size)
+    return scan.offset >= image_size
+end
+
+@@TURRET_TRACKER@@
+
+-- ---------------------------------------------------------------- applying
+local rec, original, want
+local tries = 0
+local settled = false
+local target = {}            -- what the record should hold now (the base offset turned with the turret)
+local direct, direct_check   -- the record's page is plain read/write data (checked now and then): written directly
+local function differs(a, b)
+    for _, k in ipairs(FIELD_NAMES) do if math.abs(a[k] - b[k]) > 1e-3 then return true end end
+    return false
+end
+-- The base offset (straight behind the turret) turned by the turret angle `a` (radians, positive = right; x is
+-- the hull's right, y its front): the camera goes round to stay behind the turret, at the same distance and height.
+local function set_target(a)
+    local c, s = math.cos(a), math.sin(a)
+    target.side = want.side * c + want.back * s
+    target.back = want.back * c - want.side * s
+    target.up = want.up
+end
+-- (1.2.2) The same, kept level: the game applies the offset in the tank's own frame, pitch and roll included, so with
+-- the nose up the camera sank behind or under the tank the further back it was (a user: "the gunner can't aim at
+-- anything" on a steep slope). The offset wanted in the world (behind the turret's heading, height straight up) is
+-- turned into the tank's frame with its axes `B`. Near-vertical turret headings use the plain turn.
+local function set_target_level(a, B)
+    local c, s = math.cos(a), math.sin(a)
+    local gx, gy = B.fx * c + B.rx * s, B.fy * c + B.ry * s          -- the turret's heading in the world, flattened
+    local l = math.sqrt(gx * gx + gy * gy)
+    if l < 0.2 then return set_target(a) end
+    gx, gy = gx / l, gy / l
+    local wx, wy, wz = gy * want.side + gx * want.back, -gx * want.side + gy * want.back, want.up
+    target.side = wx * B.rx + wy * B.ry + wz * B.rz
+    target.back = wx * B.fx + wy * B.fy + wz * B.fz
+    target.up = wx * B.ux + wy * B.uy + wz * B.uz
+end
+local function write(values)
+    if direct == nil or state.frames >= (direct_check or 0) then
+        local prot, kind = page_info(rec, FIELD.up + 4)
+        direct = (prot == 4 or prot == 8) and (kind == 0x20000 or kind == 0x40000 or kind == 0x1000000)
+        direct_check = state.frames + SETTLED_EVERY
+    end
+    if direct then poke(rec, values); return true, 'direct' end
+    return write_floats(rec, FIELD.up + 4, values)
+end
+local function apply()
+    local now = check(rec, state.loose)
+    if not now then state.view = 'preset no longer valid'; settled = false; return 0 end
+    if not original then
+        original, want = now, {}
+        want.side = now.side
+        want.back = now.back - BASE_BACK - PRESET * math.cos(RISE)     -- more negative = further behind
+        want.up = now.up - BASE_DOWN + PRESET * math.sin(RISE)
+        set_target(0)
+    end
+    local changed, problem = 0, nil
+    if differs(now, target) then
+        if tries < MAX_TRIES then
+            local ok, how = write(target)
+            now = check(rec, state.loose) or now
+            if ok and not differs(now, target) then
+                changed, tries = 1, 0; state.applied = state.applied + 1
+            else
+                tries = tries + 1; state.errors = state.errors + 1
+                state.last_error = 'write failed: ' .. tostring(how); problem = 'write failed: ' .. tostring(how)
+            end
+        else
+            problem = 'gave up'
+        end
+    end
+    state.view = string.format('camera %.2f m %s and %.2f m up from the turret (game %.2f m back, %.2f m up)', math.abs(want.back),
+        want.back <= 0 and 'back' or 'forward', want.up, math.abs(original.back), original.up)
+        .. (problem and ' [' .. problem .. ']' or '')
+    if problem == 'gave up' and not state.fight_noted then
+        -- the record keeps being changed back: something else (another mod) writes the gunner camera too
+        state.fight_noted = true
+        state.last_error = 'the gunner camera keeps being changed back (another camera mod?): stopped writing it'
+    end
+    settled = not problem
+    return changed
+end
+
+-- Every frame: the turret angle and the tank's tilt while you sit in a tank gunner seat (straight back otherwise), and
+-- the offset rewritten when it has moved a centimetre (1.2.0-1.2.1: a quarter of a degree of turret turn).
+local seat_watch = {}
+local last_step, retry_at
+local basis, level = {}, false
+TT.want_up = true                   -- (the tracker keeps the hull's up axis too, for the level offset)
+local written = {side = 0, back = 0, up = 0}
+local function follow_turret()
+    local seat, core = rawget(_G, 'ArmoredOverhaulSeat'), rawget(_G, 'ArmoredOverhaulGunnerDrive')
+    local a = 0
+    if type(seat) == 'table' and type(core) == 'table' then
+        local cf = core.frames or 0
+        if cf ~= seat_watch.frames then seat_watch.frames, seat_watch.seen = cf, state.frames end
+        local core_ok = core.phase ~= 'off' and state.frames - (seat_watch.seen or state.frames) <= CORE_STALL
+        if core_ok and seat.role == 2 and seat.kind and TT.TANKS[seat.kind] and cf - (seat.frame or -1e9) <= SEAT_FRESH then
+            local SR = rawget(_G, 'stingray')
+            local okw, world = pcall(SR.Application.main_world)
+            local angle, why = nil, 'no world'
+            if okw and world ~= nil then angle, why = TT.shared_angle(world, seat.kind, state.frames, cf) end
+            state.tank = TT.tank
+            level = false
+            if angle then
+                a = angle
+                local ax = TT.axes
+                if ax.ok then                                   -- (read with the angle: no extra engine calls)
+                    basis.fx, basis.fy, basis.fz, basis.rx, basis.ry, basis.rz, basis.ux, basis.uy, basis.uz =
+                        ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz
+                    level = true
+                else
+                    local hull = TT.found.unit
+                    if hull == nil or not TT.alive(hull) then hull = TT.hull(world, seat.kind, state.frames, cf) end
+                    if hull ~= nil then local okb, B = pcall(TT.basis, hull, basis); level = okb and B ~= nil end
+                end
+                state.turning = 'yes (' .. TT.tank .. (level and ', kept level' or ', not level: tilt unreadable') .. ')'
+            else state.turning = 'not yet: ' .. tostring(why) .. ' (' .. TT.tank .. ')' end
+        else
+            TT.reset(); level = false
+            state.turning = 'straight behind (not in a tank gunner seat)'
+        end
+    else
+        state.turning = 'no: Tank Core is not running (it comes with this option)'
+    end
+    if state.frames < (retry_at or 0) then return end
+    if level then set_target_level(a, basis) else set_target(math.floor(a / ANGLE_STEP + 0.5) * ANGLE_STEP) end
+    if last_step and math.abs(target.side - written.side) < 0.01 and math.abs(target.back - written.back) < 0.01
+        and math.abs(target.up - written.up) < 0.01 then return end
+    local ok, how = write(target)
+    if ok then
+        last_step, retry_at = true, nil; state.turns = state.turns + 1
+        written.side, written.back, written.up = target.side, target.back, target.up
+    else                                                      -- (a failed write is tried again after a second)
+        retry_at, last_step = state.frames + 60, nil        -- (what the record holds is unknown: written again)
+        state.errors = state.errors + 1; state.last_error = 'turning write failed: ' .. tostring(how)
+    end
+end
+
+-- ---------------------------------------------------------------- main loop
+local phase = 'gate'
+local next_check = 0
+local shown
+local function tick()
+    state.frames = state.frames + 1
+    if phase == 'ready' and original and not state.turn_failed then
+        local okF, err = pcall(follow_turret)
+        if not okF then
+            state.errors = state.errors + 1; state.last_error = 'turning: ' .. tostring(err); state.turn_failed = true
+            state.turning = 'off after an error (the camera stays straight behind)'; set_target(0); pcall(write, target); log()
+        end
+    end
+    if state.frames < next_check then return end
+    if phase == 'gate' then
+        local m = GetModuleHandleA('game.dll')
+        if m == nil then next_check = state.frames + 60; return end
+        game = ffi.cast(U8, m)
+        local dos = read(game, 0x40)
+        local pe = dos and u32(dos, 0x3C)
+        local hdr = pe and read(game + pe, 0x60)
+        image_size, timestamp = hdr and u32(hdr, 0x50), hdr and u32(hdr, 8)
+        if not image_size then state.status = 'game.dll header unreadable'; phase = 'off'; log(); return end
+        state.game = build_tag()
+        if timestamp == KNOWN_TIMESTAMP then
+            local r = game + KNOWN_RVA + KNOWN_ID * STRIDE
+            local _, id = check(r, true)
+            if id == KNOWN_ID then
+                rec = r; phase = 'ready'; state.loose = prefix_differs
+                state.how = 'known build' .. (prefix_differs and ' (its other gunner view values are not the game\'s own: '
+                    .. 'another mod may change the gunner camera too)' or '')
+            end
+        end
+        if not rec then
+            local rva = cache_load()
+            if rva and rva + STRIDE * 2 <= image_size and check(game + rva) then
+                rec = game + rva; state.how = 'saved from an earlier search'; phase = 'ready'
+            else
+                phase = 'scan'; state.how = 'searching game data'
+            end
+        end
+    end
+    if phase == 'scan' then
+        if not scan_step() then return end
+        if not scan.found then
+            phase = 'off'; state.status = 'not active: the gunner camera preset was not found in this game version'
+            state.view = 'the game\'s own'; log(); return
+        end
+        rec = scan.found; phase = 'ready'
+        state.how = string.format('found by search at game.dll+0x%X', num(rec) - num(game)); cache_save(num(rec) - num(game))
+    end
+    if phase == 'ready' then
+        state.where = string.format('game.dll+0x%X', num(rec) - num(game))
+        local okA, changed = pcall(apply)
+        if not okA then state.errors = state.errors + 1; state.last_error = tostring(changed); state.status = 'error: ' .. tostring(changed)
+        else state.status = 'active' end
+        local summary = state.status .. state.view .. state.errors .. state.turning
+        if summary ~= shown then shown = summary; log() end
+        next_check = state.frames + ((okA and settled) and SETTLED_EVERY or CHECK_EVERY)
+    end
+end
+
+local previous_update = update
+if type(previous_update) ~= 'function' then return end
+local function after(ok, ...)
+    if not ok then error((...), 0) end
+    local okT, err = pcall(tick)
+    if not okT then state.errors = state.errors + 1; state.last_error = tostring(err); state.status = 'error: ' .. tostring(err); phase = 'off'; log() end
+    return ...
+end
+update = function(...) return after(pcall(previous_update, ...)) end
+log()
