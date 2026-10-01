@@ -17,7 +17,6 @@ local TESTER = @@TESTER@@
 local PRESET, PRESET_NAME = @@PRESET@@, '@@PRESET_NAME@@'
 
 local byte, min, max = string.byte, math.min, math.max
-local TWO32 = 4294967296
 
 local STRIDE = 0x90
 local KNOWN_RVA, KNOWN_ID, KNOWN_TIMESTAMP = 0x32F9990, 26, 0x6AB3B43F
@@ -221,6 +220,7 @@ end
 local rec, original, want
 local tries = 0
 local settled = false
+local blocked = false        -- (2.0.1 review) the record is left alone: gave up, or no longer a valid preset
 local target = {}            -- what the record should hold now (the base offset turned with the turret)
 local direct, direct_check   -- the record's page is plain read/write data (checked now and then): written directly
 local function differs(a, b)
@@ -261,7 +261,7 @@ local function write(values)
 end
 local function apply()
     local now = check(rec, state.loose)
-    if not now then state.view = 'preset no longer valid'; settled = false; return 0 end
+    if not now then state.view = 'preset no longer valid'; settled = false; blocked = true; return 0 end
     if not original then
         original, want = now, {}
         want.side = now.side
@@ -293,6 +293,9 @@ local function apply()
         state.last_error = 'the gunner camera keeps being changed back (another camera mod?): stopped writing it'
     end
     settled = not problem
+    -- (2.0.1 review) once it has given up, turning with the turret stops writing too (2.0 kept writing it every turn,
+    -- fighting whatever else writes the gunner camera)
+    blocked = problem == 'gave up'
     return changed
 end
 
@@ -338,7 +341,7 @@ local function follow_turret()
     else
         state.turning = 'no: Tank Core is not running (it comes with this option)'
     end
-    if state.frames < (retry_at or 0) then return end
+    if blocked or state.frames < (retry_at or 0) then return end
     if level then set_target_level(a, basis) else set_target(math.floor(a / ANGLE_STEP + 0.5) * ANGLE_STEP) end
     if last_step and math.abs(target.side - written.side) < 0.01 and math.abs(target.back - written.back) < 0.01
         and math.abs(target.up - written.up) < 0.01 then return end

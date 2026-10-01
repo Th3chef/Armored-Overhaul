@@ -4,9 +4,13 @@
                              Drive's tester logging on, on the test GUID)
 """
 import math, json, os, struct, sys, zipfile
+if not __debug__:
+    sys.exit('build.py: run it without -O (its checks are assert statements, which -O removes)')
 
-VERSION, NAME_SUFFIX = '2.0.1', ' Test 2'   # NAME_SUFFIX is only used by test builds
+VERSION, NAME_SUFFIX = '2.0.1', ' Test 4'   # NAME_SUFFIX is only used by test builds
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, 'tools'))
+import patch_writer
 GUID_LIVE = '370555ae-cb28-4b9d-96d0-8381505c3f89'   # releases: Arsenal treats a new release as an update
 GUID_TEST = '8d3e5a71-2c94-4f06-b1e8-6a7c0d9f4e25'   # test and Tester builds: sit next to the release
 MAGIC, LUA = 0xF0000011, 0xa14e8dfa2cd117e2
@@ -93,21 +97,16 @@ def resource_hash(name):
 
 
 def archive(entries):
-    n = len(entries); cursor = 72 + 32 + 80 * n; rows = body = b''
-    for i, (rid, data) in enumerate(entries):
-        pad = -cursor % 16; body += b'\0' * pad; cursor += pad
-        rows += struct.pack('<7Q6I', rid, LUA, cursor, 0, 0, 0, 0, len(data), 0, 0, 16, 16, i)
-        body += data; cursor += len(data)
-    head = struct.pack('<III', MAGIC, 1, n) + b'\0' * 20 + struct.pack('<I', cursor) + b'\0' * 36
-    return head + struct.pack('<QQQII', 0, LUA, n, 16, 16) + rows + body
+    """A Lua-only patch (its TOC; no gpu or stream data)."""
+    return mixed_archive(entries, [])[0]
 
 
 def texture_rgba(png):
     """A plain R8G8B8A8 texture (DXGI 28, one mip): the 340-byte Stingray + DDS header, and the pixels (gpu data)."""
     from PIL import Image
-    src = Image.open(png)
-    assert src.mode == 'RGBA' and src.size == (64, 64), 'skull art must be 64x64 with transparency: %s %s' % (src.mode, src.size)
-    im = src; w, h = im.size
+    im = Image.open(png)
+    assert im.mode == 'RGBA' and im.size == (64, 64), 'skull art must be 64x64 with transparency: %s %s' % (im.mode, im.size)
+    w, h = im.size
     st = struct.pack('<III', 0, 0, 0xFFFFFFFF) + b'\0' * (15 * 12)
     pf = struct.pack('<II4sIIIII', 32, 0x4, b'DX10', 0, 0, 0, 0, 0)
     hdr = struct.pack('<IIIIIII', 124, 0x100F, h, w, w * 4, 0, 1) + b'\0' * 44 + pf + struct.pack('<IIIII', 0x1000, 0, 0, 0, 0)
@@ -118,20 +117,12 @@ def texture_rgba(png):
 
 def mixed_archive(lua_entries, tex_entries):
     """A patch with Lua resources and textures: returns (toc, gpu_resources). Textures first, as the game's own."""
-    ents = [(rid, TEXTURE, data, gpu) for rid, (data, gpu) in tex_entries] + [(rid, LUA, data, b'') for rid, data in lua_entries]
-    types = [t for t in (TEXTURE, LUA) if any(e[1] == t for e in ents)]
-    n = len(ents); cursor = 72 + 32 * len(types) + 80 * n; rows = body = b''; gpu = bytearray()
-    for i, (rid, tid, data, g) in enumerate(ents):
-        pad = -cursor % 16; body += b'\0' * pad; cursor += pad
-        goff = 0
-        if g:
-            gpu += b'\0' * (-len(gpu) % 64); goff = len(gpu); gpu += g
-        align = 64 if tid == TEXTURE else 16
-        rows += struct.pack('<7Q6I', rid, tid, cursor, 0, goff, 0, 0, len(data), 0, len(g), 16, align, i)
-        body += data; cursor += len(data)
-    head = struct.pack('<III', MAGIC, len(types), n) + b'\0' * 20 + struct.pack('<I', cursor) + b'\0' * 36
-    for t in types: head += struct.pack('<QQQII', 0, t, sum(e[1] == t for e in ents), 16, 64 if t == TEXTURE else 16)
-    return head + rows + body, bytes(gpu)
+    ents = ([(rid, TEXTURE, data, gpu, b'', 64) for rid, (data, gpu) in tex_entries]
+            + [(rid, LUA, data, b'', b'', 16) for rid, data in lua_entries])
+    types = [(t, 64 if t == TEXTURE else 16) for t in (TEXTURE, LUA) if any(e[1] == t for e in ents)]
+    toc, gpu, _ = patch_writer.write(ents, types)
+    patch_writer.check(toc, gpu)
+    return toc, gpu
 
 
 def check_texture_patch(toc, gpu, rid, w, h):
@@ -191,6 +182,40 @@ def suboptions(presets, unit='x', extra=()):
     return [{'Name': label(name, mult), 'Description': desc, 'Include': [folder] + list(extra)} for folder, name, mult, desc in presets]
 
 
+FIXED_TIME = (2026, 1, 1, 0, 0, 0)
+def zput(z, name, data):
+    """Adds a file with a fixed date, so the same sources always give the same zip, byte for byte."""
+    zi = zipfile.ZipInfo(name, FIXED_TIME)
+    zi.compress_type, zi.external_attr = zipfile.ZIP_DEFLATED, 0o644 << 16
+    z.writestr(zi, data)
+def zfile(z, path, name):
+    with open(path, 'rb') as f: zput(z, name, f.read())
+
+
+def verify_zip(zpath):
+    """(2.0.1 review) Reads a finished mod zip back: the manifest's option and sub-option folders each hold a full
+    patch (patch_0, .gpu_resources, .stream) in layout (patch_writer.check), every folder in the zip is used by an
+    option, and every image is there. Raises ValueError (not assert: these must run in every build)."""
+    with zipfile.ZipFile(zpath) as z:
+        names = set(z.namelist())
+        m = json.loads(z.read('manifest.json'))
+        used, images = set(), {m['IconPath']}
+        for o in m['Options']:
+            images.add(o['Image'])
+            used.update(o.get('Include', []))
+            for sub in o.get('SubOptions', []):
+                images.add(sub['Image']); used.update(sub.get('Include', []))
+        for img in images:
+            if img not in names: raise ValueError('%s: image %s missing' % (zpath, img))
+        folders = {n.split('/')[0] for n in names if '/' in n and n.endswith('.patch_0')}
+        for f in used:
+            base = f + '/9ba626afa44a3aa3.patch_0'
+            for ext in ('', '.gpu_resources', '.stream'):
+                if base + ext not in names: raise ValueError('%s: %s missing' % (zpath, base + ext))
+            patch_writer.check(z.read(base), z.read(base + '.gpu_resources'), z.read(base + '.stream'))
+        if folders - used: raise ValueError('%s: folders no option uses: %s' % (zpath, sorted(folders - used)))
+
+
 def package(kind):
     """kind: 'test' (NAME_SUFFIX, tester logging), 'release' or 'tester' (the release with tester logging)."""
     release = kind != 'test'
@@ -200,8 +225,7 @@ def package(kind):
     tflag = 'false' if kind == 'release' else 'true'       # tester logging: test and Tester builds only
     turret_src = open(os.path.join(HERE, 'mbt_turrets.lua.in'), encoding='utf-8').read().replace('@@VERSION@@', version) \
         .replace('@@TESTER@@', tflag)
-    turrets = turret_src
-    assert '@@' not in turrets
+    assert '@@' not in turret_src
     handling_src = open(os.path.join(HERE, 'handling.lua.in'), encoding='utf-8').read().replace('@@VERSION@@', version) \
         .replace('@@TESTER@@', tflag)
     variants = {}      # folder -> (addon name, source)
@@ -233,7 +257,7 @@ def package(kind):
     open(os.path.join(out, 'driver_panel.lua'), 'w', encoding='utf-8').write(panel)
     open(os.path.join(out, 'gunner_drive_on.lua'), 'w', encoding='utf-8').write(FLAG_SRC)
     open(os.path.join(out, 'gunner_drive.lua'), 'w', encoding='utf-8').write(core)
-    open(os.path.join(out, 'mbt_turrets.lua'), 'w', encoding='utf-8').write(turrets)
+    open(os.path.join(out, 'mbt_turrets.lua'), 'w', encoding='utf-8').write(turret_src)
     manifest = {
         'Version': 1, 'Guid': GUID_LIVE if kind == 'release' else GUID_TEST,
         'Name': 'Armored Overhaul ' + version + (' (Tester)' if kind == 'tester' else ''), 'IconPath': 'thumbnail.png',
@@ -317,7 +341,8 @@ def package(kind):
         ],
     }
     zpath = os.path.join(out, 'Armored-Overhaul-%s%s.zip' % (version.replace(' ', '-'), '-Tester' if kind == 'tester' else ''))
-    with zipfile.ZipFile(zpath, 'w', zipfile.ZIP_DEFLATED) as z:
+    tmp = zpath + '.tmp'
+    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as z:
         names = [o['Name'] for o in manifest['Options']]
         assert sorted(names) == sorted(OPTION_ORDER), names
         manifest['Options'].sort(key=lambda o: OPTION_ORDER.index(o['Name']))
@@ -327,37 +352,43 @@ def package(kind):
                 img = 'options/sub/%s.png' % sub['Include'][0].lower().replace(' ', '_')
                 assert os.path.exists(os.path.join(HERE, img)), img
                 sub['Image'] = img
-        z.writestr('manifest.json', json.dumps(manifest, indent=2))
-        z.write(os.path.join(HERE, 'art', 'thumbnail.png'), 'thumbnail.png')
+        zput(z, 'manifest.json', json.dumps(manifest, indent=2))
+        zfile(z, os.path.join(HERE, 'art', 'thumbnail.png'), 'thumbnail.png')
         for opt in manifest['Options']:
-            z.write(os.path.join(HERE, opt['Image']), opt['Image'])
+            zfile(z, os.path.join(HERE, opt['Image']), opt['Image'])
             for sub in opt.get('SubOptions', []):
-                z.write(os.path.join(HERE, sub['Image']), sub['Image'])
+                zfile(z, os.path.join(HERE, sub['Image']), sub['Image'])
         for folder, entries in {'Tank Core': [(resource_hash(CORE), resource(core))],
                                 'Gunner Drive': [(resource_hash(DRIVE_FLAG), resource(FLAG_SRC)), (resource_hash(PANEL), resource(panel))],
-                                'Turret Core': [(resource_hash(TURRETS), resource(turrets))],
+                                'Turret Core': [(resource_hash(TURRETS), resource(turret_src))],
                                 'MBT Turrets': [(resource_hash(TURRET_FLAGS['mbt']), resource(turret_flag('mbt', True)))],
                                 **{f: [(resource_hash(TURRET_FLAGS['traverse']), resource(turret_flag('traverse', m)))] for f, _, m, _ in TRAVERSE_PRESETS},
                                 **{f: [(resource_hash(TURRET_FLAGS['elevation']), resource(turret_flag('elevation', m)))] for f, _, m, _ in ELEVATION_PRESETS},
                                 **{f: [(resource_hash(TURRET_FLAGS['range']), resource(turret_flag('range', r)))] for f, _, r, _ in RANGE_PRESETS},
                                 **{folder: [(resource_hash(addon), resource(src))] for folder, (addon, src) in variants.items()}}.items():
             base = folder + '/9ba626afa44a3aa3.patch_0'
-            z.writestr(base, archive(entries)); z.writestr(base + '.gpu_resources', b''); z.writestr(base + '.stream', b'')
+            zput(z, base, archive(entries)); zput(z, base + '.gpu_resources', b''); zput(z, base + '.stream', b'')
         # the skull texture in its own folder (its own patch), so the indicator's Lua archive stays Lua only
         base = 'Turret Indicator/9ba626afa44a3aa3.patch_0'
-        z.writestr(base, archive([(resource_hash(INDICATOR), resource(indicator))])); z.writestr(base + '.gpu_resources', b''); z.writestr(base + '.stream', b'')
+        zput(z, base, archive([(resource_hash(INDICATOR), resource(indicator))])); zput(z, base + '.gpu_resources', b''); zput(z, base + '.stream', b'')
         toc, gpu = mixed_archive([], [(resource_hash(SKULL_TEX), texture_rgba(os.path.join(HERE, 'art', 'skull_header_icon.png')))])
         check_texture_patch(toc, gpu, resource_hash(SKULL_TEX), 64, 64)
         base = 'Turret Skull/9ba626afa44a3aa3.patch_0'
-        z.writestr(base, toc); z.writestr(base + '.gpu_resources', gpu); z.writestr(base + '.stream', b'')
+        zput(z, base, toc); zput(z, base + '.gpu_resources', gpu); zput(z, base + '.stream', b'')
         for ext in ('', '.gpu_resources', '.stream'):
-            z.write(os.path.join(HERE, 'models', '9ba626afa44a3aa3.patch_0' + ext), 'Turret Models/9ba626afa44a3aa3.patch_0' + ext)
+            zfile(z, os.path.join(HERE, 'models', '9ba626afa44a3aa3.patch_0' + ext), 'Turret Models/9ba626afa44a3aa3.patch_0' + ext)
             for preset in ('Suspension Firm', 'Suspension Heavy', 'FRV Mild', 'FRV Stable', 'FRV Planted'):
-                z.write(os.path.join(HERE, 'physics', preset, '9ba626afa44a3aa3.patch_0' + ext), preset + '/9ba626afa44a3aa3.patch_0' + ext)
-    print('built', zpath)
-    return zpath
+                zfile(z, os.path.join(HERE, 'physics', preset, '9ba626afa44a3aa3.patch_0' + ext), preset + '/9ba626afa44a3aa3.patch_0' + ext)
+    verify_zip(tmp)
+    return tmp, zpath
 
 
 if __name__ == '__main__':
-    for kind in (('release', 'tester') if 'release' in sys.argv else ('test',)):
-        package(kind)
+    args = sys.argv[1:]
+    if args not in ([], ['release']):
+        sys.exit('usage: python build.py [release]   (got: %s)' % ' '.join(args))
+    # (2.0.1 review) every zip is written and checked first, and only then put in place: a failure half way leaves the
+    # zips from the last good build, never a half-written one (and never a new release beside an old Tester)
+    done = [package(kind) for kind in (('release', 'tester') if args else ('test',))]
+    for tmp, zpath in done:
+        os.replace(tmp, zpath); print('built', zpath)
