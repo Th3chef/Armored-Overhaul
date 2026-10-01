@@ -608,9 +608,14 @@ end
 -- it the same way when it starts and stops driving. (Test 2 tried a component flag instead: the game cleared it every
 -- frame, and a real driver doesn't set it either.) Found by its code pattern like the other places (the whole
 -- pattern is checked before it is ever called).
+-- (2.0.1) Only called for a tank that is still in the game's vehicle table, looked up fresh right before the call:
+-- the switch looks the tank up itself and, for one that is gone, reads far outside the table and closes the game.
+-- 2.0.0 crashed this way on returning to the ship while driving from the gunner seat (the tank is taken apart, its
+-- record lookup fails, and stopping then switched off the engine of a tank that no longer existed).
 local set_engine
 local function engine_switch(vehicle, on)
     if not FEAT.engine then return false, 'the engine switch was not found in this game version' end
+    if vehicle == nil or not driver_record(vehicle) then return false, 'the tank is gone' end
     if not set_engine then set_engine = ffi.cast('void (*)(void *, uint32_t, uint8_t)', FEAT.engine) end
     set_engine(nil, vehicle, on and 1 or 0)
     return true
@@ -1029,8 +1034,9 @@ local function stop_driving(why)
     -- (1.2.1: not in the middle of a seat move - getting in or out - either: settle_engine decides once it ends)
     if drive.engine_on and why == 'moving_seat' then pending_off = {vehicle = drive.vehicle} end
     if drive.engine_on and why ~= 'has_driver' and why ~= 'moving_seat' and why ~= 'you took the driver seat' then
-        local ok = pcall(engine_switch, drive.vehicle, false)
-        S.engine = S.engine .. (ok and '; switched off when you stopped' or '; could not switch it off')
+        local okc, ok, why = pcall(engine_switch, drive.vehicle, false)
+        S.engine = S.engine .. ((okc and ok) and '; switched off when you stopped'
+            or ('; not switched off (' .. tostring(okc and why or ok) .. ')'))
     end
     drive, last.throttle, last.steer = nil, nil, nil
     S.phase, S.status = 'watching', 'stopped: ' .. why
@@ -1046,9 +1052,13 @@ local function settle_engine(mine, verdict, others)
     for _, o in ipairs(others or {}) do
         if o.vehicle == v and DRIVER_ROLES[o.role] then return end    -- (someone drives it: left alone)
     end
-    local ok = pcall(engine_switch, v, false)
-    S.engine = S.engine .. (ok and '; switched off (you got out or moved seats and nobody drives)' or '; could not switch it off')
-    hist('engine switched off: you got out or moved seats and nobody drives')
+    local okc, ok, why = pcall(engine_switch, v, false)
+    if okc and ok then
+        S.engine = S.engine .. '; switched off (you got out or moved seats and nobody drives)'
+        hist('engine switched off: you got out or moved seats and nobody drives')
+    else
+        S.engine = S.engine .. '; not switched off (' .. tostring(okc and why or ok) .. ')'
+    end
 end
 
 -- One frame of driving: copies your keys into the tank's driver-input record.
