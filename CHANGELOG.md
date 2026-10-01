@@ -2,7 +2,7 @@
 
 ## 2.0.1
 
-Fixes: with MBT Turrets on, a Maelstrom wearing a camo no longer loses its hull (only the turret showed; most likely also the multiplayer report of another player's Maelstrom showing only its turret). Using Return to Ship from the pause menu while driving from the gunner seat no longer closes the game.
+Fixes: with MBT Turrets on, a Maelstrom wearing a camo no longer loses its hull (only the turret showed; most likely also the multiplayer report of another player's Maelstrom showing only its turret). Using Return to Ship from the pause menu while driving from the gunner seat no longer closes the game. Gunner Drive, the smoke key and the driver panel are safer when a mission ends or a tank is destroyed, the driver panel does less work every frame, and game_font = 0 in its settings file now takes effect at once.
 
 ## 2.0.0
 
