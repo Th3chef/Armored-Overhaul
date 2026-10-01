@@ -1,1 +1,5 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
+contact_links:
+  - name: Download the mod
+    url: https://github.com/Th3chef/Armored-Overhaul/releases/latest
+    about: Get the latest Armored-Overhaul zip from the Releases page (not the source code).
