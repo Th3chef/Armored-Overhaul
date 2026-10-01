@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1
+
+Fixes: with MBT Turrets on, a Maelstrom wearing a camo no longer loses its hull (only the turret showed; most likely also the multiplayer report of another player's Maelstrom showing only its turret). Using Return to Ship from the pause menu while driving from the gunner seat no longer closes the game.
+
 ## 2.0.0
 
 New options: Tank power (Strong, Stronger or Strongest), Turret traverse and Turret elevation (Quick, Fast or Very fast), Turret aim range (Wider or Widest) and FRV stability for the M-102 FRV, M-103 Supply FRV and M-104 incendiary FRV (Mild, Stable or Planted). Every choice has its own icon in the mod manager, and the options are grouped. Turret indicator: the Helldivers skull is the turret, the outline is drawn thick and colored by the tank's health, and it sits next to the driver panel. Gunner Drive: in the Maelstrom, Mouse 3 (left stick click on a controller) pops the smoke screen from the gunner seat, and the driver panel shows the smoke rounds left and says when another player controls the tank in multiplayer. The driver panel is part of Gunner Drive (it works with the Turret indicator off, with its own settings file) and its speed is measured from how fast the tank really moves. Getting out of the gunner seat always switches the engine off when nobody drives. Gunner camera: stays level on steep slopes, works when another mod changed the game's gunner camera settings, and every preset sits lower and further behind the tank.
