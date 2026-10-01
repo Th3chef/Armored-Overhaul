@@ -1,0 +1,127 @@
+# Uploads each published GitHub release to Nexus Mods as a new version of the mod's main file.
+# Needs the repository secret NEXUSMODS (your Nexus Mods API key; Settings, Secrets and variables, Actions).
+# Without it the run stops with a message and nothing is uploaded.
+# Run it by hand from the Actions tab (Run workflow) to upload an existing release again.
+name: Upload release to Nexus Mods
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to upload (for example v2.0.1)
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  # Armored Overhaul is not on Nexus Mods right now: fill in both IDs when it's back and the upload starts working.
+  NEXUS_MOD_ID: ''    # the mod's Unique Mod ID (Files tab, Advanced; not the number in the page address)
+  NEXUS_FILE_ID: ''   # the main file's API File ID (Files tab, Advanced)
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  nexus:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the API key and the Nexus IDs are set
+        env:
+          KEY: ${{ secrets.NEXUSMODS }}
+        run: |
+          if [ -z "$NEXUS_MOD_ID" ] || [ -z "$NEXUS_FILE_ID" ]; then
+            echo "::error::Armored Overhaul has no Nexus Mods page yet: set NEXUS_MOD_ID and NEXUS_FILE_ID in this workflow."
+            exit 1
+          fi
+          if [ -z "$KEY" ]; then
+            echo "::error::Add the NEXUSMODS repository secret (Settings, Secrets and variables, Actions) first."
+            exit 1
+          fi
+
+      - name: Download the mod zip from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # tags are v2.0.1, ...; the zip is Armored-Overhaul-2.0.1.zip and the Nexus version is 2.0.1
+          VERSION="${TAG#v}"
+          FILE="Armored-Overhaul-${VERSION}.zip"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$FILE"
+          test -s "$FILE"
+          unzip -tq "$FILE"
+          unzip -p "$FILE" manifest.json | grep -q '"Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89"' \
+            || { echo "::error::$FILE is not the release build (wrong or test GUID in manifest.json)."; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Changelog from the release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # the release notes up to the updating / download / install lines, one point per line
+          # (Nexus shows each changelog line as its own bullet, so the "- " bullets, headings and blank lines go)
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | tr -d '\r' > body.md
+          cat body.md | awk '/^(\*\*)?(Install|Updating|Download)/ {exit} {print}' \
+            | sed -e 's/\*\*//g' -e 's/^[[:space:]]*#\+[[:space:]]*//' -e 's/^[[:space:]]*[-*][[:space:]]\+//' \
+            | grep -v -i '^armored overhaul' | grep -v '^[[:space:]]*$' > notes.txt || true
+          {
+            echo 'text<<NOTES_END'
+            cat notes.txt
+            echo 'NOTES_END'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: File description from the changelog
+        id: desc
+        run: |
+          # a hidden <!-- nexus: ... --> line in the release notes is used as the file description when present;
+          # otherwise the changelog on one line, fitted to Nexus's 255-character limit:
+          # long asides in brackets go first, then whole points from the end
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os, re, sys
+          MAX = 255
+          own = re.search(r'<!--\s*nexus:\s*(.+?)\s*-->', open('body.md', encoding='utf-8').read(), re.S)
+          if own:
+              d = ' '.join(own.group(1).split())
+              print('text=' + (d if len(d) <= MAX else d[:MAX - 3].rsplit(' ', 1)[0] + '...'))
+              sys.exit(0)
+          head = os.environ['VERSION'] + ': '
+          items = []
+          for line in open('notes.txt', encoding='utf-8'):
+              t = re.sub(r'^\s*(#+|[-*•]|\d+[.)])\s*', '', line).strip()
+              if not t or t.lower().startswith('armored overhaul'):
+                  continue  # blank lines and the title line
+              items.append(t if t[-1] in '.!?:' else t + '.')
+          def text(xs):
+              return head + ' '.join(xs)
+          if len(text(items)) > MAX:
+              items = [re.sub(r'\s*\([^)]{20,}\)', '', i) for i in items]
+          if len(text(items)) > MAX:
+              more = ' More in the changelog.'
+              while len(items) > 1 and len(text(items)) + len(more) > MAX:
+                  items.pop()
+              d = text(items)
+              if len(d) + len(more) > MAX:
+                  d = d[:MAX - len(more) - 3].rsplit(' ', 1)[0] + '...'
+              d += more
+          else:
+              d = text(items)
+          if not items:
+              d = 'Version ' + os.environ['VERSION'] + '.'
+          print('text=' + d)
+          PY
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.10
+        with:
+          api_key: ${{ secrets.NEXUSMODS }}
+          file_id: ${{ env.NEXUS_FILE_ID }}
+          mod_id: ${{ env.NEXUS_MOD_ID }}
+          filename: ${{ env.FILE }}
+          version: ${{ env.VERSION }}
+          # (Nexus allows only letters, digits, spaces and _ ' ( ) . - in the name)
+          display_name: Armored Overhaul ${{ env.VERSION }}
+          description: ${{ steps.desc.outputs.text }}
+          changelog: ${{ steps.notes.outputs.text }}
+          archive_existing_version: true
+          update_mod_version: true
