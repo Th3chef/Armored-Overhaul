@@ -1,0 +1,69 @@
+name: Bug report
+description: Something the mod does wrong, or an error in its log
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The logs are the most useful part: they show what the mod found, what it changed and any errors.
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+      description: Shown at the top of each log and in your mod manager.
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game version or date of the last game update
+      placeholder: "e.g. the October 2026 patch"
+  - type: checkboxes
+    id: options
+    attributes:
+      label: Options you have turned on
+      options:
+        - label: Tank power
+        - label: Tank grip
+        - label: Tank steering
+        - label: Tank suspension
+        - label: MBT Turrets
+        - label: Turret traverse
+        - label: Turret elevation
+        - label: Turret aim range
+        - label: Turret indicator
+        - label: Gunner Drive
+        - label: Gunner camera
+        - label: FRV stability
+  - type: dropdown
+    id: vehicle
+    attributes:
+      label: Vehicle
+      options: [TD-220 Bastion, TD-110 Maelstrom, An FRV, Not vehicle-specific]
+  - type: dropdown
+    id: session
+    attributes:
+      label: Were you playing solo, hosting or joining?
+      options: [Solo, Hosting, Joining someone else's game]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: Roughly when in the mission it happened helps match it to the logs.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log files
+      description: |
+        Drag the ArmoredOverhaul-*.log files into this box. You'll find them in
+        %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs (paste that into the File Explorer address bar and press Enter).
+    validations:
+      required: true
+  - type: textarea
+    id: others
+    attributes:
+      label: Other mods
+      description: Other vehicle, turret, camera or HUD mods you have installed.
