@@ -6,6 +6,8 @@
 
 Armored Overhaul makes the Bastion and Maelstrom feel like real main battle tanks, and keeps the FRVs on their wheels. Every part is its own option, so you pick what you want in your mod manager.
 
+![What's in 2.0](media/features_1920x1080.png)
+
 ## Features
 
 - **Tank power:** more engine pulling power, so the tanks get off the line, up slopes and through rough ground quicker. Pick *Strong* (1.25 times the game's), *Stronger* (1.5 times) or *Strongest* (twice). Top speed stays the game's own.
