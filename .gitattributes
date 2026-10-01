@@ -1,0 +1,3 @@
+# The mod is Lua: its sources are templates (.lua.in, .lua.inc) that build.py fills in, so GitHub needs telling
+*.lua.in linguist-language=Lua
+*.lua.inc linguist-language=Lua
