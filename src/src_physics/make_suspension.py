@@ -3,6 +3,8 @@ the Havok suspension of every road wheel changed (the "VRW " vehicle raycast-whe
 +0x58 compression damping, +0x5C rebound damping; game values 12 / 0.5 / 3.7).
 Usage: make_suspension.py OUT_DIR   (reads the game packages from the blender data folder)"""
 import struct, sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tools'))
+import patch_writer
 PHYSICS = 0x5f7203c8f280dab8
 SOURCES = [('blendwork/data/68ebdce3f7498179', 0x16474112801385b6),   # TD-220 Bastion hull
            ('blendwork/data/65ee777b72347cb4', 0xb0c9faf4af8903f9)]   # TD-110 Maelstrom hull
@@ -33,21 +35,18 @@ def retune(data, values):
     return bytes(data)
 
 def write_patch(path, entries, hdr, magic):
-    types = sorted({t for _, t, _ in entries})
-    head = struct.pack('<III', magic, len(types), len(entries)) + hdr
-    for t in types: head += struct.pack('<QQQII', 0, t, sum(e[1] == t for e in entries), 16, 64)
-    cursor = len(head) + 80 * len(entries); rows = body = b''
-    for i, (fid, tid, data) in enumerate(entries, 1):
-        pad = -cursor % 16; body += b'\0' * pad; cursor += pad
-        rows += struct.pack('<7Q6I', fid, tid, cursor, 0, 0, 0, 0, len(data), 0, 0, 16, 64, i)
-        body += data; cursor += len(data)
-    toc = head + rows + body
+    assert magic == patch_writer.MAGIC, hex(magic)
+    types = [(t, 64) for t in sorted({t for _, t, _ in entries})]
+    toc, _, _ = patch_writer.write([(fid, tid, data, b'', b'', 64) for fid, tid, data in entries], types,
+                                   header=hdr, first_index=1)
+    patch_writer.check(toc)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     open(path, 'wb').write(toc); open(path + '.gpu_resources', 'wb').write(b''); open(path + '.stream', 'wb').write(b'')
 
-out_dir = sys.argv[1]
-originals = [(fid,) + read_entry(pkg, fid, PHYSICS) for pkg, fid in SOURCES]
-for folder, values in PRESETS.items():
-    entries = [(fid, PHYSICS, retune(data, values)) for fid, data, hdr, magic in originals]
-    write_patch(os.path.join(out_dir, folder, '9ba626afa44a3aa3.patch_0'), entries, originals[0][2], originals[0][3])
-    print(folder, values, [len(e[2]) for e in entries])
+if __name__ == '__main__':
+    out_dir = sys.argv[1]
+    originals = [(fid,) + read_entry(pkg, fid, PHYSICS) for pkg, fid in SOURCES]
+    for folder, values in PRESETS.items():
+        entries = [(fid, PHYSICS, retune(data, values)) for fid, data, hdr, magic in originals]
+        write_patch(os.path.join(out_dir, folder, '9ba626afa44a3aa3.patch_0'), entries, originals[0][2], originals[0][3])
+        print(folder, values, [len(e[2]) for e in entries])

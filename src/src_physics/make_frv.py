@@ -13,6 +13,8 @@ Mass, grip, engine and steering stay the game's own.
 Usage: make_frv.py VANILLA_DIR OUT_DIR   (VANILLA_DIR: the three .physics.main files as Filediver extracts them from
 the game's own archives: frv, frv_supply, frv_flamer)"""
 import struct, sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tools'))
+import patch_writer
 PHYSICS = 0x5f7203c8f280dab8
 FILES = [('frv.physics.main', 0xcc21c7ffd3ebefb9, 3000.0),          # content/fac_helldivers/vehicles/frv/frv
          ('frv_supply.physics.main', 0x9b2140378640432e, 2500.0),   # .../frv_supply/frv_supply
@@ -63,16 +65,12 @@ def retune(data, mass, p):
 
 def write_patch(path, entries):
     # (the same layout as the tank suspension patches: 72-byte header, one type row, 80-byte entries)
-    types = sorted({t for _, t, _ in entries})
-    head = struct.pack('<III', 0xF0000011, len(types), len(entries)) + bytes.fromhex(HEADER)
-    for t in types: head += struct.pack('<QQQII', 0, t, sum(e[1] == t for e in entries), 16, 64)
-    cursor = len(head) + 80 * len(entries); rows = body = b''
-    for i, (fid, tid, data) in enumerate(entries, 1):
-        pad = -cursor % 16; body += b'\0' * pad; cursor += pad
-        rows += struct.pack('<7Q6I', fid, tid, cursor, 0, 0, 0, 0, len(data), 0, 0, 16, 64, i)
-        body += data; cursor += len(data)
+    types = [(t, 64) for t in sorted({t for _, t, _ in entries})]
+    toc, _, _ = patch_writer.write([(fid, tid, data, b'', b'', 64) for fid, tid, data in entries], types,
+                                   header=bytes.fromhex(HEADER), first_index=1)
+    patch_writer.check(toc)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    open(path, 'wb').write(head + rows + body)
+    open(path, 'wb').write(toc)
     open(path + '.gpu_resources', 'wb').write(b''); open(path + '.stream', 'wb').write(b'')
 
 if __name__ == '__main__':
