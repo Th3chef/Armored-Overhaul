@@ -5,7 +5,7 @@
 """
 import math, json, os, struct, sys, zipfile
 
-VERSION, NAME_SUFFIX = '2.0.0', ' Test 9'   # NAME_SUFFIX is only used by test builds
+VERSION, NAME_SUFFIX = '2.0.1', ' Test 2'   # NAME_SUFFIX is only used by test builds
 HERE = os.path.dirname(os.path.abspath(__file__))
 GUID_LIVE = '370555ae-cb28-4b9d-96d0-8381505c3f89'   # releases: Arsenal treats a new release as an update
 GUID_TEST = '8d3e5a71-2c94-4f06-b1e8-6a7c0d9f4e25'   # test and Tester builds: sit next to the release
