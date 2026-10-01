@@ -128,4 +128,6 @@ jobs:
           description: ${{ steps.desc.outputs.text }}
           changelog: ${{ steps.notes.outputs.text }}
           archive_existing_version: true
+          primary_mod_manager_download: true   # the new version becomes the main file mod managers download
+          allow_mod_manager_download: true
           update_mod_version: true
