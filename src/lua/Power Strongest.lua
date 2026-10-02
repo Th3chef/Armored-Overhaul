@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_power
--- Armored Overhaul 3.0.1 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.1.0 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'power' option, Strongest). Written from scratch.
 --
 -- How it works: the tanks drive on the engine's Havok vehicle kit. When a tank is set up, the game scales its Havok
@@ -57,7 +57,7 @@ local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.0.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.1.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
@@ -491,7 +491,7 @@ for i, m in ipairs(MENU_MULTS) do if i > 1 and math.abs(m - PRESET) < 1e-6 then 
 -- mod manager starts from its own). Off = the game's own values. Tanks called in after a change use it.
 menu_rows.power = {
     {'armored_overhaul.' .. PART .. '.' .. PRESET_NAME:lower(), {type = 'choice', label = 'Tank Power', choices = MENU_CHOICES,
-        default = MENU_PICK, description = 'More pulling power for the Bastion and Maelstrom: quicker off the line and up slopes. Top speed is unchanged.'}, 'mult'},
+        default = MENU_PICK, description = 'More pulling power for the Bastion and Maelstrom: quicker off the line and up slopes. Top speed is unchanged. Tanks called in after a change use it.'}, 'mult'},
 }
 menu_set = function(key, v)
     if key ~= 'mult' or not MENU_MULTS[v] then return end

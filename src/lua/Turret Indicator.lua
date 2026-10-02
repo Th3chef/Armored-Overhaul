@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.0.1 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
+-- Armored Overhaul 3.1.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
 -- FRV or M-103 Supply FRV (any seat), a small outline on your screen shows which way the turret points compared to the
 -- hull, like a real tank's display, colored by the vehicle's health (the FRV's tires too). The turret always points
 -- up; the hull outline turns around it, with a notch at its front. Drawn only on your screen. Written from scratch.
@@ -30,8 +30,9 @@ local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.lo
 -- size: the hull's length as a share of the screen height; dock: just left of the driver panel when its addon runs.
 -- (Test 6: moved off the bottom centre, where it covered the game's kill chain counter; thinner and see-through)
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
+local PANEL_DEFAULT = {x = 0.5, y = 0.1, size = 0.022}   -- (3.1.0 Test 26) the Driver Panel's default place (its SETTINGS)
 
-local S = {version = '3.0.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.1.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
@@ -1026,7 +1027,14 @@ local function tick()
     -- Gunner Drive drives this vehicle (Tank Core's gd_flags: Off in the Mod Options Menu, or the M-103, which is
     -- never driven: 3.0 docked next to a panel that never showed)
     local place, dock, px, py, ps = settings.dock >= 0.5 and rawget(_G, 'ArmoredOverhaulDriverPanelPlace'), 0, 0, 0, 0
-    if type(place) == 'table' and type(place.x) == 'number' then
+    -- (3.1.0 Test 26) in the driver's seat of any vehicle the outline sits where it docks beside the Gunner Drive
+    -- panel: the panel's own place (its menu position, whether or not it shows here), or the panel's default place
+    -- when its addon isn't installed
+    if settings.dock >= 0.5 and (seat.role == 1 or seat.role == 4) then
+        local q = type(place) == 'table' and type(place.x) == 'number' and type(place.y) == 'number'
+            and type(place.size) == 'number' and place or PANEL_DEFAULT
+        place, dock, px, py, ps = q, 5, q.x, q.y, q.size
+    elseif type(place) == 'table' and type(place.x) == 'number' then
         local gd = core_watch.gd
         local driven = TANKS[seat.kind] and (type(gd) ~= 'number' or gd % 2 == 1)
             or (seat.kind == FRV_KIND and (type(gd) ~= 'number' or gd >= 2))
@@ -1042,7 +1050,7 @@ local function tick()
         ov.kind = seat.kind
         ov.frv, ov.nogun = FRV_KINDS[seat.kind] ~= nil, nogun
         ov.tires = tires
-        local okd, err = pcall(draw, g, sw, sh, settings, angle, band, ov.frv, ov.frv and tire_bands or nil, nogun, dock == 3 and place or nil)
+        local okd, err = pcall(draw, g, sw, sh, settings, angle, band, ov.frv, ov.frv and tire_bands or nil, nogun, (dock == 3 or dock == 5) and place or nil)
         if not okd then
             S.errors = S.errors + 1; S.last_error = 'drawing failed: ' .. tostring(err); clear_shapes(true)
             -- (2.0.1 review) only drawing failures count towards turning it off (2.0 counted the tracker's too)
@@ -1054,7 +1062,8 @@ local function tick()
         S.dock = dock == 0 and 'off (the menu\'s position is used)'
             or (dock == 1 and 'its position (the driver panel is not installed)')
             or (dock == 2 and 'its position (the driver panel is not running)')
-            or (dock == 4 and 'its position (no driver panel in this vehicle: Gunner Drive is off for it)') or 'left of the driver panel'
+            or (dock == 4 and 'its position (no driver panel in this vehicle: Gunner Drive is off for it)')
+            or (dock == 5 and 'left of the driver panel\'s place (driver seat)') or 'left of the driver panel'
         -- (3.0 review) the log texts only when what they say changed (2.1: every redraw); the shape counts are tester-only
         local hk = band and (band * 1000 + floor(seat.health * 100 + 0.5)) or (settings.health >= 0.5 and -1 or -2)
         if hk ~= ov.health_logged then

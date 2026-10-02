@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.0.1 - Gunner camera option (Close): how far behind the turret the tank
+-- Armored Overhaul 3.1.0 - Gunner camera option (Close): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -36,7 +36,7 @@ local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
 local distance = PRESET          -- (3.0) metres back along the rise: the mod manager's pick, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.0.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.1.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -189,7 +189,14 @@ local function check(rec, loose)
     if not s then return nil end
     local id = u32(s, STRIDE)
     if not id or id < 1 or id > 0x1000 or u32(s, 0) ~= id - 1 or u32(s, STRIDE * 2) ~= id + 1 then return nil end
-    if s:sub(STRIDE + 5, STRIDE + 4 + #PREFIX) ~= PREFIX then
+    -- (3.1.0 Test 28) the first two values (the view's look speed, 0.25) may be the turret core's: Tank Turret
+    -- Traverse / Elevation speed the view up with the turret; the rest must match
+    local head_ok = s:sub(STRIDE + 5, STRIDE + 12) == PREFIX:sub(1, 8)
+    if not head_ok then
+        local y, p = f32(s, STRIDE + 4), f32(s, STRIDE + 8)
+        head_ok = y and p and y >= 0.05 and y <= 2 and p >= 0.05 and p <= 2
+    end
+    if not head_ok or s:sub(STRIDE + 13, STRIDE + 4 + #PREFIX) ~= PREFIX:sub(9) then
         if not loose then return nil end
         prefix_differs = true
     end
@@ -197,11 +204,12 @@ local function check(rec, loose)
 end
 
 -- (3.0.1 review) The turret limits at +0x4C (pitch min/max, yaw min/max) as the game has them (-15..25, -40..40) or as
--- the Turret core widens them (yaw all the way round, pitch lower and higher): the preset's second signature.
+-- the Turret core widens them (yaw all the way round or 90 each side, pitch lower and higher): the preset's second signature.
 local function limits_ok(s, o)
     local p0, p1, y0, y1 = f32(s, o + 0x4C), f32(s, o + 0x50), f32(s, o + 0x54), f32(s, o + 0x58)
     if not (y1 and p0 >= -90 and p0 <= -15 and p1 >= 25 and p1 <= 90) then return false end
-    return y0 == -40 and y1 == 40 or y0 == -180 and y1 == 180
+    -- (3.1.0 Test 26) or the MBT Turrets 180 choice's +-90
+    return y0 == -40 and y1 == 40 or y0 == -180 and y1 == 180 or y0 == -90 and y1 == 90
 end
 -- Other builds: one 256 KB chunk of the game's writable data per frame, looking for the preset's prefix.
 -- (3.0.1 review) every match is kept (3.0.1 took the first): one with the limits too wins, else a single match with the
