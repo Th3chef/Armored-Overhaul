@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.0.0
+
+New options: Tank Autoloader (the main gun reloads by itself when it runs dry, in the normal reload time) and Gunner Drive for the M-102 FRV (Gunner Drive is now one option where you pick Tanks and FRV, Tanks or FRV), with a driver panel modeled on the FRV's own. Gunner Drive: F sounds the horn; on a controller the left stick drives (forward, back, steering, turning on the spot), its click sounds the horn and the right stick click pops the Maelstrom's smoke (was the left stick click). The Turret indicator is now the Vehicle Indicator: it works in any seat of the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV, and shows each FRV tire's health (clear when popped). Mod Options Menu support: the options you installed can be changed in game under MODS, ARMORED OVERHAUL. Tank Turret Aim Range gets a new Wide choice (-6 to +30); MBT Turrets no longer lowers the guns by itself. FRV Stability is retuned (more grip, weight, ground clearance and suspension travel). Options renamed with a "Tank" prefix and reordered. The Vehicle Indicator and driver panel no longer use settings files. Lighter on every frame, the controller is ignored while the game is in the background, and options step aside if another mod keeps changing the same values.
+
 ## 2.0.1
 
 Fixes: with MBT Turrets on, a Maelstrom wearing a camo no longer loses its hull (only the turret showed; most likely also the multiplayer report of another player's Maelstrom showing only its turret). Using Return to Ship from the pause menu while driving from the gunner seat no longer closes the game. Gunner Drive, the smoke key and the driver panel are safer when a mission ends or a tank is destroyed, the driver panel does less work every frame, and game_font = 0 in its settings file now takes effect at once.
