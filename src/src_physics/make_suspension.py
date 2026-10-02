@@ -26,20 +26,56 @@ import patch_writer
 PHYSICS = 0x5f7203c8f280dab8
 BASTION, MAELSTROM = 0x16474112801385b6, 0xb0c9faf4af8903f9      # TD-220 Bastion hull, TD-110 Maelstrom hull
 GAME = {'spring': 12.0, 'comp': 0.5, 'rebound': 3.7, 'roll_torque': 1.0, 'roll_inertia': 2.0, 'equalizer': 0.0,
-        'travel': 0.325}
-SAG = 9.84            # metres of compression x spring strength under the hull's weight (fitted to the probes)
-LIFT = 0.1            # metres the tanks sit above the game's own ride height (about 10% higher)
+        'travel': 0.325, 'com_z': -0.9}
+# (3.1.0 Test 11) the rigid body's centre of mass (chassis space, z up: the wheel mounts sit at z 0.55): mass 30000 at
+# 0x100, centre of mass (0, 0.5, -0.9) at 0x138. Riding LIFT higher lifts the centre of mass with the hull, so it is
+# lowered by LIFT: it stays as high above the ground as the game has it (Test 10: a tank turning on the spot
+# started to flip).
+RIGID_MASS_AT, RIGID_COM_AT = 0x100, 0x138
+COM_DROP = False      # (Test 17) back to 3.0.1: the centre of mass stays where the game has it
+# (3.1.0 Test 39) In testing: "still need to look at tweaking center of gravity a bit", "flipping shouldnt be easy in a tank";
+# a user on 3.0.1: tanks pushed around by dead bugs, bouncing, launched and flipped. Each preset now lowers the centre of
+# mass by its own 'com_drop' (chosen per preset): Balanced 0.1 m (as high above the ground as the game has it, the 0.1 m
+# lift taken back), Planted 0.25 m (harder to tip). Mass stays the game's 30000.
+# (3.1.0 Test 12) Test 11 still rolled over turning on the spot (roll log: at 2-5 km/h and 30-57 deg/s the lean grows
+# about a degree every tenth of a second until it goes past 35). The wheels' friction rolls the chassis (torque roll
+# factor) Balanced 0.35 -> 0.1, Planted 0.25 -> 0.08, and the roll inertia Balanced 3 -> 5, Planted 4 -> 6 (the game:
+# 1.0 and 2; yaw and pitch 4).
+# (3.1.0 Test 16) SAG measured in game with the Test 15 ride probe (the hull's origin above a helldiver standing beside
+# it): Tank Suspension off -0.230 m, Balanced (spring 66, travel 0.5) -0.162 m, both tanks alike. 66 x (0.5 - 0.068) =
+# 28.5. The old 9.84 (fitted to the 3.0.1 probes) left 3.0.1's wheels on their stops with the mounts moved 0.15-0.19 m
+# up: 3.0.1 rode lower than the game, as a user reported; Test 15's Balanced rode only 0.07 m above it.
+SAG = 28.5            # metres of compression x spring strength under the hull's weight (measured, Test 15)
+LIFT = 0.1            # metres the tanks sit above the game's own ride height (3.1.0 Tests 2-16 tried 0.35; Test 17: back to
+                      # 3.0.1's 0.1 with the measured SAG)
 MOUNT_SIGN = 1.0      # the mount point moves up its suspension axis (probed: the other way sat the tank high)
 PRESETS = {
-    # each wheel rests half-way down 0.5 m of travel; damped to calm it within about a bounce; the chassis: half the
-    # friction difference between the tracks evened out, about a third of the game's roll from the wheels' friction
-    # (0.7 in the tests made the tanks easy to flip), half again the roll inertia
-    'Suspension Balanced': {'spring': 40.0, 'comp': 2.5, 'rebound': 5.0, 'roll_torque': 0.35, 'roll_inertia': 3.0,
-                            'equalizer': 0.5, 'travel': 0.5},
-    # stiffer: a third of 0.45 m used at rest, more damping; the chassis: most of the difference evened out, a quarter
-    # of the roll, roll inertia as high as its yaw and pitch
-    'Suspension Planted': {'spring': 62.0, 'comp': 4.0, 'rebound': 7.5, 'roll_torque': 0.25, 'roll_inertia': 4.0,
-                           'equalizer': 0.8, 'travel': 0.45},
+    # (3.1.0 Test 19) Test 18: "suspension is pretty bouncy and unstable currently, and it flips easily while rotating
+    # 360". Tests 16-18's firm springs (114 / 190) held the wheels off their stops: real travel both ways, which bounced and
+    # leaned. So the springs and damping are 3.0.1's again (40 / 2.5 / 5.0 and 62 / 4.0 / 7.5): with the measured SAG
+    # (28.5) they can't hold the hull's weight (40 x 0.5 = 20, 62 x 0.45 = 27.9), so every wheel rests on its stop like the
+    # game's and only drops into dips (no bounce, as 3.0.1 drove). What 3.0.1 got wrong was the mount points: it moved them
+    # 0.15-0.19 m UP for a rest extension the springs never gave, so 3.0.1 rode that much below the game. Now each mount
+    # moves LIFT down its axis (rest extension 0), so the tanks ride 0.1 m above the game.
+    # Chassis: Test 12's roll fix (kept by choice in Test 18): roll from the wheels' friction 0.1 / 0.08 (3.0.1: 0.35
+    # / 0.25), roll inertia 5 / 6 (3.0.1: 3 / 4); equalizer as 3.0.1. Centre of mass: the game's.
+    # (Test 21) Test 19/20: "the tanks are super tippy, they can tip even when just turning a bit" and "with suspension
+    # off, the tanks ride normally" (same grip, steering and power). With the wheels on their stops like the game's, what
+    # is left different is mostly the chassis: roll from the wheels' friction cut to 0.1 (3.0.1 0.35, Test 17 tipped too),
+    # more roll inertia, the friction equalizer. The game's centre of mass sits below the ground, so that friction leans
+    # the tank into a turn; cutting it took that away. The chassis is the game's again (roll 1.0, inertia 2, equalizer 0);
+    # only the wheels (travel, springs, damping, mounts 0.1 m lower) stay changed.
+    # (Test 23) Test 21: "doesnt tip nearly as much, but the tank still operates pretty strangely when going over a
+    # rock, its still kinda bouncy". The game's springs (12 x 0.325 m = 3.9) carry about a seventh of the hull's weight
+    # (SAG 28.5): the tank rests on its stops and the wheels only follow the ground. 3.0.1's (40 x 0.5 = 20, 62 x 0.45 =
+    # 27.9) carried 70-98% of it: over a rock the wheels on it hit their stops while the others' springs pushed the hull
+    # back up, and it rocked. So the springs are near the game's again (Balanced the game's 12, Planted 16), the damping
+    # is raised (rebound 3.7 -> 6 / 8 against the game's spring: about 1.6 / 1.9 times the game's share of critical), and
+    # the longer travel (the wheels drop into dips) and the 0.1 m lift stay.
+    'Suspension Balanced': {'spring': 12.0, 'comp': 1.0, 'rebound': 6.0, 'roll_torque': 1.0, 'roll_inertia': 2.0,
+                            'equalizer': 0.0, 'travel': 0.5, 'com_drop': 0.1},
+    'Suspension Planted': {'spring': 16.0, 'comp': 1.5, 'rebound': 8.0, 'roll_torque': 1.0, 'roll_inertia': 2.0,
+                           'equalizer': 0.0, 'travel': 0.45, 'com_drop': 0.25},
 }
 # the patch header's engine metadata, as in the game's own packages (the same bytes as the 3.0.0 suspension patches)
 HEADER = ('000000001cfa464200000000f52f5043a38b24bc0014ed000000000000f030010000000000000000000000000000000000000000'
@@ -80,8 +116,10 @@ def rest_extension(p):
 
 
 def mount_shift(p):
-    """How far each wheel's mount point moves up its axis: by its rest extension (the game's ride height), less LIFT."""
-    return max(0.0, rest_extension(p) - LIFT)
+    """How far each wheel's mount point moves up its axis: by its rest extension (the game's ride height), less LIFT.
+    3.1.0: negative when LIFT is more than the rest extension: the mount moves down its axis (probe 4, Test 8: a mount
+    0.5 m down sat the Maelstrom high), so the tank rides LIFT above the game with the same springs and travel."""
+    return rest_extension(p) - LIFT
 
 
 def retune(data, p):
@@ -91,6 +129,9 @@ def retune(data, p):
         put(d, w + 0x54, GAME['spring'], p['spring'])
         put(d, w + 0x58, GAME['comp'], p['comp'])
         put(d, w + 0x5C, GAME['rebound'], p['rebound'])
+    assert abs(f32(d, RIGID_MASS_AT) - 30000) < 1e-3 and abs(f32(d, RIGID_COM_AT) - 0) < 1e-6 and abs(f32(d, RIGID_COM_AT + 4) - 0.5) < 1e-6
+    if COM_DROP: put(d, RIGID_COM_AT + 8, GAME['com_z'], GAME['com_z'] - LIFT)
+    elif p.get('com_drop'): put(d, RIGID_COM_AT + 8, GAME['com_z'], GAME['com_z'] - p['com_drop'])
     r = d.find(b'VRD ')
     assert r > 0 and d.find(b'VRD ', r + 4) < 0, 'expected one vehicle data block'
     assert [round(f32(d, r + o), 4) for o in (0x1C, 0x20, 0x24, 0x30, 0x34, 0x38)] == [1, 1, 1, 4, 2, 4]  # the game's
@@ -117,4 +158,4 @@ if __name__ == '__main__':
         assert struct.unpack_from('<Q', data, 8)[0] == fid, hex(fid)       # (the file names its own resource id)
     for folder, p in PRESETS.items():
         write_patch(os.path.join(out, folder, '9ba626afa44a3aa3.patch_0'), [(fid, PHYSICS, retune(d, p)) for fid, d in originals])
-        print(folder, p, 'rests %.3f m off its stops, rides %.2f m above the game' % (rest_extension(p), rest_extension(p) - mount_shift(p)) if 'travel' in p else '')
+        print(folder, p, 'rests %.3f m off its stops, rides %.2f m above the game, centre of mass z %.2f' % (rest_extension(p), rest_extension(p) - mount_shift(p), GAME['com_z'] - p.get('com_drop', 0)) if 'travel' in p else '')
