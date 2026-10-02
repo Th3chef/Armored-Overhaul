@@ -12,6 +12,10 @@ numbers; Planted also keeps the chassis roll settings of 1.3. What changes, read
   - chassis roll (Havok vehicle data, "VRD " block; Planted only): the roll torque factor (game 0.9) lowered and the
     roll unit inertia (game 0.8) raised.
 Engine and steering stay the game's own.
+(3.1.0 Test 24) In testing: "FRV stability doesnt perform as well as the mod I sent you". Test 24 put grip, wheel radius and
+the chassis roll back to the game's. (Test 30) Retuned around that mod, FRV Anti-Flip 1.1 (its file was the reference): it raises
+grip and wheel radius too and leaves the chassis roll alone, so the roll change was what made Planted worse; Stable is
+now its recipe, Mild about half of it, Planted a step past it, and the chassis roll stays the game's.
 Usage: make_frv.py VANILLA_DIR OUT_DIR   (VANILLA_DIR: the three .physics.main files as Filediver extracts them from
 the game's own archives: frv, frv_supply, frv_flamer)"""
 import struct, sys, os
@@ -24,12 +28,24 @@ FILES = [('frv.physics.main', 0xcc21c7ffd3ebefb9, 3000.0),          # content/fa
 GAME = {'grip': (1.0, 0.9), 'radius': 0.55, 'comp': (0.75, 1.25), 'rebound': (4.0, 6.5), 'com_z': -0.375,
         'roll_torque': 0.9, 'roll_inertia': 0.8}          # (front, rear) where they differ
 PRESETS = {                                               # folder: what each preset sets (mass as a share of the game's)
-    'FRV Mild': {'grip': (1.1, 1.0), 'radius': 0.58, 'comp': (1.0, 1.25), 'rebound': (4.8, 6.8), 'com_z': -0.46,
-                 'mass': 1.15},
-    'FRV Stable': {'grip': (1.15, 1.05), 'radius': 0.6, 'comp': (1.25, 1.25), 'rebound': (5.4, 7.2), 'com_z': -0.56,
-                   'mass': 1.25},
-    'FRV Planted': {'grip': (1.25, 1.15), 'radius': 0.62, 'comp': (1.4, 1.4), 'rebound': (6.2, 8.0), 'com_z': -0.72,
-                    'mass': 1.4, 'roll_torque': 0.5, 'roll_inertia': 1.6},
+    # (3.1.0 Test 30: "retune the frv stabilization settings around this mod", FRV Anti-Flip 1.1). Its recipe on the
+    # M-102 / M-103: mass +33%, centre of mass -0.6, front compression damping 1.25 (the rear's), wheel radius 0.62, grip
+    # 1.2 / 1.1, rebound 5.5 / 7.5, and no change to the chassis roll. So Stable is that recipe, Mild about half of it and
+    # Planted a step past it; the chassis roll stays the game's in all three (lowering it was what made Planted worse).
+    # (3.1.0 Test 40) On Test 39 (run on Mild): "tweak the stable option a bit and add more grip for the frv". Grip
+    # up a step on all three (front / rear): Mild 1.1 / 1.0 -> 1.2 / 1.1 (the old Stable's), Stable 1.2 / 1.1 -> 1.35 /
+    # 1.25 (Anti-Flip 1.1 plus about 12%), Planted 1.25 / 1.15 -> 1.4 / 1.3. Everything else as Test 30.
+    # (3.1.0 Test 41) In testing: "stable feels good, but go ahead and slightly tweak all of the values for stable to not exactly
+    # copy the previous mod". Stable is our own now, each value nudged and still between Mild and Planted: grip 1.36 /
+    # 1.26, radius 0.615, compression 1.2 / 1.3 (front still close to the rear), rebound 5.4 / 7.6, centre of mass -0.62,
+    # mass x1.3.
+    # Test 24: grip and radius the game's, centre of mass -0.5 / -0.65 / -0.85, mass x1.15 / 1.3 / 1.45.
+    'FRV Mild': {'grip': (1.2, 1.1), 'radius': 0.585, 'comp': (1.0, 1.25), 'rebound': (4.75, 7.0), 'com_z': -0.49,
+                 'mass': 1.165},
+    'FRV Stable': {'grip': (1.36, 1.26), 'radius': 0.615, 'comp': (1.2, 1.3), 'rebound': (5.4, 7.6), 'com_z': -0.62,
+                   'mass': 1.3},
+    'FRV Planted': {'grip': (1.4, 1.3), 'radius': 0.62, 'comp': (1.4, 1.4), 'rebound': (6.2, 8.2), 'com_z': -0.75,
+                    'mass': 1.45},
 }
 
 # the patch header's engine metadata, as in the game's own packages (the tank suspension patches carry the same bytes)
