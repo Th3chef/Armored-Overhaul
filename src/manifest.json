@@ -1,7 +1,7 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.0.0",
+  "Name": "Armored Overhaul 3.0.1",
   "IconPath": "thumbnail.png",
   "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank power, grip, steering and suspension; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; and a vehicle indicator. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader.",
   "Options": [
@@ -100,22 +100,22 @@
     },
     {
       "Name": "Tank Suspension",
-      "Description": "Stiffer, better damped suspension for the Bastion and Maelstrom: less bouncing and body roll.",
+      "Description": "Road wheels that work like a tank's: the game's tanks rest on their bump stops, so the wheels can't move. Here each wheel rests part-way down a longer travel and follows the ground, keeping its track down, well damped; the hull is no longer thrown sideways when one track unloads. The tanks ride a little higher than in the game.",
       "Image": "options/tank_suspension.png",
       "SubOptions": [
         {
-          "Name": "Firm",
-          "Description": "Springs a third stiffer, three times the damping.",
+          "Name": "Balanced",
+          "Description": "Half a metre of wheel travel, each wheel resting half-way: soaks up rough ground; the hull resists being rolled and the grip is shared between the tracks.",
           "Include": [
-            "Suspension Firm"
+            "Suspension Balanced"
           ],
           "Image": "options/sub/suspension_firm.png"
         },
         {
-          "Name": "Heavy",
-          "Description": "Springs two thirds stiffer, six times the damping: a planted, heavy ride.",
+          "Name": "Planted",
+          "Description": "Stiffer, more damped wheels with a little less travel; the hull is very hard to roll and the tracks share almost all the grip.",
           "Include": [
-            "Suspension Heavy"
+            "Suspension Planted"
           ],
           "Image": "options/sub/suspension_heavy.png"
         }
@@ -244,7 +244,7 @@
     },
     {
       "Name": "Gunner Drive",
-      "Description": "Drive from the gunner seat when the driver seat is empty: your movement keys drive, the gun works as normal, and a driver panel shows gear, rpm, speed and fuel. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal. Pick which vehicles.",
+      "Description": "Drive from the gunner seat when the driver seat is empty: your movement keys drive, the gun works as normal, and a driver panel shows gear, rpm, speed and fuel. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal, and getting out while it rolls brakes it to a stop. With the Mod Bindings Menu you can set your own keys (controls, tab MODS). Pick which vehicles.",
       "Image": "options/gunner_drive.png",
       "SubOptions": [
         {

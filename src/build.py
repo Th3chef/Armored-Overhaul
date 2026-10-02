@@ -1,7 +1,7 @@
 """Armored Overhaul 3.0 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-  python tools/unpack_release.py Armored-Overhaul-3.0.0.zip     (once: the game-derived parts, see below)
-  python build.py [--check Armored-Overhaul-3.0.0.zip]
+  python tools/unpack_release.py Armored-Overhaul-3.0.1.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.0.1.zip]
 
 - lua/<folder>.lua: each option folder's Lua addon, as shipped. Its first line names the addon
   ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
@@ -27,8 +27,8 @@ LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV G
                'Grip Strong', 'Grip Maximum', 'Steering Responsive', 'Steering Quick', 'Steering Sharp', 'Power Strong',
                'Power Stronger', 'Power Strongest', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
                'Turret Indicator']
-GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Suspension Firm', 'physics/Suspension Firm'),
-                ('Suspension Heavy', 'physics/Suspension Heavy'), ('FRV Mild', 'physics/FRV Mild'),
+GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Suspension Balanced', 'physics/Suspension Balanced'),
+                ('Suspension Planted', 'physics/Suspension Planted'), ('FRV Mild', 'physics/FRV Mild'),
                 ('FRV Stable', 'physics/FRV Stable'), ('FRV Planted', 'physics/FRV Planted')]
 # icons in the zip, in Arsenal order (each option's icon, then its choices')
 IMAGES = ['tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_strongest', 'tank_grip', 'sub/grip_moderate',
