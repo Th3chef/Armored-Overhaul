@@ -14,12 +14,12 @@ def font(size, weight):
     return f
 
 
-# Arsenal order (3.0); tag = group, badge = what changed since 2.0.1
+# Arsenal order (3.0); tag = group, badge = what changed since 2.0.1 (3.0.1: Tank Suspension reworked)
 CARDS = [
     ('tank_power', 'TANK POWER', 'HANDLING', 'More pulling power: quicker off the line and up slopes.', None),
     ('tank_grip', 'TANK GRIP', 'HANDLING', 'Tracks hold their line on slopes and in turns.', None),
     ('tank_steering', 'TANK STEERING', 'HANDLING', 'Quicker to start and stop turning.', None),
-    ('tank_suspension', 'TANK SUSPENSION', 'HANDLING', 'Stiffer and better damped: less bounce and roll.', None),
+    ('tank_suspension', 'TANK SUSPENSION', 'HANDLING', 'Working road wheels: no more sideways throws.', 'UPDATED'),
     ('mbt_turrets', 'TANK MBT TURRETS', 'TURRET', 'The whole top of the tank turns all the way round.', None),
     ('turret_traverse', 'TURRET TRAVERSE', 'TURRET', 'Turns side to side up to twice as fast.', None),
     ('turret_elevation', 'TURRET ELEVATION', 'TURRET', 'Moves up and down up to twice as fast.', None),
