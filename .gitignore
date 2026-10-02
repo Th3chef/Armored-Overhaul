@@ -3,6 +3,11 @@ src/build/
 # game-derived parts, unpacked from the release zip by src/tools/unpack_release.py
 src/models/
 src/physics/
+src/skull/
+# art working folders (src/art/README.md)
+src/art/final/
+src/art/ex/
+src/art/gd/
 __pycache__/
 *.pyc
 # logs
