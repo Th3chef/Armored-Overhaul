@@ -1,15 +1,17 @@
-"""Armored Overhaul - FRV stability (1.3). Writes a patch archive holding the physics resources of the three FRVs
-(M-102 Fast Recon Vehicle, M-103 Supply FRV, M-104 incendiary FRV) retuned so they stay on their wheels. Written from
-the game's own files; every value is checked against the game's number before it is changed.
-Three presets, picked as sub-options of the FRV stability option (Mild, Stable, Planted). What changes, read from each
-file itself:
-  - front suspension damping (Havok raycast wheels, "VRW " block, 0x70-byte wheel records): the game's front wheels
-    have 0.75 compression / 4 rebound damping against the rear's 1.25 / 6.5, so the nose bounces and pitches the car
-    into a roll. The front gets the rear's damping.
-  - centre of mass (rigid body record: mass, then the centre of mass 0x38 later): lowered from z -0.375.
-  - chassis roll (Havok vehicle data, "VRD " block): the roll torque factor (game 0.9: how much of the wheels'
-    sideways force rolls the chassis) lowered and the roll unit inertia (game 0.8; the tanks use 2) raised.
-Mass, grip, engine and steering stay the game's own.
+"""Armored Overhaul - FRV stability (1.3; retuned in 2.1.0). Writes a patch archive holding the physics resources of the
+three FRVs (M-102 Fast Recon Vehicle, M-103 Supply FRV, M-104 incendiary FRV) retuned so they stay on their wheels.
+Written from the game's own files; every value is checked against the game's number before it is changed.
+2.1.0 (released in 3.0.0): tyre grip, wheel radius, front damping, suspension travel and mass added, with our own
+numbers; Planted also keeps the chassis roll settings of 1.3. What changes, read from each file itself:
+  - wheels (Havok raycast wheels, "VRW " block, four 0x70-byte records, front = negative y):
+      +0x24 tyre grip (game front 1.0 / rear 0.9), +0x28 wheel radius (game 0.55: ground clearance),
+      +0x58 compression damping (game front 0.75 / rear 1.25: the soft front lets the nose bounce and pitch the car
+      over; the front gets the rear's), +0x5C rebound damping / suspension travel (game front 4.0 / rear 6.5).
+  - rigid body (mass, then the centre of mass 0x38 later): mass raised (the same share on every FRV) and the centre
+    of mass lowered from z -0.375.
+  - chassis roll (Havok vehicle data, "VRD " block; Planted only): the roll torque factor (game 0.9) lowered and the
+    roll unit inertia (game 0.8) raised.
+Engine and steering stay the game's own.
 Usage: make_frv.py VANILLA_DIR OUT_DIR   (VANILLA_DIR: the three .physics.main files as Filediver extracts them from
 the game's own archives: frv, frv_supply, frv_flamer)"""
 import struct, sys, os
@@ -19,12 +21,15 @@ PHYSICS = 0x5f7203c8f280dab8
 FILES = [('frv.physics.main', 0xcc21c7ffd3ebefb9, 3000.0),          # content/fac_helldivers/vehicles/frv/frv
          ('frv_supply.physics.main', 0x9b2140378640432e, 2500.0),   # .../frv_supply/frv_supply
          ('frv_flamer.physics.main', 0x2d85bfe3d8717fe5, 7500.0)]   # .../frv_heavy/frv_flamer
-FRONT_DAMPING = ((0.75, 4.0), (1.25, 6.5))       # game front (compression, rebound) -> the rear's
-GAME = {'com_z': -0.375, 'roll_torque': 0.9, 'roll_inertia': 0.8}  # (roll torque at VRD +0x1C, roll inertia at VRD +0x34)
-PRESETS = {                                       # folder: centre of mass z, roll torque factor, roll unit inertia
-    'FRV Mild': {'com_z': -0.45, 'roll_torque': 0.7, 'roll_inertia': 1.1},
-    'FRV Stable': {'com_z': -0.55, 'roll_torque': 0.5, 'roll_inertia': 1.6},
-    'FRV Planted': {'com_z': -0.7, 'roll_torque': 0.3, 'roll_inertia': 2.2},
+GAME = {'grip': (1.0, 0.9), 'radius': 0.55, 'comp': (0.75, 1.25), 'rebound': (4.0, 6.5), 'com_z': -0.375,
+        'roll_torque': 0.9, 'roll_inertia': 0.8}          # (front, rear) where they differ
+PRESETS = {                                               # folder: what each preset sets (mass as a share of the game's)
+    'FRV Mild': {'grip': (1.1, 1.0), 'radius': 0.58, 'comp': (1.0, 1.25), 'rebound': (4.8, 6.8), 'com_z': -0.46,
+                 'mass': 1.15},
+    'FRV Stable': {'grip': (1.15, 1.05), 'radius': 0.6, 'comp': (1.25, 1.25), 'rebound': (5.4, 7.2), 'com_z': -0.56,
+                   'mass': 1.25},
+    'FRV Planted': {'grip': (1.25, 1.15), 'radius': 0.62, 'comp': (1.4, 1.4), 'rebound': (6.2, 8.0), 'com_z': -0.72,
+                    'mass': 1.4, 'roll_torque': 0.5, 'roll_inertia': 1.6},
 }
 
 # the patch header's engine metadata, as in the game's own packages (the tank suspension patches carry the same bytes)
@@ -37,7 +42,6 @@ def put(d, o, old, new):
 
 def retune(data, mass, p):
     d = bytearray(data)
-    # wheels: front ones (negative y) get the rear's damping
     v = d.find(b'VRW ')
     assert v > 0 and d.find(b'VRW ', v + 4) < 0
     n = struct.unpack_from('<I', d, v + 4)[0]
@@ -45,22 +49,22 @@ def retune(data, mass, p):
     fronts = 0
     for i in range(n):
         w = v + struct.unpack_from('<I', d, v + 8 + 4 * i)[0]
-        if f32(d, w + 0x10) < 0:
-            put(d, w + 0x58, FRONT_DAMPING[0][0], FRONT_DAMPING[1][0])
-            put(d, w + 0x5C, FRONT_DAMPING[0][1], FRONT_DAMPING[1][1])
-            fronts += 1
-        else:
-            assert abs(f32(d, w + 0x58) - 1.25) < 1e-4 and abs(f32(d, w + 0x5C) - 6.5) < 1e-4
+        k = 0 if f32(d, w + 0x10) < 0 else 1                 # 0 front, 1 rear
+        fronts += k == 0
+        put(d, w + 0x24, GAME['grip'][k], p['grip'][k])
+        put(d, w + 0x28, GAME['radius'], p['radius'])
+        put(d, w + 0x58, GAME['comp'][k], p['comp'][k])
+        put(d, w + 0x5C, GAME['rebound'][k], p['rebound'][k])
     assert fronts == 2
-    # rigid body: the vehicle's mass in the first body record, the centre of mass 0x38 after it
     at = [o for o in (0x120, 0x130) if abs(f32(d, o) - mass) < 1e-3]
     assert len(at) == 1, 'mass not found'
+    put(d, at[0], mass, round(mass * p['mass']))
     put(d, at[0] + 0x40, GAME['com_z'], p['com_z'])
-    # vehicle data
     r = d.find(b'VRD ')
     assert r > 0 and d.find(b'VRD ', r + 4) < 0
-    put(d, r + 0x1C, GAME['roll_torque'], p['roll_torque'])
-    put(d, r + 0x34, GAME['roll_inertia'], p['roll_inertia'])
+    if 'roll_torque' in p:
+        put(d, r + 0x1C, GAME['roll_torque'], p['roll_torque'])
+        put(d, r + 0x34, GAME['roll_inertia'], p['roll_inertia'])
     return bytes(d)
 
 def write_patch(path, entries):
