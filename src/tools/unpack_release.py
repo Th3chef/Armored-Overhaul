@@ -4,7 +4,7 @@ Skull (skull/).
   python tools/unpack_release.py Armored-Overhaul-<version>.zip"""
 import os, sys, zipfile
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PRESETS = ('Suspension Firm', 'Suspension Heavy', 'FRV Mild', 'FRV Stable', 'FRV Planted')
+PRESETS = ('Suspension Balanced', 'Suspension Planted', 'FRV Mild', 'FRV Stable', 'FRV Planted')
 with zipfile.ZipFile(sys.argv[1]) as z:
     for name in z.namelist():
         folder, _, base = name.partition('/')
