@@ -1,4 +1,4 @@
-"""'What's in 3.0' page photo (features_1920x1080.png): the thirteen Arsenal options with their icons and one line each,
+"""'What's in 3.1' page photo (features_1920x1080.png): the thirteen Arsenal options with their icons and one line each,
 plus the Mod Options Menu, over the darkened 16:9 art. python3 features3.py (needs clean_wide.png and options/)."""
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageEnhance
 
@@ -14,22 +14,22 @@ def font(size, weight):
     return f
 
 
-# Arsenal order (3.0); tag = group, badge = what changed since 2.0.1 (3.0.1: Tank Suspension reworked)
+# Arsenal order (3.1); tag = group, badge = what changed since 3.0.1
 CARDS = [
     ('tank_power', 'TANK POWER', 'HANDLING', 'More pulling power: quicker off the line and up slopes.', None),
     ('tank_grip', 'TANK GRIP', 'HANDLING', 'Tracks hold their line on slopes and in turns.', None),
     ('tank_steering', 'TANK STEERING', 'HANDLING', 'Quicker to start and stop turning.', None),
-    ('tank_suspension', 'TANK SUSPENSION', 'HANDLING', 'Working road wheels: no more sideways throws.', 'UPDATED'),
-    ('mbt_turrets', 'TANK MBT TURRETS', 'TURRET', 'The whole top of the tank turns all the way round.', None),
-    ('turret_traverse', 'TURRET TRAVERSE', 'TURRET', 'Turns side to side up to twice as fast.', None),
+    ('tank_suspension', 'TANK SUSPENSION', 'HANDLING', 'A calm ride, a little higher and hard to tip.', 'UPDATED'),
+    ('mbt_turrets', 'TANK MBT TURRETS', 'TURRET', 'Rebuilt: wears your camo and damage. 360 or 180.', 'UPDATED'),
+    ('turret_traverse', 'TURRET TRAVERSE', 'TURRET', 'Turns side to side up to three times as fast.', 'UPDATED'),
     ('turret_elevation', 'TURRET ELEVATION', 'TURRET', 'Moves up and down up to twice as fast.', None),
-    ('turret_aim_range', 'TURRET AIM RANGE', 'TURRET', 'Aims lower and higher: new Wide choice, up to -15° / +45°.', 'UPDATED'),
-    ('autoloader', 'TANK AUTOLOADER', 'TURRET', 'The main gun reloads by itself when it runs dry.', 'NEW'),
-    ('gunner_drive', 'GUNNER DRIVE', 'GUNNER SEAT', 'Drive tanks and the FRV from the gunner seat. Horn and controller.', 'UPDATED'),
+    ('turret_aim_range', 'TURRET AIM RANGE', 'TURRET', 'Aims lower and higher: up to -15° / +45°.', None),
+    ('autoloader', 'TANK AUTOLOADER', 'TURRET', 'The main gun reloads by itself when it runs dry.', None),
+    ('gunner_drive', 'GUNNER DRIVE', 'GUNNER SEAT', 'Drive tanks and the FRV from the gunner seat. Horn and controller.', None),
     ('gunner_camera', 'TANK GUNNER CAMERA', 'GUNNER SEAT', 'Lower and further behind the turret: four distances.', None),
-    ('frv_stability', 'FRV STABILITY', 'FRV', 'Retuned: FRVs stay on their wheels. Mild, Stable or Planted.', 'UPDATED'),
-    ('turret_indicator', 'VEHICLE INDICATOR', 'ANY SEAT', 'Was the Turret indicator: now in tanks and FRVs, tire by tire.', 'UPDATED'),
-    (None, 'MOD OPTIONS MENU', 'IN GAME', "Change the options you installed in game, under MODS, ARMORED OVERHAUL (CowboyBingus's Mod Options Menu, optional).", 'NEW'),
+    ('frv_stability', 'FRV STABILITY', 'FRV', 'Retuned with more grip: Stable, Mild or Planted.', 'UPDATED'),
+    ('turret_indicator', 'VEHICLE INDICATOR', 'ANY SEAT', 'Your vehicle and gun at a glance, in tanks and FRVs, tire by tire.', None),
+    (None, 'MOD OPTIONS MENU', 'IN GAME', "Change the options you installed in game, under MODS, ARMORED OVERHAUL (CowboyBingus's Mod Options Menu, optional).", None),
 ]
 
 
@@ -64,12 +64,12 @@ def main():
     im = bg.convert('RGBA')
     d = ImageDraw.Draw(im)
     d.rectangle([60, 56, 290, 166], fill=YELLOW)
-    d.text((175, 111), '3.0', font=font(104, 700), fill=(14, 14, 16), anchor='mm')
+    d.text((175, 111), '3.1', font=font(104, 700), fill=(14, 14, 16), anchor='mm')
     d.text((326, 106), 'ARMORED ', font=font(84, 700), fill=(255, 255, 255), anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
     x = 326 + d.textlength('ARMORED ', font=font(84, 700))
     d.text((x, 106), 'OVERHAUL', font=font(84, 700), fill=YELLOW, anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
-    d.text((330, 160), 'THIRTEEN OPTIONS  •  NOW ALSO IN GAME', font=font(32, 500), fill=(215, 215, 215), anchor='ls')
-    d.text((1860, 106), "WHAT'S IN 3.0", font=font(64, 700), fill=YELLOW, anchor='rs', stroke_width=2, stroke_fill=(10, 10, 12))
+    d.text((330, 160), 'THIRTEEN OPTIONS  •  REBUILT TURRETS', font=font(32, 500), fill=(215, 215, 215), anchor='ls')
+    d.text((1860, 106), "WHAT'S IN 3.1", font=font(64, 700), fill=YELLOW, anchor='rs', stroke_width=2, stroke_fill=(10, 10, 12))
     d.text((1860, 158), 'TD-220 BASTION  •  TD-110 MAELSTROM  •  FRVS', font=font(30, 600), fill=(255, 255, 255), anchor='rs')
     cols, x0, y0, gx, gy = 5, 60, 214, 18, 22
     cw = (1800 - gx * (cols - 1)) // cols

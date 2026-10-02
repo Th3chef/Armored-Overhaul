@@ -1,4 +1,4 @@
-"""Armored Overhaul 3.0 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
+"""Armored Overhaul 3.1 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
 gallery photo, the Nexus header and the 2:1 GitHub social picture.
   python3 art3_compose.py [square] [wide] [header] [social]   (needs R/sq.png, R/mask_sq.png, R/mist_sq_0001.png, the same for wd and hd)
 Outputs: thumbnail_1254.png, thumbnail_512.png (Arsenal), gallery_1920x1080.png, clean_square.png (no text, for icons)."""
@@ -7,10 +7,10 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ART = '.'
-R = 'final'
+R = '../final'
 FONT = ART + '/Oswald-VF.ttf'
 YELLOW = (255, 196, 0)
-VERSION = '3.0'
+VERSION = '3.1'
 TAG1, TAG2 = 'DRIVE  \u2022  FIGHT  \u2022  RELOAD', 'COMMAND YOUR ARMOR'
 VEHICLES = 'TD-220 BASTION  \u2022  TD-110 MAELSTROM  \u2022  M-102 FRV'
 FEATURES_SQUARE = ['TANK POWER  •  GRIP  •  STEERING  •  SUSPENSION',
