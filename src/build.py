@@ -1,13 +1,13 @@
-"""Armored Overhaul 3.0 - builds the Arsenal / HD2 Mod Manager zip from this folder.
+"""Armored Overhaul 3.1 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-  python tools/unpack_release.py Armored-Overhaul-3.0.1.zip     (once: the game-derived parts, see below)
-  python build.py [--check Armored-Overhaul-3.0.1.zip]
+  python tools/unpack_release.py Armored-Overhaul-3.1.0.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.1.0.zip]
 
-- lua/<folder>.lua: each option folder's Lua addon, as shipped. Its first line names the addon
+- lua/<folder>.lua: each option folder's Lua addon, as shipped (DERIVED folders are made from another folder's file). Its first line names the addon
   ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
 - manifest.json, art/thumbnail.png and options/ (the option and sub-option icons) go into the zip as they are.
-- The game-derived parts are not stored here: the Turret Models patch (the tank hulls and turrets, built from the game's
-  own models with src_models/), the Tank Suspension and FRV Stability presets (the vehicles' own physics files, made by
+- The game-derived parts are not stored here: the Turret Models patch (the two tank hulls, built from the game's own
+  hull models with src_models/build_mbt_hull.py), the Tank Suspension and FRV Stability presets (the vehicles' own physics files, made by
   src_physics/) and the Turret Skull (a copy of the game's own Helldivers skull icon). tools/unpack_release.py takes
   them out of a release zip into models/, physics/<preset>/ and skull/.
 - --check: compares the zip it made with a release zip, file by file and byte for byte (the order of the files in
@@ -22,18 +22,24 @@ LUA_TYPE = 0xA14E8DFA2CD117E2          # the game's lua resource type
 PATCH = '9ba626afa44a3aa3.patch_0'
 # zip order: the addon folders, then the game-derived ones (folder -> where unpack_release.py puts it)
 LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV Gunner Drive', 'Turret Core', 'MBT Turrets',
+               'MBT Turrets 180',
                'Traverse Quick', 'Traverse Fast', 'Traverse Very Fast', 'Elevation Quick', 'Elevation Fast',
                'Elevation Very Fast', 'Aim Range Wide', 'Aim Range Wider', 'Aim Range Widest', 'Grip Moderate',
                'Grip Strong', 'Grip Maximum', 'Steering Responsive', 'Steering Quick', 'Steering Sharp', 'Power Strong',
                'Power Stronger', 'Power Strongest', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
                'Turret Indicator']
+# (3.1.0 Test 26) folders made from another folder's Lua: the MBT Turrets 180 choice is the MBT Turrets addon with one line
+# more (its flag asks the turret core for 90 degrees each side), so the two can't drift apart
+DERIVED = {'MBT Turrets 180': ('MBT Turrets', b'o.mbt = true\n',
+                               b'o.mbt = true\no.mbt_arc = 90                    -- (3.1.0 Test 26) the 180 choice: 90 degrees each side\n')}
 GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Suspension Balanced', 'physics/Suspension Balanced'),
                 ('Suspension Planted', 'physics/Suspension Planted'), ('FRV Mild', 'physics/FRV Mild'),
                 ('FRV Stable', 'physics/FRV Stable'), ('FRV Planted', 'physics/FRV Planted')]
 # icons in the zip, in Arsenal order (each option's icon, then its choices')
 IMAGES = ['tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_strongest', 'tank_grip', 'sub/grip_moderate',
           'sub/grip_strong', 'sub/grip_maximum', 'tank_steering', 'sub/steering_responsive', 'sub/steering_quick',
-          'sub/steering_sharp', 'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy', 'mbt_turrets',
+          'sub/steering_sharp', 'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy', 'mbt_turrets', 'sub/mbt_360',
+          'sub/mbt_180',
           'turret_traverse', 'sub/traverse_quick', 'sub/traverse_fast', 'sub/traverse_very_fast', 'turret_elevation',
           'sub/elevation_quick', 'sub/elevation_fast', 'sub/elevation_very_fast', 'turret_aim_range', 'sub/aim_range_wide',
           'sub/aim_range_wider', 'sub/aim_range_widest', 'autoloader', 'gunner_drive', 'sub/gunner_drive_tanks',
@@ -54,10 +60,18 @@ def resource_hash(name):
     return v
 
 
-def lua_patch(path):
-    text = open(path, 'rb').read()
+def lua_text(folder):
+    if folder in DERIVED:
+        src, old, new = DERIVED[folder]
+        text = open(os.path.join(HERE, 'lua', src + '.lua'), 'rb').read()
+        assert text.count(old) == 1, folder + ': the line to change is not in ' + src
+        return text.replace(old, new)
+    return open(os.path.join(HERE, 'lua', folder + '.lua'), 'rb').read()
+
+
+def lua_patch(text):
     first = text.split(b'\n', 1)[0]
-    assert first.startswith(b'-- HD2-Addon: '), path + ': the first line must name the addon'
+    assert first.startswith(b'-- HD2-Addon: '), 'the first line must name the addon'
     rid = resource_hash(first[len(b'-- HD2-Addon: '):].strip().decode())
     data = struct.pack('<II', len(text), 2) + text            # length, then 2 = Lua source
     toc, gpu, stream = patch_writer.write([(rid, LUA_TYPE, data, b'', b'', 16)], [(LUA_TYPE, 16)])
@@ -86,7 +100,7 @@ def main():
         for im in IMAGES:
             zput(z, 'options/%s.png' % im, open(os.path.join(HERE, 'options', im + '.png'), 'rb').read())
         for folder in LUA_FOLDERS:
-            for ext, data in zip(('', '.gpu_resources', '.stream'), lua_patch(os.path.join(HERE, 'lua', folder + '.lua'))):
+            for ext, data in zip(('', '.gpu_resources', '.stream'), lua_patch(lua_text(folder))):
                 zput(z, '%s/%s%s' % (folder, PATCH, ext), data)
         for folder, sub in GAME_FOLDERS:
             for ext in ('', '.gpu_resources', '.stream'):
