@@ -73,7 +73,7 @@ Remove it in your mod manager and deploy. Nothing is left behind in the game; it
 ## Compatibility
 
 - Don't combine it with other mods that change the Bastion or Maelstrom turrets, models, handling or suspension (for example casemate or traverse turret mods, tank model replacers or tank reskins that replace the hull models), or with other drive-from-the-gunner-seat or gunner camera mods. Turn off the matching option instead if you want to keep another mod. If another mod keeps changing the same tank or camera values back, Armored Overhaul leaves them to it and says so in its log.
-- FRV Stability changes the same files as other FRV handling or anti-flip mods; use one or the other.
+- FRV Stability changes the same files as other FRV handling mods; use one or the other.
 - The exosuits are not changed.
 - Made and tested on the September 2026 game version.
 
