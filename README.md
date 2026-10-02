@@ -118,7 +118,6 @@ python build.py --check Armored-Overhaul-3.1.0.zip
 ## Credits
 - **CowboyBingus** - Bingus Shared Loader and the Mod Options Menu.
 - **Filediver** and **HD2SDK** (Blender add-on) - the tools used to read the game's models and build the turrets.
-- **FRV Anti-Flip** - the FRV mod the FRV Stability tuning was compared against.
 - **HD2 HUD+** - showed how to draw on screen and use the game's own HUD font from a Lua addon.
 
 ## Changelog
