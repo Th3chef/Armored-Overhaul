@@ -116,7 +116,7 @@ python build.py --check Armored-Overhaul-3.0.1.zip
 `--check` compares the zip it makes with the release zip, file by file (every file is the same, byte for byte). `src_physics/` holds the scripts that make the suspension and FRV presets from the game's physics files, `src_models/` the Blender scripts that build the turret models, and `src/art/` how the pictures are made.
 
 ## Credits
-- **CowboyBingus** - Bingus Shared Loader and the Mod Options Menu.
+- **CowboyBingus** - Bingus Shared Loader, the Mod Options Menu and the Mod Bindings Menu.
 - **HD2SDK** (Blender add-on) and **Filediver** - the tools used to build the turret models from the game's files.
 - **HD2 HUD+** - showed how to draw on screen and use the game's own HUD font from a Lua addon.
 
