@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.0.1 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.1.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -20,6 +20,10 @@
 -- The gun only turns toward where the gunner camera looks, and the tank gunner camera is held to +/-40 degrees by
 -- its preset in the game's camera preset table (0x90-byte records numbered by id; +0x4C/+0x50 pitch min/max,
 -- +0x54/+0x58 yaw min/max). The addon widens that one preset's left/right range to all the way round.
+-- (3.1.0 Test 26) The game takes a turret's turn speed when the tank is called in: Test 22 raised it while the hull turned
+-- (written up to +95 deg/s) and the turret never turned faster than the option's speed. So no live changes; instead the
+-- traverse presets are faster (Test 25: Quick x1.5, Fast x2, Very fast x3 = 75 deg/s). Settings changed in the
+-- menu reach the tanks called in afterwards.
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 if rawget(_G, 'ArmoredOverhaulMBTTurrets') then return end
 local TESTER = false
@@ -30,22 +34,32 @@ local TWO32 = 4294967296
 local GUNS = {
     -- tank, name, entity hash (hi, lo)
     {tank = 'bastion', name = 'Bastion main gun', hi = 0x1FA1F596, lo = 0x769225C2},
-    {tank = 'bastion', name = 'Bastion second gun', hi = 0x439F9E65, lo = 0xC18567DA},
+    {tank = 'bastion', name = 'Bastion second gun', hi = 0x439F9E65, lo = 0xC18567DA, second = true},
     {tank = 'maelstrom', name = 'Maelstrom main gun', hi = 0xD58AE6A0, lo = 0x4EDB10DE},
-    {tank = 'maelstrom', name = 'Maelstrom laser designator', hi = 0xC36B5B37, lo = 0xC058DBDD},
+    {tank = 'maelstrom', name = 'Maelstrom laser designator', hi = 0xC36B5B37, lo = 0xC058DBDD, second = true},
 }
 local RECORD_SIZE = 0x4C
 local FIELD = {yaw_speed = 0x08, pitch_speed = 0x0C, pitch_min = 0x14, pitch_max = 0x18, yaw_min = 0x1C, yaw_max = 0x20}
+-- (3.1.0 Test 30) Test 29 also raised +0x10 (0.8 on every tank gun: 45.8 deg/s read as radians) by the traverse factor,
+-- as a guess at the turret's hard top speed: the turret still never turned faster than 46 deg/s against the hull, so
+-- that was not it and +0x10 is left alone again.
 
 -- MBT Turrets: the left/right arc goes all the way round (the game's is +/-20 degrees). How far down the gun aims
 -- is the Tank Turret Aim Range option's (2.1 Test 7: MBT Turrets no longer lowers it to 6 below).
 local ARC = 180
+-- (3.1.0 Test 26) MBT Turrets has two choices: all the way round (360, the default) and 180 (the MBT Turrets 180 folder,
+-- whose flag sets mbt_arc = 90: the guns, and the gunner view with them, turn 90 degrees either side of straight ahead)
+-- (3.1.0) With MBT Turrets the turret models turn the hull's second gun mount (where the Bastion's second gun and the
+-- Maelstrom's laser designator sit) to the main gun's heading, so those two keep their own left/right locked straight
+-- (a sliver either way: the game wants a range) and point where the main gun does.
+local SECOND_LOCK = 0.01
 -- The picked options (set by their flag addons when the game loads; read again at every check)
 local menu_opts = {}            -- (3.0) set from the Mod Options Menu
 local function options()
     local o = rawget(_G, 'ArmoredOverhaulTurretOptions')
     if type(o) ~= 'table' then return {} end
     local out = {mbt = o.mbt == true}
+    if out.mbt and type(o.mbt_arc) == 'number' and o.mbt_arc >= 20 and o.mbt_arc < ARC then out.mbt_arc = o.mbt_arc end
     if type(o.traverse) == 'number' and o.traverse >= 0.25 and o.traverse <= 10 then out.traverse = o.traverse end
     if type(o.elevation) == 'number' and o.elevation >= 0.25 and o.elevation <= 10 then out.elevation = o.elevation end
     local r = o.range
@@ -54,7 +68,6 @@ local function options()
     end
     -- (3.0) the Mod Options Menu's values, for the options that are installed (see menu_rows)
     local m = menu_opts
-    if out.mbt and m.mbt ~= nil then out.mbt = m.mbt end
     if out.traverse and m.traverse ~= nil then out.traverse = m.traverse or nil end         -- (false: Off)
     if out.elevation and m.elevation ~= nil then out.elevation = m.elevation or nil end
     if out.range and m.range ~= nil then out.range = m.range and {m.range[1], m.range[2]} or nil end
@@ -62,7 +75,7 @@ local function options()
 end
 local function options_text(o)
     local t = {}
-    if o.mbt then t[#t + 1] = 'MBT Turrets (all the way round)' end
+    if o.mbt then t[#t + 1] = o.mbt_arc and string.format('MBT Turrets (%g degrees: %g each side)', 2 * o.mbt_arc, o.mbt_arc) or 'MBT Turrets (all the way round)' end
     if o.traverse then t[#t + 1] = string.format('traverse x%g', o.traverse) end
     if o.elevation then t[#t + 1] = string.format('elevation speed x%g', o.elevation) end
     if o.range then t[#t + 1] = string.format('aim range %g..%g deg', o.range[1], o.range[2]) end
@@ -85,12 +98,18 @@ local CAMERA_KNOWN_RVA = 0x32F9990
 local CAMERA_KNOWN_ID = 26
 local CAMERA_STRIDE = 0x90
 local CAMERA_LIMITS_AT = 0x4C
+-- (3.1.0 Test 28) +0x04 / +0x08: how fast the gunner view turns left/right and up/down for a given mouse or stick move
+-- (0.25 for the tank gunner; nearly every other camera in the game has 1). In testing "the view turns slowly" - with the
+-- view at a quarter speed, a turret set to turn 100 deg/s never turned faster than about 50 (Test 24). Tank Turret
+-- Traverse speeds the view's left/right up by its own factor, Tank Turret Elevation its up/down.
+local CAMERA_SPEED_AT = 0x04
+local CAMERA_SPEED = {yaw = 0, pitch = 4}
 local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00\x20\x42' -- -15 25 -40 40
 -- (3.0.1 review) the gunner preset's own values at +0x04..+0x1F (as the Gunner camera option finds it): its second signature
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.0.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.1.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -396,7 +415,7 @@ local function camera_scan_step()
             local rec = game + cscan.offset + f - 1 - CAMERA_LIMITS_AT
             -- (a match in the overlap with the next chunk is taken there)
             if f - 1 < 0x40000 and camera_check(rec) then
-                local list = read(rec + 4, #CAMERA_PREFIX) == CAMERA_PREFIX and cscan.prefixed or cscan.other
+                local list = read(rec + 4, #CAMERA_PREFIX) == CAMERA_PREFIX and cscan.prefixed or cscan.other  -- (vanilla: before any write)
                 list[#list + 1] = rec
             end
             at = f + 1
@@ -444,7 +463,8 @@ local opts = {}
 local function wanted_for(gun)
     local o = originals[gun.name]
     local w = {yaw_speed = o.yaw_speed * (opts.traverse or 1), pitch_speed = o.pitch_speed * (opts.elevation or 1),
-               yaw_min = opts.mbt and -ARC or o.yaw_min, yaw_max = opts.mbt and ARC or o.yaw_max,
+               yaw_min = opts.mbt and (gun.second and -SECOND_LOCK or -(opts.mbt_arc or ARC)) or o.yaw_min,
+               yaw_max = opts.mbt and (gun.second and SECOND_LOCK or (opts.mbt_arc or ARC)) or o.yaw_max,
                pitch_min = o.pitch_min, pitch_max = o.pitch_max}
     if opts.range then w.pitch_min, w.pitch_max = opts.range[1], opts.range[2] end
     return w
@@ -456,7 +476,32 @@ local function camera_wanted()
     local o = originals.camera
     local lo, hi = o.pitch_min, o.pitch_max
     if opts.range then lo, hi = min(lo, opts.range[1] - 5), max(hi, opts.range[2]) end
-    return {yaw_min = opts.mbt and -180 or o.yaw_min, yaw_max = opts.mbt and 180 or o.yaw_max, pitch_min = lo, pitch_max = hi}
+    -- (Test 26) with the 180 choice the view stops where the gun does, so the gun never fires off to the side of where
+    -- it points (the game's own view goes 20 degrees past its gun)
+    local arc = opts.mbt and (opts.mbt_arc or 180)
+    return {yaw_min = arc and -arc or o.yaw_min, yaw_max = arc or o.yaw_max, pitch_min = lo, pitch_max = hi}
+end
+
+-- the gunner view's look speed (Test 28): {yaw, pitch}, or nil when not plausible
+local function camera_speed(rec)
+    local s = read(rec + CAMERA_SPEED_AT, 8)
+    if not s then return nil end
+    local v = {yaw = f32(s, 0), pitch = f32(s, 4)}
+    if not (v.yaw and v.pitch and v.yaw > 0.01 and v.yaw <= 4 and v.pitch > 0.01 and v.pitch <= 4) then return nil end
+    return v
+end
+-- (3.1.0 review) the game's own look speed (0.25 both ways). If the game's Lua is reloaded in the same session (a mod
+-- manager redeploy with the game open), the preset still holds what the last load wrote (0.25 x a factor): that is
+-- taken as the game's 0.25 again, so the factor isn't applied twice (Very fast would have become x9)
+local GAME_LOOK = 0.25
+local LOOK_FACTORS = {1.25, 1.5, 2, 3}
+local function game_look(v)
+    for _, f in ipairs(LOOK_FACTORS) do if math.abs(v - GAME_LOOK * f) < 1e-5 then return GAME_LOOK end end
+    return v
+end
+local function camera_speed_wanted()
+    local o = originals.camera_speed
+    return {yaw = o.yaw * (opts.traverse or 1), pitch = o.pitch * (opts.elevation or 1)}
 end
 
 local function differs(fields, a, b)
@@ -508,6 +553,7 @@ local function apply()
     if base == nil or num(b) ~= num(base) then base = b; tries = {}; fight = {set = {}, backs = {}, off = {}} end
     opts = options()
     state.options = options_text(opts)
+    state.traverse_now = opts.traverse or 1          -- (Test 31) for the turret turner's mount help (its target speed)
     local changed, open = 0, 0
     for _, g in ipairs(GUNS) do
         local rec = find_record(base, acc, g)
@@ -537,9 +583,21 @@ local function apply()
                 function() return (camera_check(camera)) end)
             changed = changed + n
             if problem and problem ~= FOUGHT then open = open + 1 end
+            -- (Test 28) the view's look speed, with the turret's speeds
+            local spd, sn, sproblem = camera_speed(camera), 0, nil
+            if spd then
+                originals.camera_speed = originals.camera_speed or {yaw = game_look(spd.yaw), pitch = game_look(spd.pitch)}
+                sn, spd, sproblem = put('camera speed', camera + CAMERA_SPEED_AT, 8, CAMERA_SPEED, spd, camera_speed_wanted(),
+                    function() return camera_speed(camera) end)
+                changed = changed + sn
+                if sproblem and sproblem ~= FOUGHT then open = open + 1 end
+            end
             state.camera = string.format('view pitch %.0f..%.0f, turn %.0f..%.0f', now.pitch_min, now.pitch_max,
-                now.yaw_min, now.yaw_max) .. (n > 0 and ' (re-enter the gunner seat)' or '')
-                .. (problem and ' [' .. problem .. ']' or '')
+                now.yaw_min, now.yaw_max)
+                .. (spd and originals.camera_speed and string.format(', look speed x%g left/right, x%g up/down',
+                    spd.yaw / originals.camera_speed.yaw, spd.pitch / originals.camera_speed.pitch) or ', look speed not read')
+                .. ((n > 0 or sn > 0) and ' (re-enter the gunner seat)' or '')
+                .. (problem and ' [' .. problem .. ']' or '') .. (sproblem and ' [look speed: ' .. sproblem .. ']' or '')
         end
     end
     settled = open == 0 and changed == 0
@@ -606,7 +664,8 @@ end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
 local RANGES = {{-6, 30}, {-10, 35}, {-15, 45}}       -- Tank Turret Aim Range: Wide, Wider, Widest
-local SPEEDS = {1.25, 1.5, 2}                          -- Traverse and Elevation: Quick, Fast, Very fast
+local SPEEDS = {1.25, 1.5, 2}                          -- Elevation: Quick, Fast, Very fast
+local TRAVERSE_SPEEDS = {1.5, 2, 3}                    -- (3.1.0 Test 26) Traverse: Quick, Fast, Very fast
 local function tag(v) return (string.format('%g', v):gsub('%.', '_')) end
 local function pick_of(list, v)
     for i, x in ipairs(list) do
@@ -615,36 +674,36 @@ local function pick_of(list, v)
     return 2
 end
 -- The turret options installed, as the mod manager shows them, each starting at its pick (the id carries it).
--- Off = the game's own. A change is applied within a frame (the gunner view with it).
+-- Off = the game's own. A change is written within a frame (the gunner view with it); the game takes a turret's
+-- speeds when the tank is called in.
 menu_rows.turret = function()
     local o, rows = rawget(_G, 'ArmoredOverhaulTurretOptions'), {}
     if type(o) ~= 'table' then return rows end
-    if o.mbt == true then
-        rows[#rows + 1] = {'armored_overhaul.turret.mbt', {type = 'toggle', label = 'Tank MBT Turrets', default = true,
-            description = 'The Bastion and Maelstrom turrets turn all the way round like a main battle tank. The Maelstrom\'s missile pods and smoke launchers turn with it. Only you see the new turrets, and their armor always looks undamaged.'}, 'mbt'}
-    end
+    -- (3.1.0) no MBT Turrets switch here: the turret models load with the game and can't be taken off in game, so
+    -- switching MBT off here left the moved turret top swinging only the gun's 20 degrees. MBT Turrets is picked in the
+    -- mod manager only, where leaving it off loads the game's own tank models.
     if type(o.traverse) == 'number' then
         rows[#rows + 1] = {'armored_overhaul.turret.traverse.' .. tag(o.traverse), {type = 'choice', label = 'Tank Turret Traverse',
-            choices = {'Off', 'Quick (x1.25)', 'Fast (x1.5)', 'Very fast (x2)'}, default = pick_of(SPEEDS, o.traverse),
-            description = 'How fast the Bastion and Maelstrom turrets turn (the game: 25 degrees a second). Works with or without MBT Turrets.'}, 'traverse'}
+            choices = {'Off', 'Quick (x1.5)', 'Fast (x2)', 'Very fast (x3)'}, default = pick_of(TRAVERSE_SPEEDS, o.traverse),
+            description = 'How fast the Bastion and Maelstrom turrets turn (the game: 25 degrees a second), and the gunner view left/right with them. Very fast is 75. With MBT Turrets all the way round a change applies at once; otherwise tanks called in after a change use it. The view: from the next time you sit in the gunner seat.'}, 'traverse'}
     end
     if type(o.elevation) == 'number' then
         rows[#rows + 1] = {'armored_overhaul.turret.elevation.' .. tag(o.elevation), {type = 'choice', label = 'Tank Turret Elevation',
             choices = {'Off', 'Quick (x1.25)', 'Fast (x1.5)', 'Very fast (x2)'}, default = pick_of(SPEEDS, o.elevation),
-            description = 'How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second).'}, 'elevation'}
+            description = 'How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second), and the gunner view up/down with them. Tanks called in after a change use it.'}, 'elevation'}
     end
     if type(o.range) == 'table' then
         local pick = pick_of(RANGES, o.range)
         rows[#rows + 1] = {'armored_overhaul.turret.aim_range.' .. (pick - 1), {type = 'choice', label = 'Tank Turret Aim Range',
             choices = {'Off', 'Wide (-6..+30 deg)', 'Wider (-10..+35 deg)', 'Widest (-15..+45 deg)'}, default = pick,
-            description = 'How far down and up the Bastion and Maelstrom guns aim (the game: 3 below to 25 above).'}, 'range'}
+            description = 'How far down and up the Bastion and Maelstrom guns aim (the game: 3 below to 25 above). Tanks called in after a change use it.'}, 'range'}
     end
     return rows
 end
 menu_set = function(key, v)
-    if key == 'mbt' then menu_opts.mbt = v == true or v == 1
-    elseif key == 'range' then menu_opts.range = RANGES[v - 1] or false
-    elseif key == 'traverse' or key == 'elevation' then menu_opts[key] = SPEEDS[v - 1] or false end
+    if key == 'range' then menu_opts.range = RANGES[v - 1] or false
+    elseif key == 'traverse' then menu_opts.traverse = TRAVERSE_SPEEDS[v - 1] or false
+    elseif key == 'elevation' then menu_opts.elevation = SPEEDS[v - 1] or false end
     next_check = 0                                       -- (applied at the next frame)
 end
 local shown
