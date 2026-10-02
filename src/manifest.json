@@ -1,7 +1,7 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.0.1",
+  "Name": "Armored Overhaul 3.1.0",
   "IconPath": "thumbnail.png",
   "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank power, grip, steering and suspension; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; and a vehicle indicator. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader.",
   "Options": [
@@ -100,12 +100,12 @@
     },
     {
       "Name": "Tank Suspension",
-      "Description": "Road wheels that work like a tank's: the game's tanks rest on their bump stops, so the wheels can't move. Here each wheel rests part-way down a longer travel and follows the ground, keeping its track down, well damped; the hull is no longer thrown sideways when one track unloads. The tanks ride a little higher than in the game.",
+      "Description": "Longer road wheel travel for the Bastion and Maelstrom: the wheels drop into dips so the tracks stay on the ground, firmer damping settles the hull quickly after rocks and bumps, and a lower center of gravity makes them harder to tip. The tanks ride 0.1 m higher than in the game.",
       "Image": "options/tank_suspension.png",
       "SubOptions": [
         {
           "Name": "Balanced",
-          "Description": "Half a metre of wheel travel, each wheel resting half-way: soaks up rough ground; the hull resists being rolled and the grip is shared between the tracks.",
+          "Description": "Half a metre of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game.",
           "Include": [
             "Suspension Balanced"
           ],
@@ -113,7 +113,7 @@
         },
         {
           "Name": "Planted",
-          "Description": "Stiffer, more damped wheels with a little less travel; the hull is very hard to roll and the tracks share almost all the grip.",
+          "Description": "A little less travel, slightly firmer springs, about twice the game's damping and the lowest center of gravity: the calmest ride, very hard to tip.",
           "Include": [
             "Suspension Planted"
           ],
@@ -123,22 +123,39 @@
     },
     {
       "Name": "Tank MBT Turrets",
-      "Description": "The Bastion and Maelstrom turrets turn all the way round like a main battle tank. The Maelstrom's missile pods and smoke launchers turn with it. Only you see the new turrets, and their armor always looks undamaged.",
+      "Description": "The Bastion and Maelstrom turrets turn like a main battle tank's: all the way round, or half way. The Maelstrom's missile pods and smoke launchers turn with it. The turret wears your camo and shows damage like the rest of the tank. Only you see the turning turrets.",
       "Image": "options/mbt_turrets.png",
-      "Include": [
-        "Turret Core",
-        "MBT Turrets",
-        "Turret Models"
+      "SubOptions": [
+        {
+          "Name": "360 (all the way round)",
+          "Description": "The turret turns all the way round.",
+          "Include": [
+            "Turret Core",
+            "MBT Turrets",
+            "Turret Models"
+          ],
+          "Image": "options/sub/mbt_360.png"
+        },
+        {
+          "Name": "180 (90 each side)",
+          "Description": "The turret turns up to 90 degrees either side of straight ahead; the gunner view stops where the gun does.",
+          "Include": [
+            "Turret Core",
+            "MBT Turrets 180",
+            "Turret Models"
+          ],
+          "Image": "options/sub/mbt_180.png"
+        }
       ]
     },
     {
       "Name": "Tank Turret Traverse",
-      "Description": "How fast the Bastion and Maelstrom turrets turn (the game: 25 degrees a second). Works with or without MBT Turrets.",
+      "Description": "How fast the Bastion and Maelstrom turrets turn (the game: 25 degrees a second), and the gunner view's left/right turning with them. Works with or without MBT Turrets.",
       "Image": "options/turret_traverse.png",
       "SubOptions": [
         {
-          "Name": "Quick (x1.25)",
-          "Description": "About 31 degrees a second.",
+          "Name": "Quick (x1.5)",
+          "Description": "37.5 degrees a second.",
           "Include": [
             "Traverse Quick",
             "Turret Core"
@@ -146,8 +163,8 @@
           "Image": "options/sub/traverse_quick.png"
         },
         {
-          "Name": "Fast (x1.5)",
-          "Description": "37.5 degrees a second.",
+          "Name": "Fast (x2)",
+          "Description": "50 degrees a second.",
           "Include": [
             "Traverse Fast",
             "Turret Core"
@@ -155,8 +172,8 @@
           "Image": "options/sub/traverse_fast.png"
         },
         {
-          "Name": "Very fast (x2)",
-          "Description": "50 degrees a second.",
+          "Name": "Very fast (x3)",
+          "Description": "75 degrees a second.",
           "Include": [
             "Traverse Very Fast",
             "Turret Core"
@@ -167,7 +184,7 @@
     },
     {
       "Name": "Tank Turret Elevation",
-      "Description": "How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second).",
+      "Description": "How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second), and the gunner view's up/down turning with them.",
       "Image": "options/turret_elevation.png",
       "SubOptions": [
         {
@@ -325,28 +342,28 @@
     },
     {
       "Name": "FRV Stability",
-      "Description": "Keeps the M-102, M-103 and M-104 FRVs on their wheels over rough ground, jumps and hard turns: a firmer front, longer suspension travel, a lower center of mass, more grip and weight, and a little more ground clearance. Engine and steering stay the game's own.",
+      "Description": "Keeps the M-102, M-103 and M-104 FRVs on their wheels over rough ground, jumps and hard turns: a firmer front, firmer damping, a lower center of mass, more grip and weight, and a little more ground clearance. Engine and steering stay the game's own.",
       "Image": "options/frv_stability.png",
       "SubOptions": [
         {
-          "Name": "Mild",
-          "Description": "Half the change: still lively, far less likely to roll.",
-          "Include": [
-            "FRV Mild"
-          ],
-          "Image": "options/sub/frv_mild.png"
-        },
-        {
           "Name": "Stable",
-          "Description": "Stays upright over rough ground, jumps and hard turns; a quarter heavier.",
+          "Description": "Stays upright over rough ground, jumps and hard turns, with extra tire grip; 30% heavier.",
           "Include": [
             "FRV Stable"
           ],
           "Image": "options/sub/frv_stable.png"
         },
         {
+          "Name": "Mild",
+          "Description": "About half the change, with a little more grip: still lively, far less likely to roll; 17% heavier.",
+          "Include": [
+            "FRV Mild"
+          ],
+          "Image": "options/sub/frv_mild.png"
+        },
+        {
           "Name": "Planted",
-          "Description": "Lower, grippier, stiffer and 40% heavier, and the chassis resists rolling: very hard to tip, slower to turn.",
+          "Description": "The lowest center of mass, the firmest damping and the most grip, 45% heavier: very hard to tip.",
           "Include": [
             "FRV Planted"
           ],
