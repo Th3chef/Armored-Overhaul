@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.0.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.0.1 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -86,9 +86,11 @@ local CAMERA_KNOWN_ID = 26
 local CAMERA_STRIDE = 0x90
 local CAMERA_LIMITS_AT = 0x4C
 local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00\x20\x42' -- -15 25 -40 40
+-- (3.0.1 review) the gunner preset's own values at +0x04..+0x1F (as the Gunner camera option finds it): its second signature
+local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.0.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.0.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -372,7 +374,9 @@ local function camera_check(rec)
 end
 
 -- Other builds: one 256 KB chunk of the game's writable data per frame, looking for the vanilla limits.
-local cscan = {offset = 0x1000}
+-- (3.0.1 review) every match is kept (3.0.1 took the first): the one with the preset's own values too wins, else a single
+-- match with the limits only (another camera mod may have changed those values); more than one: not certain, left alone
+local cscan = {offset = 0x1000, prefixed = {}, other = {}}
 local function camera_scan_step()
     local size = min(0x40000 + 0x10, image_size - cscan.offset)
     if size <= 0 then return true end
@@ -390,7 +394,11 @@ local function camera_scan_step()
             local f = s:find(CAMERA_VANILLA, at, true)
             if not f then break end
             local rec = game + cscan.offset + f - 1 - CAMERA_LIMITS_AT
-            if camera_check(rec) then cscan.found = rec; return true end
+            -- (a match in the overlap with the next chunk is taken there)
+            if f - 1 < 0x40000 and camera_check(rec) then
+                local list = read(rec + 4, #CAMERA_PREFIX) == CAMERA_PREFIX and cscan.prefixed or cscan.other
+                list[#list + 1] = rec
+            end
             at = f + 1
         end
     end
@@ -413,8 +421,11 @@ local function camera_step()
         camera_phase = 'scan'
     end
     if camera_scan_step() then
-        camera, camera_phase = cscan.found, 'done'
+        local p, o = cscan.prefixed, cscan.other
+        camera, camera_phase = #p == 1 and p[1] or (#p == 0 and #o == 1 and o[1]) or nil, 'done'
         if camera then found_rvas.camera = num(camera) - num(game); cache_save()
+        elseif #p + #o > 1 then
+            state.camera = string.format('preset not certain (%d places look like it): left alone (gun limits still apply, the view stays at +/-40)', #p + #o)
         else state.camera = 'preset not found (gun limits still apply, the view stays at +/-40)' end
     end
 end
@@ -424,7 +435,8 @@ local acc, base
 local originals = {}   -- item name -> vanilla values (read once)
 local tries = {}       -- item name -> failed writes
 -- (3.0 review) another mod writing the same values: an item this addon had set, found changed back 3 times within a
--- minute, is left to the other mod for the rest of the mission (2.1 rewrote it every 2 s for ever) and the log says so
+-- minute, is left to the other mod until the turret table is rebuilt (3.0.1 review: the comment said "for the rest of
+-- the mission"; 2.1 rewrote it every 2 s for ever) and the log says so
 local FOUGHT, FIGHT_BACKS, FIGHT_WINDOW = 'another mod keeps changing it: left alone', 3, 3600
 local fight = {set = {}, backs = {}, off = {}}
 -- What the picked options ask for; everything else stays the game's own.
@@ -485,7 +497,15 @@ local function apply()
     -- (2.0.1 review) the table is looked up again each time (two small reads): if the game ever rebuilds it (a mission
     -- loading), the new one is used rather than the one found first
     local b = table_base(acc)
-    if b ~= nil and num(b) ~= num(base) then base = b; tries = {}; fight = {set = {}, backs = {}, off = {}} end
+    if b == nil then
+        -- (3.0.1 review) the table is not there (its root pointer is null while a mission loads or unloads): nothing is
+        -- read or written this round, it is looked up again in ~2 s (3.0.1 kept reading, and could write, the old one,
+        -- which may have been freed by then)
+        base = nil; settled = false
+        for _, g in ipairs(GUNS) do state.guns[g.name] = 'not found' end
+        return 0
+    end
+    if base == nil or num(b) ~= num(base) then base = b; tries = {}; fight = {set = {}, backs = {}, off = {}} end
     opts = options()
     state.options = options_text(opts)
     local changed, open = 0, 0
@@ -578,8 +598,9 @@ do
         if mine then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
-        for _, g in ipairs(MENU_ORDER) do add(M, g) end
-        for g in pairs(hub.groups) do add(M, g) end          -- (a group not in MENU_ORDER: last)
+        -- (3.0.1 review) each group on its own pcall: a malformed group from another (older) copy can't stop this addon
+        for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
+        for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
@@ -644,8 +665,10 @@ local function tick()
         state.game = string.format('%08X-%X', timestamp, image_size)
         phase = timestamp == KNOWN_TIMESTAMP and 'known' or 'scan'
         state.how = phase == 'known' and 'known build' or 'searching game code'
+        -- (3.0.1 review) the saved places are read on the known build too: a gunner preset not at its known place is
+        -- looked for at the saved one before a search (3.0.1 searched for it again at every start)
+        saved = cache_load()
         if phase == 'scan' then
-            saved = cache_load()
             if saved.accessor and saved.accessor < image_size and accessor_at(saved.accessor) then
                 scan.hits = {saved.accessor}; phase = 'scanned'; state.how = 'saved from an earlier search'
             end

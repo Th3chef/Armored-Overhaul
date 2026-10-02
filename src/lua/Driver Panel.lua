@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.0.0 - Driver panel, part of the Gunner Drive option: while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.0.1 - Driver panel, part of the Gunner Drive option: while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
@@ -18,7 +18,7 @@ if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true)
 if rawget(_G, 'ArmoredOverhaulDriverPanel') then return end
 
 local TESTER = false
-local atan2, cos, sin, sqrt, floor, min, max, pi = math.atan2, math.cos, math.sin, math.sqrt, math.floor, math.min, math.max, math.pi
+local sqrt, floor, min, max = math.sqrt, math.floor, math.min, math.max
 
 local SEAT_FRESH = 45                -- frames a published seat stays valid (the core refreshes it every few frames)
 local RECHECK_EVERY = 60             -- frames between checks of the overlay world and the screen size
@@ -27,13 +27,14 @@ local CORE_STALL = 60                -- frames without a Tank Core update before
 local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- (3.0.0) no settings file (1.2.2-2.1 wrote and read ArmoredOverhaul-DriverPanel.cfg; a file an older version
 -- wrote is left alone and not read); these are fixed. x, y: the panel's centre as shares of the screen (0 = left / bottom edge);
--- size: the gear letters' height as a share of the screen height; game_font: the game's own HUD font.
-local SETTINGS = {show = 1, x = 0.5, y = 0.1, size = 0.022, opacity = 0.55, game_font = 1}
+-- size: the gear letters' height as a share of the screen height. (3.0.1 review: show and game_font, always on, went
+-- with the code that could only run with them off)
+local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.0.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
-           angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
+local S = {version = '3.0.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+           last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
-           speed = 'not measured yet', speed_check = 'none', health = 'not shown yet', skull = 'not shown yet', dock = 'not shown yet'}
+           speed = 'not measured yet', speed_check = 'none'}
 rawset(_G, 'ArmoredOverhaulDriverPanel', S)
 
 local loader = rawget(_G, 'CowboyBingusModLoader')
@@ -50,20 +51,26 @@ local function note(s)
     for _, n in ipairs(notes) do if n == s then return end end
     if #notes < 20 then notes[#notes + 1] = s end
 end
-local function test_note(s) if #test_notes < 20 then test_notes[#test_notes + 1] = s end end
+-- (3.0.1 review) the file is written only when its text changed (3.0 rewrote it on every hull search, every 5 s
+-- while the hull could not be found)
+local log_text
 local function log()
     pcall(function()
+        local b = {'Armored Overhaul - ', TITLE, '\n'}
+        for _, k in ipairs(LOG_MAIN) do b[#b + 1] = (k:gsub('_', ' ')) .. ': ' .. tostring(S[k]) .. '\n' end
+        for _, n in ipairs(notes) do b[#b + 1] = 'note: ' .. n .. '\n' end
+        if TESTER then
+            b[#b + 1] = '-- tester details --\n'
+            for _, k in ipairs(LOG_TESTER) do b[#b + 1] = k .. ': ' .. tostring(S[k]) .. '\n' end
+            for _, n in ipairs(test_notes) do b[#b + 1] = 'note: ' .. n .. '\n' end
+        end
+        local text = table.concat(b)
+        if text == log_text then return end
         local f = loader.open_log and loader.open_log(LOG_FILE)
         if not f then return end
-        f:write('Armored Overhaul - ', TITLE, '\n')
-        for _, k in ipairs(LOG_MAIN) do f:write((k:gsub('_', ' ')), ': ', tostring(S[k]), '\n') end
-        for _, n in ipairs(notes) do f:write('note: ', n, '\n') end
-        if TESTER then
-            f:write('-- tester details --\n')
-            for _, k in ipairs(LOG_TESTER) do f:write(k, ': ', tostring(S[k]), '\n') end
-            for _, n in ipairs(test_notes) do f:write('note: ', n, '\n') end
-        end
+        f:write(text)
         f:close()
+        log_text = text
     end)
 end
 
@@ -73,14 +80,11 @@ local function logs_path(name)
 end
 local settings = {sig = 0}             -- the values in use; sig changes with every change (the panel is redrawn)
 for k, v in pairs(SETTINGS) do settings[k] = v end
--- (2.0) where the panel sits, for the Vehicle Indicator (it docks just left of it): published at load, and again on
--- every change
-local PLACE = {}
+-- (2.0) where the panel sits, for the Vehicle Indicator (it docks just left of it). (3.0.1 review) show: the panel
+-- runs; false once it is off (the engine lacks something, drawing failed) or stopped after an error (3.0: always
+-- true). The Indicator also docks only in a vehicle Gunner Drive drives (Tank Core's gd_flags).
+local PLACE = {x = settings.x, y = settings.y, size = settings.size, show = true}
 rawset(_G, 'ArmoredOverhaulDriverPanelPlace', PLACE)
-local function publish_place()
-    PLACE.x, PLACE.y, PLACE.size, PLACE.show = settings.x, settings.y, settings.size, settings.show >= 0.5
-end
-publish_place()
 
 -- ---------------------------------------------------------------- engine API (checked once; the option stays off
 -- and says why if this game build lacks something)
@@ -124,10 +128,10 @@ local TRI_MATERIAL = 'core/performance_hud/debug'   -- the engine's own debug GU
 local ov = {world = nil, gui = nil, ids = {}, bitmaps = {}, key = nil, style = nil, visible = nil}
 local draw_fails = 0                                -- drawing failures this session (turn it off at a limit)
 -- One look at the engine's world list: the overlay world (the one that is not the main world), and whether `w` is
--- still in the list.
+-- still in the list (nil: the list could not be read, so not known).
 local function scan_worlds(main, w)
     local okw, worlds = pcall(A.worlds)
-    if not okw or type(worlds) ~= 'table' then return nil, 0, false end
+    if not okw or type(worlds) ~= 'table' then return nil, 0, nil end     -- (3.0.1 review: not known, not 'gone')
     local target, live = nil, false
     for i = 1, #worlds do
         local x = worlds[i]
@@ -150,6 +154,8 @@ local function gui_alive()
     if not ov.gui then return false end
     if ov.alive_frame == S.frames then return true end
     local _, _, live = scan_worlds(nil, ov.world)
+    -- (3.0.1 review) the world list unreadable: not touched now, but kept (3.0 forgot it and left its shapes on screen)
+    if live == nil then return false end
     if not live then forget_gui(); return false end
     ov.alive_frame = S.frames
     return true
@@ -205,10 +211,11 @@ local function set_visible(v)
 end
 local function overlay_gui(main)
     if ov.gui and S.frames < (ov.next_check or 0) then return ov.gui end     -- checked once a second
-    if type(main) == 'function' then main = main() end                       -- (the panel: fetched only now)
     if main == nil then return nil end
     ov.next_check = S.frames + RECHECK_EVERY
     local target, count, live = scan_worlds(main, ov.world)
+    -- (3.0.1 review) the world list unreadable: nothing drawn this frame, the GUI kept, and checked again next frame
+    if live == nil then ov.next_check = 0; S.gui = 'world list unreadable'; return nil end
     -- (2.0.1 review) a GUI whose world is still there and isn't the main world is kept, even when another world now
     -- comes first in the list (2.0 moved it to whichever non-main world came first)
     if ov.gui and live and ov.world ~= main then ov.alive_frame = S.frames; return ov.gui end
@@ -283,7 +290,7 @@ local TT = {
     FIND_SLOW = 300,             -- ... after FIND_MISSES misses in a row (a search can go through every unit)
     FIND_MISSES = 5,
     found = {unit = nil, gun = nil, gun_node = 1, kind = nil, next_find = 0, misses = 0, miss_kind = nil},
-    tank = 'none', pick = 'none', pick_note = nil, finds = 0, gen = 0, errors = 0, last_error = nil,
+    tank = 'none', pick = 'none', pick_note = nil, finds = 0, errors = 0, last_error = nil,
 }
 function TT.api()
     local SR = rawget(_G, 'stingray')
@@ -399,7 +406,7 @@ function TT.hull(world, kind, frame, key)
     TT.finds = TT.finds + 1
     local t = TT.TANKS[kind] or TT.HULLS[kind]
     if not t then return nil end
-    if type(world) == 'function' then world = world() end         -- (the panel passes a getter: see measure_speed)
+    if type(world) == 'function' then world = world() end         -- (a getter works too)
     if world == nil then return nil end
     local okf, hull = pcall(tt_hull_of, world, t)
     if not okf then TT.errors = TT.errors + 1; TT.last_error = 'hull search failed: ' .. tostring(hull); hull = nil end
@@ -411,7 +418,6 @@ function TT.hull(world, kind, frame, key)
     end
     TT.tank = t.name .. ' hull found'
     h.unit, h.misses, h.next_find = hull, 0, 0
-    TT.gen = TT.gen + 1
     return hull
 end
 
@@ -460,6 +466,7 @@ local GLYPHS = {
     M = {{0, 0, 0, 1, 0.3, 0.45, 0.6, 1, 0.6, 0}},
     K = {{0, 0, 0, 1}, {0.6, 1, 0, 0.4}, {0.2, 0.6, 0.6, 0}},
     H = {{0, 0, 0, 1}, {0.6, 0, 0.6, 1}, {0, 0.5, 0.6, 0.5}},
+    ['-'] = {{0.08, 0.5, 0.52, 0.5}},          -- (3.0.1 review) gear not known, fuel '- L', a negative speed (3.0: blank)
     ['^'] = {{0.3, 1, 0, 0.56, 0.16, 0.56, 0.16, 0, 0.44, 0, 0.44, 0.56, 0.6, 0.56, 0.3, 1}},   -- the shift key
     ['0'] = {{0.12, 0, 0.48, 0, 0.6, 0.14, 0.6, 0.86, 0.48, 1, 0.12, 1, 0, 0.86, 0, 0.14, 0.12, 0}},
     ['1'] = {{0.12, 0.8, 0.34, 1, 0.34, 0}},
@@ -495,9 +502,9 @@ local ft = {}
 -- The engine's ids (IdString64), like its vectors and colors, only live for the frame they are made in: the font
 -- and material ids are made from their hex names every frame the panel is shown, and the atlas bound again, as
 -- HD2 HUD+ does (1.2 Tests 5-7 kept them from one frame to the next and crashed at the panel's first refresh).
--- Safety net: each resource is checked with Application.can_get before first use; settings.game_font = 0
--- turns it off; and a small marker file is written before the first use and updated once the
--- panel has been shown 600 frames in the font. If the game closed in between, the marker still says 'trying':
+-- Safety net: each resource is checked with Application.can_get before first use, and a small marker file is
+-- written before the first use and updated once the panel has been shown 600 frames in the font (or 'refused' when
+-- the font is given up without the game closing). If the game closed in between, the marker still says 'trying':
 -- the next start uses the built-in letters once and tries the font again the start after that (a crash for any
 -- other reason then never turns the font off for good).
 local MARK_TAG = '[ids per frame]'
@@ -509,21 +516,24 @@ local function fontcheck(write)
     local f = io.open(path, 'r'); if not f then return nil end
     local t = f:read('*a'); f:close(); return t
 end
+-- (3.0.1 review) the font given up without the game closing (its ids could not be made, or drawing in it failed):
+-- the marker says 'refused', so the next start tries it again (3.0 left 'trying': the next start skipped the font,
+-- saying the game had closed)
+local function font_refused(why)
+    if ft.ok and ft.key then fontcheck('refused ' .. ft.key .. '\n') end
+    ft.ok, ov.watch, S.font = false, 0, why
+end
+local font_proven
 local function font_ready(g, set)
-    -- (2.0.1 review: the setting is read first, so turning the font off takes effect while it is in use too)
-    if set.game_font < 0.5 then
-        -- (2.0.1 final review) the font is let go of entirely, so nothing draws in it with ids from an earlier frame;
-        -- turning it back on takes it up again with its usual checks
-        if ft.gui then
-            -- (the font worked until now: its marker says so, as when the panel is hidden normally)
-            if ft.ok and ft.key then fontcheck('ok ' .. ft.key .. ' ' .. MARK_TAG .. '\n'); ov.watch = 0 end
-            ft = {}
-        end
-        S.font = 'stroke letters (the game font is turned off)'; return false
-    end
     if ft.gui == g then return ft.ok == true end
     local pub = rawget(_G, 'ArmoredOverhaulUIFont')
     if type(pub) ~= 'table' or not pub.font then S.font = 'stroke letters (the game\'s HUD font not read yet)'; return false end
+    -- (3.0.1 review) a try in the previous GUI (a mission loaded or left) is settled first: its 'trying' marker read
+    -- as a crash here (this GUI went to the stroke letters) and at the next start
+    if ft.ok and (ov.watch or 0) > 0 then
+        font_proven('(shown, then the screen GUI changed)')
+        if (ov.watch or 0) > 0 then fontcheck('interrupted ' .. ft.key .. '\n'); ov.watch = 0 end
+    end
     ft = {gui = g}
     local key = pub.font .. ' ' .. pub.material .. ' ' .. pub.atlas
     local last = fontcheck()
@@ -607,14 +617,21 @@ local function font_text(g, str, x, y, h, color, align, slot, key)
         local ok2 = pcall(G.update_text, g, held.text, str, ft.font, size, ft.material, at_t, color)
         if ok1 and ok2 then held.key = key; return end
         ov.no_update = true; note('Gui.update_text failed; values are redrawn instead')
-        -- (2.0.1 review) the held texts go now: 2.0 left them drawn under the new ones
+    end
+    -- (2.0.1 review) held texts not updated in place go now: 2.0 left them drawn under the new ones. (3.0.1 review)
+    -- Every slot's, also once updates stopped (3.0: only the slot whose update failed; the others' old values stayed)
+    if held then
         pcall(G.destroy_text, g, held.shadow); pcall(G.destroy_text, g, held.text)
         ov.slots[slot], held = nil, nil
     end
     local a = G.text(g, str, ft.font, size, ft.material, at_s, SHADOW)
-    local b = G.text(g, str, ft.font, size, ft.material, at_t, color)
+    -- (3.0.1 review) the text over its shadow refused: the shadow goes too (3.0 kept it nowhere, left on screen)
+    local okb, b = pcall(G.text, g, str, ft.font, size, ft.material, at_t, color)
+    if not okb then
+        if a ~= nil then pcall(G.destroy_text, g, a) end
+        error(b, 0)
+    end
     if slot and not ov.no_update then
-        if held then pcall(G.destroy_text, g, held.shadow); pcall(G.destroy_text, g, held.text) end   -- (after a failed update)
         ov.slots = ov.slots or {}
         ov.slots[slot] = {shadow = a, text = b, key = key}
         return
@@ -758,7 +775,7 @@ end
 -- (1.2.1: only controllers the engine reports as connected are read - looked up once a second - and each input
 -- object's functions are looked up once; with all eight controller slots read every time the check cost about
 -- 8 engine calls a frame, now about 1-2)
-local input = {device = 'keyboard', next = 0, pads = nil, pads_next = 0, dev = {}}
+local input = {device = 'keyboard', next = 0, pads = nil, pads_next = 0, dev = {}, no_axes = {}}
 local PAD_AXES, MOUSE_AXES = {'left', 'right', 'left_trigger', 'right_trigger'}, {'mouse'}
 -- (sticks and triggers: past a third of their range; the mouse: a real movement, not a pixel of jitter)
 local function index_of(dev, k) return dev[k] end
@@ -804,16 +821,30 @@ local function connected_pads()
     input.pads = pads
     return pads
 end
+-- (3.0.1 review) a key or mouse button pressed this frame (the input object's any_pressed, looked up already)
+local function pressed(dev)
+    local d = dev and input.dev[dev]
+    if not (d and d.any) then return false end
+    local ok, r = pcall(d.any)
+    return ok and r == true
+end
 local function input_device()
-    if S.frames < input.next then return input.device end
-    input.next = S.frames + 5
-    if not SR then return input.device end
-    if not input.kb then input.kb, input.mouse = field(SR, 'Keyboard') or false, field(SR, 'Mouse') or false end
-    if used(input.kb, {}, 1) or used(input.mouse, MOUSE_AXES, 4) then
+    if S.frames < input.next then
+        -- (3.0.1 review) on a controller the keyboard's and mouse's buttons are looked at every frame (one or two
+        -- calls, only then): a press can show on its first frame only, and 3.0 missed about 4 in 5, so the key hints
+        -- did not come back
+        if input.device ~= 'controller' or not (pressed(input.kb) or pressed(input.mouse)) then return input.device end
         input.device = 'keyboard'
     else
-        for _, pad in ipairs(connected_pads()) do
-            if used(pad, PAD_AXES, 0.3) then input.device = 'controller'; break end
+        input.next = S.frames + 5
+        if not SR then return input.device end
+        if not input.kb then input.kb, input.mouse = field(SR, 'Keyboard') or false, field(SR, 'Mouse') or false end
+        if used(input.kb, input.no_axes, 1) or used(input.mouse, MOUSE_AXES, 4) then   -- (3.0.1 review: no table made each time)
+            input.device = 'keyboard'
+        else
+            for _, pad in ipairs(connected_pads()) do
+                if used(pad, PAD_AXES, 0.3) then input.device = 'controller'; break end
+            end
         end
     end
     if S.input ~= input.device then
@@ -871,12 +902,11 @@ local function game_time()
     return nil
 end
 local function speed_reset() spd.hull, spd.kmh, spd.t, spd.next = nil, nil, nil, 0 end
-local function measure_speed(world_now, seat, key)
+local function measure_speed(world, seat, key)
     if S.frames < spd.next then return spd.kmh end
     spd.next = S.frames + SPEED_EVERY
-    -- (3.0 review) the main world is only asked for when the hull has to be searched (TT.hull takes the getter)
     local hull
-    if U and U.world_position and U.alive and W.units_by_resource then hull = TT.hull(world_now, seat.kind, S.frames, key) end
+    if U and U.world_position and U.alive and W.units_by_resource then hull = TT.hull(world, seat.kind, S.frames, key) end
     S.tank, S.pick, S.finds = TT.tank, TT.pick, TT.finds
     local t, src = game_time()
     local x, y, z
@@ -884,9 +914,14 @@ local function measure_speed(world_now, seat, key)
         local okp, p = pcall(U.world_position, hull, 1)
         if okp and p ~= nil then x, y, z = comps(p) end
     end
-    local how = not x and (hull == nil and 'the game\'s figure (the tank\'s hull not found)' or (t and 'the game\'s figure (the hull\'s position unreadable)'
-        or 'the game\'s figure (no clock)')) or ('measured from the hull\'s movement (' .. src .. ')')
-    if how ~= spd.src then spd.src = how; S.speed = how end
+    -- (3.0.1 review) what the text would say is compared first, and the text made only when it changes (3.0: built
+    -- every 6 frames)
+    local how = not x and (hull == nil and 1 or (t and 2 or 3)) or src
+    if how ~= spd.src then
+        spd.src = how
+        S.speed = how == 1 and 'the game\'s figure (the tank\'s hull not found)' or (how == 2 and 'the game\'s figure (the hull\'s position unreadable)'
+            or (how == 3 and 'the game\'s figure (no clock)' or ('measured from the hull\'s movement (' .. src .. ')')))
+    end
     if not x then speed_reset(); spd.next = S.frames + SPEED_EVERY; return nil end
     if spd.hull == hull and spd.t and t > spd.t then
         local dt = t - spd.t
@@ -913,7 +948,7 @@ local function differs(a, b)
 end
 -- (2.0) the font marker also says ok when the panel is hidden normally after 30 frames or more in the font (1.2.1-2.0
 -- Test 8: only after 600 frames, so leaving the seat sooner and quitting looked like a crash at the next start)
-local function font_proven(how)
+function font_proven(how)
     if ft.ok and (ov.watch or 0) > 0 and ov.watch <= 570 then
         ov.watch = 0
         fontcheck('ok ' .. ft.key .. ' ' .. MARK_TAG .. '\n')
@@ -926,9 +961,10 @@ local function hide_panel(gear_why)
     set_visible(false)
     S.gear = gear_why
 end
--- (2.0) the main world is asked for only on the frames that need it (the screen GUI's check once a second and
--- the speed every 6 frames), not every frame: one engine call a frame less. (3.0 review) Made once (2.1: a new
--- function every frame); `wc` is cleared at the start of every frame (never kept from one frame to the next).
+-- The main world, asked for once a frame (3.0.1 review: every frame while the panel shows, as the Vehicle Indicator
+-- does, so a new main world has the screen GUI checked at once; 2.0-3.0 asked only on the frames that needed it and
+-- could draw into a GUI whose world had gone in between). (3.0 review) Made once (2.1: a new function every frame);
+-- `wc` is cleared at the start of every frame (never kept from one frame to the next).
 local wc
 local function world_now()
     if wc == nil then local okw, w = pcall(A.main_world); wc = okw and w or false end
@@ -940,30 +976,39 @@ local function tick()
     local seat, cf, core_ok, idle = core_seat(true)
     if not seat or seat.driving ~= true then
         TT.reset(); speed_reset()
-        hide_panel(seat and 'hidden (not driving from the gunner seat)' or 'hidden (not in a tank)')
-        S.seat = seat and seat_text(seat) or (core_ok and 'not in a tank' or 'unknown')
-        local st = seat and 'waiting (you are not driving from the gunner seat)' or idle
-        if S.status ~= st then S.status = st; log() end
-        return
-    end
-    if not api_ok() then if S.status ~= last_logged then last_logged = S.status; log() end return end
-    S.seat = seat_text(seat)
-    if settings.show < 0.5 then
-        hide_panel('hidden (turned off)')
-        S.status = 'off'
+        hide_panel(seat and 'hidden (not driving from the gunner seat)' or 'hidden (not in a vehicle)')
+        S.seat = seat and seat_text(seat) or (core_ok and 'not in a vehicle' or 'unknown')
+        -- (3.0.1 review) last_logged kept up to date (3.0: driving again wrote nothing, and the file kept the waiting
+        -- text for up to 30 s); a panel that is off for good (the engine lacks something, drawing failed) keeps
+        -- saying so (3.0: the waiting text replaced it)
+        if S.api == 'ok' or S.api == 'unchecked' then S.status = seat and 'waiting (you are not driving from the gunner seat)' or idle end
         if S.status ~= last_logged then last_logged = S.status; log() end
         return
     end
-    local g = overlay_gui(world_now)
+    if not api_ok() then
+        PLACE.show = false                                  -- (3.0.1 review) off: the Indicator does not dock
+        if S.status ~= last_logged then last_logged = S.status; log() end
+        return
+    end
+    S.seat = seat_text(seat)
+    local world = world_now()
+    if world == nil then
+        set_visible(false)
+        S.status = 'no world'
+        if S.status ~= last_logged then last_logged = S.status; log() end
+        return
+    end
+    if world ~= ov.main then ov.main = world; ov.next_check = 0 end     -- (3.0.1 review) a new main world: checked now
+    local g = overlay_gui(world)
     if not g then
         set_visible(false)                                  -- (2.0.1 review: not left frozen on screen)
-        S.status = wc == false and 'no world' or 'no screen gui'
+        S.status = 'no screen gui'
         if S.status ~= last_logged then last_logged = S.status; log() end
         return
     end
     local sw, sh = screen_size()
     local finds = TT.finds
-    local measured = measure_speed(world_now, seat, cf)
+    local measured = measure_speed(world, seat, cf)
     tracker_errors()
     if TT.finds ~= finds then log() end
     -- redrawn when a shown value changes, at most every 6 frames
@@ -990,7 +1035,7 @@ local function tick()
     local live_due = frame_due or ((not ov.lkey or differs(Lv, live_was)) and S.frames >= (ov.lnext or 0))
     -- (2.0.1 review) the font's ids are made only on frames that draw text (2.0: every frame)
     if font and (frame_due or live_due) and not font_frame(g) then
-        ft.ok = false; S.font = 'stroke letters (the game font ids could not be made)'
+        font_refused('stroke letters (the game font ids could not be made)')
         font, H[7], frame_due, live_due = false, false, true, true
     end
     local okp, perr = true, nil
@@ -1017,9 +1062,9 @@ local function tick()
     end
     if not okp then
         S.errors = S.errors + 1; S.last_error = 'driver panel failed: ' .. tostring(perr); clear_hud(true)
-        if ft.ok then ft.ok = false; S.font = 'stroke letters (the game font failed: ' .. tostring(perr) .. ')' end
+        if ft.ok then font_refused('stroke letters (the game font failed: ' .. tostring(perr) .. ')') end
         draw_fails = draw_fails + 1
-        if draw_fails >= 20 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)'; log() end
+        if draw_fails >= 20 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)'; PLACE.show = false; log() end
         return
     end
     -- (the log text on each live redraw, at most every 6 frames; 3.0 review: the shape counts are tester-only)
@@ -1051,6 +1096,7 @@ local function after(ok, ...)
         local okT, err = pcall(tick)
         if not okT then
             broken = true; S.errors = S.errors + 1; S.last_error = tostring(err); S.status = 'stopped after an error: ' .. tostring(err)
+            PLACE.show = false                              -- (3.0.1 review) the Indicator no longer docks next to it
             pcall(set_visible, false)                       -- (2.0.1 review: not left frozen on screen)
             log()
         end
