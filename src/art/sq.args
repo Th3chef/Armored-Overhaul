@@ -1,0 +1,1 @@
+gres=500 rocks=90 cam=4,12.5,1.7 target=0.3,-2,1.9 lens=27 shiftx=0.05 shifty=-0.12 b_yaw=40 b_turret=-75 b_elev=8 m_rel=27,-10.5 m_yaw=5 m_turret=25 f_rel=24,13.5 f_yaw=50 f_turret=-25 sky=0.12

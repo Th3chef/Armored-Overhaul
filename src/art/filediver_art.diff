@@ -1,0 +1,70 @@
+diff --git a/app/app.go b/app/app.go
+index 5fcdb0f..083a648 100644
+--- a/app/app.go
++++ b/app/app.go
+@@ -522,28 +522,28 @@ func OpenGameDir(ctx context.Context, gameDir string, hashStrings []string, thin
+ 
+ 	armorSets, err := datalib.LoadArmorSetDefinitions(mapping, passives)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error loading armor set definitions: %v", err)
++		fmt.Fprintf(os.Stderr, "[WARN] armor set definitions: %v\n", err)
+ 	}
+ 
+ 	skinOverrideGroups, err := LoadSkinOverrides(dataDir, mapping)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error loading skin overrides: %v", err)
++		fmt.Fprintf(os.Stderr, "[WARN] skin overrides: %v\n", err)
+ 	}
+ 
+ 	weaponPaintSchemes, err := LoadPaintSchemes(dataDir, mapping)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error loading weapon paint schemes: %v", err)
++		fmt.Fprintf(os.Stderr, "[WARN] weapon paint schemes: %v\n", err)
+ 	}
+ 	attachmentSlots, err := LoadAttachmentSlots(dataDir, mapping, lookupHash)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error loading weapon attachment slots: %v", err)
++		fmt.Fprintf(os.Stderr, "[WARN] weapon attachment slots: %v\n", err)
+ 	}
+ 
+ 	entityVarMapping := LoadEntityVariableMappings(dataDir)
+ 
+ 	planetData, err := datalib.LoadPlanetData(lookupHash, lookupThinHash, lookupString)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error loading planet data: %v", err)
++		fmt.Fprintf(os.Stderr, "[WARN] planet data: %v\n", err)
+ 	}
+ 	planetMap := make(map[string]datalib.PlanetData)
+ 	caser := getLowerCaser(language)
+@@ -556,7 +556,7 @@ func OpenGameDir(ctx context.Context, gameDir string, hashStrings []string, thin
+ 	}
+ 	planetOverrides, err := datalib.LoadPlanetOverrideSettings(lookupHash, lookupThinHash, lookupString)
+ 	if err != nil {
+-		return nil, fmt.Errorf("error loading planet overrides data: %v", err)
++		fmt.Fprintf(os.Stderr, "[WARN] planet overrides data: %v\n", err)
+ 	}
+ 	planetOverridesMap := make(datalib.PlanetOverridesMap)
+ 	for _, override := range planetOverrides {
+@@ -565,7 +565,7 @@ func OpenGameDir(ctx context.Context, gameDir string, hashStrings []string, thin
+ 
+ 	environmentSettings, err := datalib.LoadEnvironmentSettings()
+ 	if err != nil {
+-		return nil, fmt.Errorf("error loading planet overrides data: %v", err)
++		fmt.Fprintf(os.Stderr, "[WARN] planet overrides data: %v\n", err)
+ 	}
+ 	environmentMap := make(map[enum.PlanetType]datalib.EnvironmentSettings)
+ 	for _, setting := range environmentSettings {
+diff --git a/extractor/unit/extractor.go b/extractor/unit/extractor.go
+index 6ef37d4..2d719eb 100644
+--- a/extractor/unit/extractor.go
++++ b/extractor/unit/extractor.go
+@@ -307,7 +307,8 @@ func AddMaterials(ctx *extractor.Context, doc *gltf.Document, imgOpts *extr_mate
+ 		materialId := ctx.OverrideAsset(stingray.NewFileID(resID, stingray.Sum("material")))
+ 		matR, err := ctx.Open(materialId, stingray.DataMain)
+ 		if err != nil {
+-			return nil, err
++			ctx.Warnf("skip material %v: %v", materialId, err)
++			continue
+ 		}
+ 		mat, err := material.LoadMain(matR)
+ 		if err != nil {
