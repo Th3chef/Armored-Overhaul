@@ -1,92 +1,50 @@
-"""Armored Overhaul (written from scratch) -> Arsenal zip.
-  python build.py            test build (diagnostic counters on, test GUID)
-  python build.py release    release zip (permanent GUID) plus its personal Tester zip (the release with Gunner
-                             Drive's tester logging on, on the test GUID)
-"""
-import math, json, os, struct, sys, zipfile
-if not __debug__:
-    sys.exit('build.py: run it without -O (its checks are assert statements, which -O removes)')
+"""Armored Overhaul 3.0 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-VERSION, NAME_SUFFIX = '2.0.1', ' Test 4'   # NAME_SUFFIX is only used by test builds
+  python tools/unpack_release.py Armored-Overhaul-3.0.0.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.0.0.zip]
+
+- lua/<folder>.lua: each option folder's Lua addon, as shipped. Its first line names the addon
+  ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
+- manifest.json, art/thumbnail.png and options/ (the option and sub-option icons) go into the zip as they are.
+- The game-derived parts are not stored here: the Turret Models patch (the tank hulls and turrets, built from the game's
+  own models with src_models/), the Tank Suspension and FRV Stability presets (the vehicles' own physics files, made by
+  src_physics/) and the Turret Skull (a copy of the game's own Helldivers skull icon). tools/unpack_release.py takes
+  them out of a release zip into models/, physics/<preset>/ and skull/.
+- --check: compares the zip it made with a release zip, file by file and byte for byte (the order of the files in
+  the zip may differ).
+Writes build/Armored-Overhaul-<version>.zip (the version from the manifest's Name)."""
+import json, os, struct, sys, zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, 'tools'))
 import patch_writer
-GUID_LIVE = '370555ae-cb28-4b9d-96d0-8381505c3f89'   # releases: Arsenal treats a new release as an update
-GUID_TEST = '8d3e5a71-2c94-4f06-b1e8-6a7c0d9f4e25'   # test and Tester builds: sit next to the release
-MAGIC, LUA = 0xF0000011, 0xa14e8dfa2cd117e2
-TEXTURE = 0xcd4238c6a0c69e32
-# (2.0) the Turret indicator's skull: a copy of the game's own round-eyed Helldivers skull (the main menu header icon,
-# content/ui/shared/menu/main/header_icon, 64 px white with alpha; art/skull_header_icon.png). The game only loads that
-# texture in the menu, so the indicator ships it as its own texture, loaded with the addon.
-SKULL_TEX = 'mods/chef/armored_overhaul_skull'
-CORE, TURRETS = 'mods/chef/armored_overhaul_gunner_drive', 'mods/chef/armored_overhaul_mbt_turrets'
-HANDLING = 'mods/chef/armored_overhaul_handling'
-STEERING = 'mods/chef/armored_overhaul_steering'
-POWER = 'mods/chef/armored_overhaul_power'
-DRIVE_FLAG = 'mods/chef/armored_overhaul_gunner_drive_on'
-INDICATOR = 'mods/chef/armored_overhaul_indicator'
-PANEL = 'mods/chef/armored_overhaul_driver_panel'      # the driver panel (part of Gunner Drive since 1.2.2)
-CAMERA = 'mods/chef/armored_overhaul_gunner_camera'
-# Tank grip and Tank steering strengths: one Arsenal sub-option each (folder, name, multiplier, description).
-# Every strength ships the same addon name, so switching strength replaces it. The middle one (x1.5) was tested in 1.0.
-GRIP_PRESETS = [
-    ('Grip Moderate', 'Moderate', 1.25, 'A quarter more grip than the game\'s own.'),
-    ('Grip Strong', 'Strong', 1.5, 'Half again the game\'s grip (the 1.0 default).'),
-    ('Grip Maximum', 'Maximum', 2, 'Twice the game\'s grip: the tanks stick to the ground.'),
-]
-# Gunner camera: metres moved back (and up, at a shallow angle) from the game's own place
-CAMERA_PRESETS = [
-    # (1.2.2: every preset half a metre lower and further back, rising at 10 degrees; the names and folders are kept so
-    # the mod manager keeps your pick)
-    ('Camera Close', 'Close', -0.5, 'The game\'s distance, but lower: 1.4 m above the turret (the game\'s is 2 m).'),
-    ('Camera Far', 'Far', 2, '1.9 m above the turret.'),
-    ('Camera Farther', 'Farther', 4, '2.2 m above the turret.'),
-    ('Camera Farthest', 'Farthest', 6, '2.5 m above the turret: the most of the tank and its surroundings in view.'),
-]
-# Tank power (1.3): the engine's torque scale (pulling power); top speed stays the game's own
-POWER_PRESETS = [
-    ('Power Strong', 'Strong', 1.25, 'A quarter more pulling power than the game\'s own.'),
-    ('Power Stronger', 'Stronger', 1.5, 'Half again the game\'s pulling power: quicker off the line and up slopes.'),
-    ('Power Strongest', 'Strongest', 2, 'Twice the game\'s pulling power.'),
-]
-# Turret options (2.0): each ships the turret core (folder 'Turret Core') plus a flag addon with what it wants
-TURRET_FLAGS = {   # flag addon resource name per option
-    'mbt': 'mods/chef/armored_overhaul_turret_360', 'traverse': 'mods/chef/armored_overhaul_turret_traverse',
-    'elevation': 'mods/chef/armored_overhaul_turret_elevation', 'range': 'mods/chef/armored_overhaul_turret_range'}
-TRAVERSE_PRESETS = [
-    ('Traverse Quick', 'Quick', 1.25, 'Turns side to side a quarter faster than the game\'s (about 31 degrees a second).'),
-    ('Traverse Fast', 'Fast', 1.5, 'Half again as fast as the game\'s (37.5 degrees a second).'),
-    ('Traverse Very Fast', 'Very fast', 2, 'Twice as fast as the game\'s (50 degrees a second).'),
-]
-ELEVATION_PRESETS = [
-    ('Elevation Quick', 'Quick', 1.25, 'Moves up and down a quarter faster than the game\'s (about 44 degrees a second).'),
-    ('Elevation Fast', 'Fast', 1.5, 'Half again as fast as the game\'s (52.5 degrees a second).'),
-    ('Elevation Very Fast', 'Very fast', 2, 'Twice as fast as the game\'s (70 degrees a second).'),
-]
-RANGE_PRESETS = [   # (folder, name, (lowest, highest) degrees, description)
-    ('Aim Range Wider', 'Wider', (-10, 35), 'Aims from 10 degrees below level to 35 above (the game: 3 below to 25 above).'),
-    ('Aim Range Widest', 'Widest', (-15, 45), 'Aims from 15 degrees below level to 45 above.'),
-]
-def turret_flag(key, value):
-    lua_value = ('{%g, %g}' % value) if isinstance(value, tuple) else ('true' if value is True else repr(float(value)))
-    return ('-- HD2-Addon: %s\n-- Armored Overhaul: turret option flag (read by the turret core, mods/chef/armored_overhaul_mbt_turrets)\n'
-            'local o = rawget(_G, \'ArmoredOverhaulTurretOptions\')\nif type(o) ~= \'table\' then o = {}; rawset(_G, \'ArmoredOverhaulTurretOptions\', o) end\n'
-            'o.%s = %s\n' % (TURRET_FLAGS[key], key, lua_value))
-# (2.0) the options in the mod manager, grouped: the tanks' handling, the turret, the gunner seat, then the FRV
-OPTION_ORDER = ['Tank power', 'Tank grip', 'Tank steering', 'Tank suspension',
-                'MBT Turrets', 'Turret traverse', 'Turret elevation', 'Turret aim range', 'Turret indicator',
-                'Gunner Drive', 'Gunner camera',
-                'FRV stability']
-STEERING_PRESETS = [
-    ('Steering Responsive', 'Responsive', 1.25, 'A quarter quicker than the game\'s own.'),
-    ('Steering Quick', 'Quick', 1.5, 'Half again as quick as the game\'s.'),
-    ('Steering Sharp', 'Sharp', 2, 'Twice as quick as the game\'s: the tanks snap into turns.'),
-]
-FLAG_SRC = ('-- HD2-Addon: %s\n-- Armored Overhaul: the Gunner Drive option. Tells Tank Core to let you drive from the gunner seat.\n'
-            "rawset(_G, 'ArmoredOverhaulGunnerDriveOn', true)\n" % DRIVE_FLAG)
+
+LUA_TYPE = 0xA14E8DFA2CD117E2          # the game's lua resource type
+PATCH = '9ba626afa44a3aa3.patch_0'
+# zip order: the addon folders, then the game-derived ones (folder -> where unpack_release.py puts it)
+LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV Gunner Drive', 'Turret Core', 'MBT Turrets',
+               'Traverse Quick', 'Traverse Fast', 'Traverse Very Fast', 'Elevation Quick', 'Elevation Fast',
+               'Elevation Very Fast', 'Aim Range Wide', 'Aim Range Wider', 'Aim Range Widest', 'Grip Moderate',
+               'Grip Strong', 'Grip Maximum', 'Steering Responsive', 'Steering Quick', 'Steering Sharp', 'Power Strong',
+               'Power Stronger', 'Power Strongest', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
+               'Turret Indicator']
+GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Suspension Firm', 'physics/Suspension Firm'),
+                ('Suspension Heavy', 'physics/Suspension Heavy'), ('FRV Mild', 'physics/FRV Mild'),
+                ('FRV Stable', 'physics/FRV Stable'), ('FRV Planted', 'physics/FRV Planted')]
+# icons in the zip, in Arsenal order (each option's icon, then its choices')
+IMAGES = ['tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_strongest', 'tank_grip', 'sub/grip_moderate',
+          'sub/grip_strong', 'sub/grip_maximum', 'tank_steering', 'sub/steering_responsive', 'sub/steering_quick',
+          'sub/steering_sharp', 'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy', 'mbt_turrets',
+          'turret_traverse', 'sub/traverse_quick', 'sub/traverse_fast', 'sub/traverse_very_fast', 'turret_elevation',
+          'sub/elevation_quick', 'sub/elevation_fast', 'sub/elevation_very_fast', 'turret_aim_range', 'sub/aim_range_wide',
+          'sub/aim_range_wider', 'sub/aim_range_widest', 'autoloader', 'gunner_drive', 'sub/gunner_drive_tanks',
+          'sub/gunner_drive_both', 'gunner_camera', 'sub/camera_close', 'sub/camera_far', 'sub/camera_farther',
+          'sub/camera_farthest', 'frv_gunner_drive', 'frv_stability', 'sub/frv_mild', 'sub/frv_stable', 'sub/frv_planted',
+          'turret_indicator']
+FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 
 def resource_hash(name):
+    """The game's 64-bit resource name hash (MurmurHash64A, seed 0)."""
     data = name.encode(); mask, mix = (1 << 64) - 1, 0xC6A4A7935BD1E995
     v = len(data) * mix & mask; end = len(data) // 8 * 8
     for (w,) in struct.iter_unpack('<Q', data[:end]):
@@ -96,299 +54,54 @@ def resource_hash(name):
     return v
 
 
-def archive(entries):
-    """A Lua-only patch (its TOC; no gpu or stream data)."""
-    return mixed_archive(entries, [])[0]
+def lua_patch(path):
+    text = open(path, 'rb').read()
+    first = text.split(b'\n', 1)[0]
+    assert first.startswith(b'-- HD2-Addon: '), path + ': the first line must name the addon'
+    rid = resource_hash(first[len(b'-- HD2-Addon: '):].strip().decode())
+    data = struct.pack('<II', len(text), 2) + text            # length, then 2 = Lua source
+    toc, gpu, stream = patch_writer.write([(rid, LUA_TYPE, data, b'', b'', 16)], [(LUA_TYPE, 16)])
+    patch_writer.check(toc, gpu, stream)
+    return toc, gpu, stream
 
 
-def texture_rgba(png):
-    """A plain R8G8B8A8 texture (DXGI 28, one mip): the 340-byte Stingray + DDS header, and the pixels (gpu data)."""
-    from PIL import Image
-    im = Image.open(png)
-    assert im.mode == 'RGBA' and im.size == (64, 64), 'skull art must be 64x64 with transparency: %s %s' % (im.mode, im.size)
-    w, h = im.size
-    st = struct.pack('<III', 0, 0, 0xFFFFFFFF) + b'\0' * (15 * 12)
-    pf = struct.pack('<II4sIIIII', 32, 0x4, b'DX10', 0, 0, 0, 0, 0)
-    hdr = struct.pack('<IIIIIII', 124, 0x100F, h, w, w * 4, 0, 1) + b'\0' * 44 + pf + struct.pack('<IIIII', 0x1000, 0, 0, 0, 0)
-    header = st + b'DDS ' + hdr + struct.pack('<IIIII', 28, 3, 0, 1, 0)
-    assert len(header) == 340
-    return header, im.tobytes()
-
-
-def mixed_archive(lua_entries, tex_entries):
-    """A patch with Lua resources and textures: returns (toc, gpu_resources). Textures first, as the game's own."""
-    ents = ([(rid, TEXTURE, data, gpu, b'', 64) for rid, (data, gpu) in tex_entries]
-            + [(rid, LUA, data, b'', b'', 16) for rid, data in lua_entries])
-    types = [(t, 64 if t == TEXTURE else 16) for t in (TEXTURE, LUA) if any(e[1] == t for e in ents)]
-    toc, gpu, _ = patch_writer.write(ents, types)
-    patch_writer.check(toc, gpu)
-    return toc, gpu
-
-
-def check_texture_patch(toc, gpu, rid, w, h):
-    """Read a texture-only patch back: one texture entry with this id, a 340-byte header naming w x h DXGI 28, and
-    w x h x 4 bytes of gpu data at offset 0."""
-    magic, nt, n = struct.unpack_from('<III', toc, 0)
-    assert magic == MAGIC and nt == 1 and n == 1, (hex(magic), nt, n)
-    _, tid, cnt, _, _ = struct.unpack_from('<QQQII', toc, 72)
-    assert tid == TEXTURE and cnt == 1
-    fid, tid, off, soff, goff, _, _, size, ssize, gsize, _, _, _ = struct.unpack_from('<7Q6I', toc, 104)
-    assert fid == rid and tid == TEXTURE and size == 340 and goff == 0 and gsize == w * h * 4 == len(gpu), (hex(fid), size, gsize)
-    hdr = toc[off:off + size]
-    assert hdr[192:196] == b'DDS ' and struct.unpack_from('<II', hdr, 204) == (h, w) and struct.unpack_from('<I', hdr, 320)[0] == 28
-
-
-def resource(src):
-    b = src.encode('utf-8')
-    return struct.pack('<II', len(b), 2) + b
-
-
-def core_source(version, tester):
-    src = open(os.path.join(HERE, 'gunner_drive.lua.in'), encoding='utf-8').read()
-    pats = json.load(open(os.path.join(HERE, 'pats2.json')))
-    pats.update(json.load(open(os.path.join(HERE, 'pats12.json'))))   # 1.2: engine switch, instruments, selector
-    pats.update(json.load(open(os.path.join(HERE, 'pats13.json'))))   # 1.3: the tank's health
-    subs = {'@@VERSION@@': version, '@@TESTER@@': 'true' if tester else 'false'}
-    for key, (pattern, (count, a, b)) in pats.items():
-        assert count == 1, key
-        k = key.upper()
-        subs['@@%s@@' % k], subs['@@%s_AO@@' % k], subs['@@%s_AL@@' % k] = pattern, str(a), str(b - a)
-    for k, v in subs.items():
-        src = src.replace(k, v)
-    assert '@@' not in src, 'unfilled placeholder'
-    return src
-
-
-def part_source(src, part):
-    """Keeps the --@@IF <part> ... --@@END blocks of indicator.lua.in that belong to `part` ('outline' or 'panel')."""
-    out, keep, inside = [], True, False
-    for line in src.split('\n'):
-        t = line.strip()
-        if t.startswith('--@@IF '):
-            assert not inside, 'nested --@@IF'; inside, keep = True, t[7:].strip() == part; continue
-        if t == '--@@END':
-            assert inside, 'stray --@@END'; inside, keep = False, True; continue
-        if keep: out.append(line)
-    assert not inside, 'unclosed --@@IF'
-    return '\n'.join(out)
-
-
-def suboptions(presets, unit='x', extra=()):
-    def label(name, v):
-        # (1.2.2) the camera's real distance behind the turret: half a metre further back than the game's 1 m, then the
-        # preset's metres along the camera's 10 degree rise (1.2.0-1.2.1 showed the preset's step, e.g. "+2 m")
-        if unit == 'm': return '%s (%g m behind)' % (name, round(1.5 + v * math.cos(math.radians(10)), 1))
-        return '%s (x%s)' % (name, v)
-    return [{'Name': label(name, mult), 'Description': desc, 'Include': [folder] + list(extra)} for folder, name, mult, desc in presets]
-
-
-FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 def zput(z, name, data):
-    """Adds a file with a fixed date, so the same sources always give the same zip, byte for byte."""
     zi = zipfile.ZipInfo(name, FIXED_TIME)
-    zi.compress_type, zi.external_attr = zipfile.ZIP_DEFLATED, 0o644 << 16
+    zi.compress_type, zi.external_attr, zi.create_system = zipfile.ZIP_DEFLATED, 0o644 << 16, 3
     z.writestr(zi, data)
-def zfile(z, path, name):
-    with open(path, 'rb') as f: zput(z, name, f.read())
 
 
-def verify_zip(zpath):
-    """(2.0.1 review) Reads a finished mod zip back: the manifest's option and sub-option folders each hold a full
-    patch (patch_0, .gpu_resources, .stream) in layout (patch_writer.check), every folder in the zip is used by an
-    option, and every image is there. Raises ValueError (not assert: these must run in every build)."""
-    with zipfile.ZipFile(zpath) as z:
-        names = set(z.namelist())
-        m = json.loads(z.read('manifest.json'))
-        used, images = set(), {m['IconPath']}
-        for o in m['Options']:
-            images.add(o['Image'])
-            used.update(o.get('Include', []))
-            for sub in o.get('SubOptions', []):
-                images.add(sub['Image']); used.update(sub.get('Include', []))
-        for img in images:
-            if img not in names: raise ValueError('%s: image %s missing' % (zpath, img))
-        folders = {n.split('/')[0] for n in names if '/' in n and n.endswith('.patch_0')}
-        for f in used:
-            base = f + '/9ba626afa44a3aa3.patch_0'
+def main():
+    manifest = open(os.path.join(HERE, 'manifest.json'), 'rb').read()
+    name = json.loads(manifest)['Name']
+    version = name.rsplit(' ', 1)[-1]
+    for _, sub in GAME_FOLDERS:
+        if not os.path.exists(os.path.join(HERE, sub, PATCH)):
+            sys.exit('missing %s/%s: run tools/unpack_release.py on a release zip first' % (sub, PATCH))
+    out_dir = os.path.join(HERE, 'build'); os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, 'Armored-Overhaul-%s.zip' % version)
+    with zipfile.ZipFile(out + '.tmp', 'w') as z:
+        zput(z, 'manifest.json', manifest)
+        zput(z, 'thumbnail.png', open(os.path.join(HERE, 'art', 'thumbnail.png'), 'rb').read())
+        for im in IMAGES:
+            zput(z, 'options/%s.png' % im, open(os.path.join(HERE, 'options', im + '.png'), 'rb').read())
+        for folder in LUA_FOLDERS:
+            for ext, data in zip(('', '.gpu_resources', '.stream'), lua_patch(os.path.join(HERE, 'lua', folder + '.lua'))):
+                zput(z, '%s/%s%s' % (folder, PATCH, ext), data)
+        for folder, sub in GAME_FOLDERS:
             for ext in ('', '.gpu_resources', '.stream'):
-                if base + ext not in names: raise ValueError('%s: %s missing' % (zpath, base + ext))
-            patch_writer.check(z.read(base), z.read(base + '.gpu_resources'), z.read(base + '.stream'))
-        if folders - used: raise ValueError('%s: folders no option uses: %s' % (zpath, sorted(folders - used)))
-
-
-def package(kind):
-    """kind: 'test' (NAME_SUFFIX, tester logging), 'release' or 'tester' (the release with tester logging)."""
-    release = kind != 'test'
-    version = VERSION + ('' if release else NAME_SUFFIX)
-    out = os.path.join(HERE, 'build', kind); os.makedirs(out, exist_ok=True)
-    core = core_source(version + ('' if kind == 'release' else ' (tester)'), kind != 'release')
-    tflag = 'false' if kind == 'release' else 'true'       # tester logging: test and Tester builds only
-    turret_src = open(os.path.join(HERE, 'mbt_turrets.lua.in'), encoding='utf-8').read().replace('@@VERSION@@', version) \
-        .replace('@@TESTER@@', tflag)
-    assert '@@' not in turret_src
-    handling_src = open(os.path.join(HERE, 'handling.lua.in'), encoding='utf-8').read().replace('@@VERSION@@', version) \
-        .replace('@@TESTER@@', tflag)
-    variants = {}      # folder -> (addon name, source)
-    for part, addon, presets in (('grip', HANDLING, GRIP_PRESETS), ('steering', STEERING, STEERING_PRESETS), ('power', POWER, POWER_PRESETS)):
-        for folder, name, mult, _ in presets:
-            src = handling_src.replace('@@ADDON@@', addon).replace('@@PART@@', part).replace('@@PRESET_NAME@@', name) \
-                .replace('@@PRESET@@', repr(float(mult)))
-            assert '@@' not in src
-            variants[folder] = (addon, src)
-            open(os.path.join(out, '%s_%s.lua' % (part, name.lower())), 'w', encoding='utf-8').write(src)
-    tracker = open(os.path.join(HERE, 'turret_tracker.lua.inc'), encoding='utf-8').read()
-    camera_src = open(os.path.join(HERE, 'camera.lua.in'), encoding='utf-8').read().replace('@@VERSION@@', version) \
-        .replace('@@TESTER@@', tflag).replace('@@TURRET_TRACKER@@', tracker)
-    for folder, name, mult, _ in CAMERA_PRESETS:
-        src = camera_src.replace('@@PRESET_NAME@@', name).replace('@@PRESET@@', repr(float(mult)))
-        assert '@@' not in src
-        variants[folder] = (CAMERA, src)
-        open(os.path.join(out, 'camera_%s.lua' % name.lower()), 'w', encoding='utf-8').write(src)
-    # the sims' default files: the x1.5 strengths
-    open(os.path.join(out, 'handling.lua'), 'w', encoding='utf-8').write(variants['Grip Strong'][1])
-    open(os.path.join(out, 'steering.lua'), 'w', encoding='utf-8').write(variants['Steering Quick'][1])
-    ind_src = open(os.path.join(HERE, 'indicator.lua.in'), encoding='utf-8').read().replace('@@VERSION@@', version) \
-        .replace('@@TESTER@@', tflag).replace('@@TURRET_TRACKER@@', tracker)
-    indicator = part_source(ind_src, 'outline').replace('@@ADDON@@', INDICATOR).replace('@@GLOBAL@@', 'ArmoredOverhaulIndicator')
-    panel = part_source(ind_src, 'panel').replace('@@ADDON@@', PANEL).replace('@@GLOBAL@@', 'ArmoredOverhaulDriverPanel')
-    for src in (indicator, panel):
-        assert '@@' not in src
-    open(os.path.join(out, 'indicator.lua'), 'w', encoding='utf-8').write(indicator)
-    open(os.path.join(out, 'driver_panel.lua'), 'w', encoding='utf-8').write(panel)
-    open(os.path.join(out, 'gunner_drive_on.lua'), 'w', encoding='utf-8').write(FLAG_SRC)
-    open(os.path.join(out, 'gunner_drive.lua'), 'w', encoding='utf-8').write(core)
-    open(os.path.join(out, 'mbt_turrets.lua'), 'w', encoding='utf-8').write(turret_src)
-    manifest = {
-        'Version': 1, 'Guid': GUID_LIVE if kind == 'release' else GUID_TEST,
-        'Name': 'Armored Overhaul ' + version + (' (Tester)' if kind == 'tester' else ''), 'IconPath': 'thumbnail.png',
-        'Description': ('PERSONAL TESTER BUILD: the release with extra logging. Install instead of the '
-                        'release, not next to it. ' if kind == 'tester' else '')
-                       + 'Upgrades for the TD-220 Bastion and TD-110 Maelstrom tanks, each an option: engine power, track '
-                       'grip, steering and suspension; a main battle tank turret that turns all the way round, with its '
-                       'traverse speed, elevation speed and aim range; a turret indicator with the tank\'s health; '
-                       'driving from the gunner seat; a gunner camera distance; and FRV stability. '
-                       'Requires Bingus Shared Loader.',
-        'Options': [
-            {'Name': 'Tank power', 'Description': 'More engine pulling power for the Bastion and Maelstrom: quicker off '
-             'the line, up slopes and through rough ground. Top speed stays the game\'s own. Pick how much; turn the '
-             'option off for the game\'s own engine.',
-             'Image': 'options/tank_power.png', 'SubOptions': suboptions(POWER_PRESETS)},
-            {'Name': 'Tank grip', 'Description': 'More track grip for the Bastion and Maelstrom: they hold their line on '
-             'slopes and in turns instead of sliding. Pick how much; turn the option off for the game\'s own grip.',
-             'Image': 'options/tank_grip.png', 'SubOptions': suboptions(GRIP_PRESETS)},
-            {'Name': 'Tank suspension', 'Description': 'Stiffer, better damped suspension for the Bastion and Maelstrom: '
-             'less bouncing and body roll. Pick Firm or Heavy; turn the option off for the game\'s own suspension.',
-             'Image': 'options/tank_suspension.png',
-             'SubOptions': [
-                 {'Name': 'Firm', 'Description': 'Springs a third stiffer and three times the bump damping.',
-                  'Include': ['Suspension Firm']},
-                 {'Name': 'Heavy', 'Description': 'Springs two thirds stiffer and six times the bump damping, for a '
-                  'planted, heavy ride.', 'Include': ['Suspension Heavy']},
-             ]},
-            {'Name': 'Tank steering', 'Description': 'Quicker steering response for the Bastion and Maelstrom: they start '
-             'and stop turning sooner, so they turn in place and change direction more readily. Pick how quick; turn '
-             'the option off for the game\'s own steering.',
-             'Image': 'options/tank_steering.png', 'SubOptions': suboptions(STEERING_PRESETS)},
-            {'Name': 'Turret indicator', 'Description': 'While you sit in the Bastion or Maelstrom, a small tank outline on '
-             'your screen shows which way the turret points compared to the hull, like a real tank\'s display: the '
-             'Helldivers skull is your turret and always points up, the hull turns around it with a marker at its front, '
-             'and its color shows the tank\'s health (blue, green, yellow, orange, red). With Gunner Drive it sits just '
-             'left of the driver panel. Only you see it. Move, resize or adjust it in ArmoredOverhaul-TurretIndicator.cfg '
-             'in the Bingus logs folder.',
-             'Image': 'options/turret_indicator.png', 'Include': ['Tank Core', 'Turret Indicator', 'Turret Skull']},
-            {'Name': 'MBT Turrets', 'Description': 'The Bastion and Maelstrom guns turn all the way round, and the whole top '
-             'of the tank turns with them like a main battle tank turret, built from the game\'s own armor. The guns '
-             'can also aim lower (6 degrees below level, twice the game\'s 3). The gunner view turns with it. On the Maelstrom the missile pods ride on the back of the turret and the smoke launchers '
-             'turn with it too. Turret armor always looks undamaged. Only you see the new turret models; other '
-             'players see the normal tanks.',
-             'Image': 'options/mbt_turrets.png', 'Include': ['Turret Core', 'MBT Turrets', 'Turret Models']},
-            {'Name': 'Turret traverse', 'Description': 'How fast the Bastion and Maelstrom turrets turn side to side. '
-             'Pick how fast; turn the option off for the game\'s own speed. Works with or without MBT Turrets.',
-             'Image': 'options/turret_traverse.png',
-             'SubOptions': [{'Name': '%s (x%g)' % (n, m), 'Description': d, 'Include': [f, 'Turret Core']} for f, n, m, d in TRAVERSE_PRESETS]},
-            {'Name': 'Turret elevation', 'Description': 'How fast the Bastion and Maelstrom guns move up and down. Pick how '
-             'fast; turn the option off for the game\'s own speed.',
-             'Image': 'options/turret_elevation.png',
-             'SubOptions': [{'Name': '%s (x%g)' % (n, m), 'Description': d, 'Include': [f, 'Turret Core']} for f, n, m, d in ELEVATION_PRESETS]},
-            {'Name': 'Turret aim range', 'Description': 'How far down and up the Bastion and Maelstrom guns aim. The gunner '
-             'view follows. Pick a range; turn the option off for the game\'s own (with MBT Turrets: 6 below to 25 above).',
-             'Image': 'options/turret_aim_range.png',
-             'SubOptions': [{'Name': '%s (%+g..%+g deg)' % (n, r[0], r[1]), 'Description': d, 'Include': [f, 'Turret Core']} for f, n, r, d in RANGE_PRESETS]},
-            {'Name': 'Gunner Drive', 'Description': 'Drive the Bastion or Maelstrom from the gunner seat when nobody is in '
-             'the driver seat. You stay the gunner: the turret HUD, camera and fire keys work as normal while your '
-             'movement keys drive the tank. While you drive, a driver panel like the game\'s own shows the gear, rpm, '
-             'speed and fuel (only you see it; move it or turn it off in ArmoredOverhaul-DriverPanel.cfg in the Bingus '
-             'logs folder). In the Maelstrom, Mouse 3 (or the left stick click on a controller) pops the smoke screen.',
-             'Image': 'options/gunner_drive.png', 'Include': ['Tank Core', 'Gunner Drive']},
-            {'Name': 'Gunner camera', 'Description': 'How far behind the turret the gunner camera follows in the Bastion '
-             'and Maelstrom: lower than the game\'s and rising only a little as it goes back, so you see more around the tank. '
-             'The camera stays behind the turret as it turns. Pick a distance; '
-             'turn the option off for the game\'s own.',
-             'Image': 'options/gunner_camera.png', 'SubOptions': suboptions(CAMERA_PRESETS, 'm', ['Tank Core'])},
-            {'Name': 'FRV stability', 'Description': 'The M-102 FRV, M-103 Supply FRV and M-104 incendiary FRV stay on '
-             'their wheels over rough ground, jumps and hard turns: the soft front suspension gets the rear\'s damping, '
-             'the center of mass sits lower and the chassis resists rolling. Pick how much; mass, grip, speed and '
-             'steering stay the game\'s own.',
-             'Image': 'options/frv_stability.png',
-             'SubOptions': [
-                 {'Name': 'Mild', 'Description': 'Calmer front end and a slightly lower center of mass: still lively, '
-                  'far less likely to roll.', 'Include': ['FRV Mild']},
-                 {'Name': 'Stable', 'Description': 'Stays on its wheels in hard turns and over jumps; still slides and '
-                  'drifts.', 'Include': ['FRV Stable']},
-                 {'Name': 'Planted', 'Description': 'Very hard to roll: a low center of mass and a stiff chassis. '
-                  'Feels heavier in turns.', 'Include': ['FRV Planted']},
-             ]},
-        ],
-    }
-    zpath = os.path.join(out, 'Armored-Overhaul-%s%s.zip' % (version.replace(' ', '-'), '-Tester' if kind == 'tester' else ''))
-    tmp = zpath + '.tmp'
-    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as z:
-        names = [o['Name'] for o in manifest['Options']]
-        assert sorted(names) == sorted(OPTION_ORDER), names
-        manifest['Options'].sort(key=lambda o: OPTION_ORDER.index(o['Name']))
-        # (2.0) every sub-option has its own icon: the option's glyph over a level gauge (art/icons.py SUBS=1)
-        for o in manifest['Options']:
-            for sub in o.get('SubOptions', []):
-                img = 'options/sub/%s.png' % sub['Include'][0].lower().replace(' ', '_')
-                assert os.path.exists(os.path.join(HERE, img)), img
-                sub['Image'] = img
-        zput(z, 'manifest.json', json.dumps(manifest, indent=2))
-        zfile(z, os.path.join(HERE, 'art', 'thumbnail.png'), 'thumbnail.png')
-        for opt in manifest['Options']:
-            zfile(z, os.path.join(HERE, opt['Image']), opt['Image'])
-            for sub in opt.get('SubOptions', []):
-                zfile(z, os.path.join(HERE, sub['Image']), sub['Image'])
-        for folder, entries in {'Tank Core': [(resource_hash(CORE), resource(core))],
-                                'Gunner Drive': [(resource_hash(DRIVE_FLAG), resource(FLAG_SRC)), (resource_hash(PANEL), resource(panel))],
-                                'Turret Core': [(resource_hash(TURRETS), resource(turret_src))],
-                                'MBT Turrets': [(resource_hash(TURRET_FLAGS['mbt']), resource(turret_flag('mbt', True)))],
-                                **{f: [(resource_hash(TURRET_FLAGS['traverse']), resource(turret_flag('traverse', m)))] for f, _, m, _ in TRAVERSE_PRESETS},
-                                **{f: [(resource_hash(TURRET_FLAGS['elevation']), resource(turret_flag('elevation', m)))] for f, _, m, _ in ELEVATION_PRESETS},
-                                **{f: [(resource_hash(TURRET_FLAGS['range']), resource(turret_flag('range', r)))] for f, _, r, _ in RANGE_PRESETS},
-                                **{folder: [(resource_hash(addon), resource(src))] for folder, (addon, src) in variants.items()}}.items():
-            base = folder + '/9ba626afa44a3aa3.patch_0'
-            zput(z, base, archive(entries)); zput(z, base + '.gpu_resources', b''); zput(z, base + '.stream', b'')
-        # the skull texture in its own folder (its own patch), so the indicator's Lua archive stays Lua only
-        base = 'Turret Indicator/9ba626afa44a3aa3.patch_0'
-        zput(z, base, archive([(resource_hash(INDICATOR), resource(indicator))])); zput(z, base + '.gpu_resources', b''); zput(z, base + '.stream', b'')
-        toc, gpu = mixed_archive([], [(resource_hash(SKULL_TEX), texture_rgba(os.path.join(HERE, 'art', 'skull_header_icon.png')))])
-        check_texture_patch(toc, gpu, resource_hash(SKULL_TEX), 64, 64)
-        base = 'Turret Skull/9ba626afa44a3aa3.patch_0'
-        zput(z, base, toc); zput(z, base + '.gpu_resources', gpu); zput(z, base + '.stream', b'')
-        for ext in ('', '.gpu_resources', '.stream'):
-            zfile(z, os.path.join(HERE, 'models', '9ba626afa44a3aa3.patch_0' + ext), 'Turret Models/9ba626afa44a3aa3.patch_0' + ext)
-            for preset in ('Suspension Firm', 'Suspension Heavy', 'FRV Mild', 'FRV Stable', 'FRV Planted'):
-                zfile(z, os.path.join(HERE, 'physics', preset, '9ba626afa44a3aa3.patch_0' + ext), preset + '/9ba626afa44a3aa3.patch_0' + ext)
-    verify_zip(tmp)
-    return tmp, zpath
+                zput(z, '%s/%s%s' % (folder, PATCH, ext), open(os.path.join(HERE, sub, PATCH + ext), 'rb').read())
+    os.replace(out + '.tmp', out)
+    print('wrote', os.path.relpath(out, HERE), name)
+    if '--check' in sys.argv:
+        ref = sys.argv[sys.argv.index('--check') + 1]
+        a, b = zipfile.ZipFile(out), zipfile.ZipFile(ref)
+        assert sorted(a.namelist()) == sorted(b.namelist()), 'the file list differs from ' + ref
+        diff = [n for n in a.namelist() if a.read(n) != b.read(n)]
+        print('check against %s: %d files, %s' % (os.path.basename(ref), len(a.namelist()),
+              'every file the same byte for byte' if not diff else 'different: ' + ', '.join(diff)))
+        if diff: sys.exit(1)
 
 
 if __name__ == '__main__':
-    args = sys.argv[1:]
-    if args not in ([], ['release']):
-        sys.exit('usage: python build.py [release]   (got: %s)' % ' '.join(args))
-    # (2.0.1 review) every zip is written and checked first, and only then put in place: a failure half way leaves the
-    # zips from the last good build, never a half-written one (and never a new release beside an old Tester)
-    done = [package(kind) for kind in (('release', 'tester') if args else ('test',))]
-    for tmp, zpath in done:
-        os.replace(tmp, zpath); print('built', zpath)
+    main()
