@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.0.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.0.1 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -50,6 +50,7 @@ local function watched(kind) return DRIVEN[kind] ~= nil or FRV_KINDS[kind] ~= ni
 
 local TUNING = {
     settle_polls = 2,        -- same seat seen this many polls in a row before driving starts
+    settle_every = 2,        -- (3.0.1 review) frames between polls while your seat moves or a new seat settles
     drive_seat_every = 3,    -- frames between seat-table checks while driving (your keys are copied every frame)
     idle_every = 6,          -- frames between polls while nobody sits in a supported vehicle
     menu_every = 30,         -- frames between polls while there is no seat table (ship, menus)
@@ -194,12 +195,13 @@ for field, action in pairs(INPUT.buttons) do BUTTON_FIELDS[#BUTTON_FIELDS + 1] =
 local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-has-input tag
 
 -- ------------------------------------------------------------------------------------------ state + loader
-local S = {version = '3.0.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0,
+-- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
+local S = {version = '3.0.1', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
            local_slot = 'none', game = 'unchecked', response = 'not driven yet', overwritten = 0,
-           options_menu = 'not installed (everything installed is on)'}
+           options_menu = 'not installed (everything installed is on)', brakes = 'not needed yet'}
 rawset(_G, 'ArmoredOverhaulGunnerDrive', S)
 
 local loader = rawget(_G, 'CowboyBingusModLoader')
@@ -258,12 +260,13 @@ end
 local function fetch_ptr(p) return fetch(p, 8) and mem_ptr(0) or nil end
 
 -- Plain read/write data pages only (never changes protection). Results are kept per exact range (start address
--- and length) for a while.
+-- and length) for a while. (3.0.1 review) `fresh`: asked now, the kept results neither used nor changed (the error
+-- handler, which must not rely on anything the failed frame may have left behind).
 local page_ok = {}
 local page_ok_count = 0
-local function data_pages(p, n)
+local function data_pages(p, n, fresh)
     local key = addr(p)
-    local seen = page_ok[key]
+    local seen = not fresh and page_ok[key]
     if seen and seen.n == n and S.frames - seen.frame < TUNING.refresh_every then return true end
     local cursor, left = addr(p), n
     while left > 0 do
@@ -275,6 +278,7 @@ local function data_pages(p, n)
         if room <= 0 then return false end
         cursor, left = cursor + min(room, left), left - min(room, left)
     end
+    if fresh then return true end
     if page_ok_count >= 64 then page_ok, page_ok_count, seen = {}, 0, nil end
     if seen then seen.n, seen.frame = n, S.frames
     else page_ok[key] = {n = n, frame = S.frames}; page_ok_count = page_ok_count + 1 end
@@ -310,12 +314,12 @@ end
 -- The log is what a user attaches to a bug report: what the addon found in this game build, where you sat and
 -- what it did, and the last error. Tester builds add the counters and per-frame details used during development.
 local LOG_MAIN = {'version', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
-    'response', 'overwritten', 'control', 'engine', 'smoke', 'horn', 'controller', 'health', 'kinds', 'autoloader', 'reloads', 'errors', 'last_error'}
+    'response', 'overwritten', 'control', 'engine', 'smoke', 'horn', 'controller', 'bindings', 'bindings_used', 'health', 'kinds', 'autoloader', 'reloads', 'brakes', 'errors', 'last_error'}
 local LABELS = {locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
-                engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3 or right stick click, gunner seat)',
+                engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3, right stick click or a bound key, gunner seat)',
                 sessions = 'times driven from the gunner seat', drive_frames = 'frames driven',
                 response = 'tank answers the throttle', health = 'vehicle health (Vehicle Indicator color)',
-                autoloader = 'autoloader (gunner seat)', horn = 'horn (F or left stick click, gunner seat)', controller = 'controller (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', control = 'who runs the tank (multiplayer)', overwritten = 'driving input replaced by the game (frames)'}
+                autoloader = 'autoloader (gunner seat)', horn = 'horn (F, left stick click or a bound key, gunner seat)', controller = 'controller (gunner seat)', bindings = 'key bindings (Mod Bindings Menu)', bindings_used = 'bound keys used (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', brakes = 'braked to a stop as you got out (Gunner Drive)', control = 'who runs the tank (multiplayer)', overwritten = 'driving input replaced by the game (frames)'}
 -- The last few drive starts and stops (1.2: players report Gunner Drive stops working after someone else drove)
 local history = {}
 local function hist(what)
@@ -397,8 +401,9 @@ do
         if mine then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
-        for _, g in ipairs(MENU_ORDER) do add(M, g) end
-        for g in pairs(hub.groups) do add(M, g) end          -- (a group not in MENU_ORDER: last)
+        -- (3.0.1 review) each group on its own pcall: a malformed group from another (older) copy can't stop this addon
+        for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
+        for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
@@ -419,7 +424,7 @@ menu_rows.gunner_drive = function()
     local names = {}
     for i, c in ipairs(GD) do names[i] = c.name end
     return {{'armored_overhaul.gunner_drive.' .. (tanks and frv and 'both' or (tanks and 'tanks' or 'frv')), {type = 'choice',
-        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive, the gun works as normal, and a driver panel shows gear, rpm, speed and fuel. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal. Pick which vehicles.'}, 'gunner_drive'}}
+        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive and a driver panel shows gear, rpm, speed and fuel. F sounds the horn; Mouse 3 pops the Maelstrom\'s smoke. Controller: the left stick drives, its click is the horn, the right stick click pops smoke. Set your own keys with the Mod Bindings Menu. A teammate who takes the wheel drives. Pick which vehicles.'}, 'gunner_drive'}}
 end
 menu_set = function(key, v)
     if key == 'autoloader' then menu_opts.autoloader = v == true or v == 1
@@ -877,6 +882,7 @@ do
         end
         return focus
     end
+    pads.focused = focused          -- (3.0.1 review) for the bound keys too (see binds.poll)
     local function get(o, k) return o[k] end
     local function fld(o, k) local ok, v = pcall(get, o, k); return ok and v or nil end
     local function xy(v) return v.x, v.y end
@@ -951,6 +957,84 @@ do
             end
         end
     end
+end
+
+-- ------------------------------------------------------------------------------------------ key bindings (3.0.1)
+-- With CowboyBingus's Mod Bindings Menu installed, Gunner Drive's controls get their own lines in the game's key and
+-- controller binding pages (tab MODS, section ARMORED OVERHAUL), each named "Gunner Drive: ...": Forward, Back,
+-- Steer Left, Steer Right, Horn and Smoke (Maelstrom; only with the tanks' Gunner Drive installed). They start with
+-- no key; a key or button set there works as well as the built-in ones (the movement keys, F, Mouse 3, the stick),
+-- which always stay. (Its API, from the menu's own source: _G.ModBindingsMenu {api = 1, version = 3,
+-- register_binding(id, label, slot, options), is_down(id), ready()}; a binding without a slot gets a free one and
+-- keeps it in later sessions.) The menu may load after this addon: it is looked for once a second until found, and
+-- only once the Gunner Drive option is known to be installed. is_down is asked only while you drive.
+local binds = {list = {{'forward', 'Gunner Drive: Forward'}, {'back', 'Gunner Drive: Back'},
+                       {'left', 'Gunner Drive: Steer Left'}, {'right', 'Gunner Drive: Steer Right'},
+                       {'horn', 'Gunner Drive: Horn'}, {'smoke', 'Gunner Drive: Smoke (Maelstrom)'}},
+               api = nil, at = 0, keys = {}, ids = {}, down = {}, used = {}}
+S.bindings, S.bindings_used = 'Mod Bindings Menu not installed (the built-in keys work)', 'none yet'
+function binds.link(frame)
+    if binds.api or frame < binds.at then return end
+    binds.at = frame + 60
+    local tanks, frv = rawget(_G, 'ArmoredOverhaulGunnerDriveOn') == true, rawget(_G, 'ArmoredOverhaulFRVDriveOn') == true
+    if not tanks and not frv then return end
+    local B = rawget(_G, 'ModBindingsMenu')
+    if type(B) ~= 'table' or B.api ~= 1 or type(B.register_binding) ~= 'function' or type(B.is_down) ~= 'function' then return end
+    -- (3.0.1 review) the menu is taken only once a binding is registered: when none could be, it is tried again a
+    -- second later (3.0.0 took it at once and never tried again)
+    local failed
+    for _, b in ipairs(binds.list) do
+        if b[1] ~= 'smoke' or tanks then
+            local id = 'armored_overhaul.gunner_drive.' .. b[1]
+            local ok, done, why = pcall(B.register_binding, id, b[2], nil, {category = 'ARMORED OVERHAUL'})
+            if ok and done then
+                binds.keys[#binds.keys + 1], binds.ids[#binds.ids + 1] = b[1], id
+            else
+                failed = b[1] .. ': ' .. tostring(ok and why or done)
+            end
+        end
+    end
+    if #binds.keys == 0 then
+        S.bindings = 'Mod Bindings Menu found, no binding added yet (tried again once a second): ' .. tostring(failed)
+        return
+    end
+    binds.api = B
+    S.bindings = #binds.keys .. ' Gunner Drive binding(s) in the controls, tab MODS' .. (failed and ('; not added: ' .. failed) or '')
+    hist('Mod Bindings Menu found: ' .. S.bindings)
+end
+-- once per driving frame: which bound keys are held (none while the menu isn't ready, e.g. an unsupported game build)
+-- (3.0.1 review) and none while the game's window is in the background, like a controller (see pads)
+function binds.poll()
+    local B, down = binds.api, binds.down
+    if not B then return end
+    local okr, ready = true, true
+    if pads.focused and not pads.focused() then ready = false
+    elseif type(B.ready) == 'function' then okr, ready = pcall(B.ready) end
+    for i, k in ipairs(binds.keys) do
+        local v = false
+        if okr and ready then
+            local ok, r = pcall(B.is_down, binds.ids[i])
+            v = ok and r == true
+        end
+        if v and not binds.used[k] then
+            binds.used[k] = true
+            local u = {}
+            for _, b in ipairs(binds.list) do if binds.used[b[1]] then u[#u + 1] = b[1] end end
+            S.bindings_used = table.concat(u, ', ')
+        end
+        if TESTER and v ~= (down[k] or false) then itrace('binding ' .. k .. (v and ' down' or ' up')) end
+        down[k] = v
+    end
+end
+-- the bound driving keys as a stick: x (right +), y (forward +), or nil when none is held. (3.0.1 review) A diagonal
+-- (Forward + Steer Left) stays full forward and full steering, as W + A give it: scaling it to length 1 made bound keys
+-- drive at two thirds throttle while turning
+function binds.axes()
+    local d = binds.down
+    local x = (d.right and 1 or 0) - (d.left and 1 or 0)
+    local y = (d.forward and 1 or 0) - (d.back and 1 or 0)
+    if x == 0 and y == 0 then return nil end
+    return x, y
 end
 
 local input_note, tag_note
@@ -1030,6 +1114,15 @@ local function feed(me, record)
     for i = 1, #BUTTON_FIELDS do record[BUTTON_FIELDS[i]] = button_values[i] end
     if TESTER and S.frames % 5 == 0 then input_note('gunner seat, from the game', f) end
     local sx, sy = pads.stick()
+    binds.poll()
+    local bx, by = binds.axes()                  -- (3.0.1) the Gunner Drive keys from the Mod Bindings Menu: as a stick
+    if bx then
+        if not sx then sx, sy = bx, by
+        else
+            if math.abs(bx) > math.abs(sx) then sx = bx end
+            if math.abs(by) > math.abs(sy) then sy = by end
+        end
+    end
     if sx then                                  -- (2.1) a controller's left stick drives (see pads)
         -- (3.0 review) forward and back past a small dead zone of their own, so a stick pushed hard left or right no
         -- longer creeps forward; the stick steers only when pushed further than A/D (it used to override them)
@@ -1042,7 +1135,7 @@ local function feed(me, record)
         -- vector as a driver's stick gives it (x the steering, y the push, no z); with W/S/A/D held the keys' own y
         -- and z stay (3.0 review: W plus a sideways stick turned on the spot instead of curving)
         if forward == 0 and reverse == 0 and math.abs(kx) < 0.01 then f[1], f[2] = y, 0 end
-        if S.controller == 'not used yet' then S.controller = 'used (the left stick drives)' end
+        if S.controller == 'not used yet' and not bx then S.controller = 'used (the left stick drives)' end
         if TESTER and S.frames % 5 == 0 then input_note('gunner seat, written', f) end
     end
     last.forward, last.reverse = f[6], f[7]
@@ -1052,7 +1145,7 @@ local function feed(me, record)
     return true
 end
 
-local drive = nil      -- {vehicle, row, me, ...} while we are feeding a vehicle
+local drive = nil      -- {vehicle, kind, me, ...} while we are feeding a vehicle
 -- The seat you sit in, published for the Vehicle Indicator, Gunner Camera and driver panel (see publish below);
 -- driving/gear while you drive from the gunner seat.
 local SEAT_PUB = {kind = nil, role = 0, vehicle = 0, frame = 0, driving = false, gear = nil, selector = nil, rpm = nil,
@@ -1072,8 +1165,8 @@ local last_driver, last_driver_n = {}, 0     -- (1.3) who drove each vehicle las
 -- slot)). 3 s after you let go - or at once when you stop driving - the operator entry and your whole slot are put
 -- back. The operator entry is only taken while it is free (nobody, or you): a teammate who takes the driver seat keeps
 -- the launcher (1.2.2 review: it was re-set to you every 10 frames for those 3 s).
--- Which weapon is the smoke launcher: the one exactly one place after your gun in both the gun-and-smoke table
--- [game+0x3326A70] (map +0x20) and the ammo table [game+0x3326648] (map +0x20) that is not a main gun
+-- Which weapon is the smoke launcher: tank id + 3, or the one exactly one place after your gun in the gun-and-smoke
+-- table [game+0x3326A70] (map +0x20), that has an entry in the ammo table [game+0x3326648] (map +0x20) and is not a main gun
 -- ([game+0x33267A0], map +0x28). (Tests 10-12: the weapon one place before the gun belongs to something else; Tests 7-9
 -- also remembered the launcher from the driver seat, dropped because the game reuses tank ids.)
 -- Rounds left: u32 at [ammo table +0x48] + index x 16, read every 30 frames and just after each press and release.
@@ -1082,7 +1175,7 @@ local last_driver, last_driver_n = {}, 0     -- (1.3) who drove each vehicle las
 local SMK, smoke, smoke_rounds, keys, field, button_of, pressed, smoke_restore, smoke_frame
 do
 SMK = {trig = 0x3326420, oper = 0x3326730, pair = 0x3326A70, ammo = 0x3326648, guns = 0x33267A0,
-             press = 0x786BE0, release = 0x786DF0, kind = 0x2C, restore = 180, retry = 300}
+             press = 0x786BE0, release = 0x786DF0, kind = 0x2C, restore = 3, retry = 300}   -- (3.0.1 review: restore in seconds)
 smoke = {id = nil, vehicle = nil, next_find = 0, held = false, active = nil, full = {}, memo = {}, check = 0, rounds_at = 0}
 S.smoke, S.smoke_shots = 'not used yet', 0
 local function mgr_hdr(rva, n)
@@ -1151,7 +1244,9 @@ local function find_smoke(vehicle, gun)
             -- (2.0 Test 3: the tables reorder during a mission - the launcher stayed tank + 3 but was no longer next
             -- to the gun in the ammo table - so tank + 3 counts on its own; any other weapon must sit right after the
             -- gun in both tables)
-            if cp and ca and not map_get(gh, 0x28, c) and (c == vehicle + 3 or (cp == gp + 1 and ca == ga + 1)) then
+            -- (3.0.1: in a test match the launcher was tank id - 3, right after the gun in the gun-and-smoke
+            -- table but two places later in the ammo table, so none was found; the ammo table's order no longer counts)
+            if cp and ca and not map_get(gh, 0x28, c) and (c == vehicle + 3 or cp == gp + 1) then
                 if found and found ~= c then
                     if found ~= vehicle + 3 and c == vehicle + 3 then found = c end            -- (tank + 3 wins)
                 else
@@ -1197,6 +1292,7 @@ button_of = function(dev, names)
 end
 pressed = function(d) if not d.idx then return false end local ok, v = pcall(d.button, d.idx); return ok and type(v) == 'number' and v > 0.5 end
 local function smoke_key()
+    if binds.down.smoke then return true end      -- (3.0.1) the key set in the Mod Bindings Menu
     local SR = rawget(_G, 'stingray')
     if type(SR) ~= 'table' then return false end
     if keys.mouse == nil then local m = field(SR, 'Mouse'); keys.mouse = m and button_of(m, {'middle'}) or false end
@@ -1294,7 +1390,10 @@ smoke_frame = function(me, paused)
             if smoke.id then strace('  before any press: ' .. smoke_detail(me.entity, smoke.id, 2)) end
             write_log(true)
         end
-        S.smoke = smoke.id and string.format('ready on Mouse 3 / right stick click (smoke launcher %s)', why) or ('not found: ' .. tostring(why))
+        -- (3.0.1 review) the bound Smoke key named too, when one is registered
+        local bound = ''
+        for _, k in ipairs(binds.keys) do if k == 'smoke' then bound = ' + your Gunner Drive: Smoke binding' end end
+        S.smoke = smoke.id and string.format('ready on Mouse 3 / right stick click%s (smoke launcher %s)', bound, why) or ('not found: ' .. tostring(why))
         if not smoke.id and smoke.last_why ~= why then hist('smoke launcher not found: ' .. tostring(why)) end
         smoke.last_why = why
     end
@@ -1322,7 +1421,7 @@ smoke_frame = function(me, paused)
     elseif not down and smoke.held then
         smoke.held = false
         local a = smoke.active
-        if a then smoke_release(a); a.restore_at = S.frames + SMK.restore end
+        if a then smoke_release(a); a.restore_at = S.time + SMK.restore end
         smoke.rounds_soon = min(smoke.rounds_soon or 1e9, S.frames + 10)
         if TESTER and a then
             strace('smoke key up: released: ' .. smoke_detail(me.entity, a.w, a.slot))
@@ -1331,7 +1430,7 @@ smoke_frame = function(me, paused)
     end
     local a = smoke.active
     if a then
-        if a.restore_at and S.frames >= a.restore_at then smoke_restore()
+        if a.restore_at and S.time >= a.restore_at then smoke_restore()
         elseif smoke.held and S.frames >= smoke.check then             -- (held: the game may clear the entry, set again)
             smoke.check = S.frames + 10
             if fetch(a.op, 4) and (mem_u32(0) == 0 or mem_u32(0) == a.old) and mem_u32(0) ~= me.entity and operator_at(a.w) == a.op then
@@ -1344,7 +1443,7 @@ end
 
 end
 -- ------------------------------------------------------------------------------------------ driving
-local settle = nil     -- {vehicle, row, n} while a new seat settles
+local settle = nil     -- {vehicle, n} while a new seat settles
 local tries = nil      -- {vehicle, n}: drives that failed on their first frame (see poll)
 local shown_seat = {}  -- last seat written to the log fields (they are only reformatted when it changes)
 
@@ -1353,6 +1452,12 @@ local shown_seat = {}  -- last seat written to the log fields (they are only ref
 -- on, the engine is left alone until the move ends: someone driving that tank then keeps it running; otherwise it is switched off, as when a driver gets out. (1.2.1 Test 2
 -- left it idling; 1.2.2: 1.2.1 left it idling when you got out while a teammate sat in any other tank.)
 local pending_off = nil
+-- (3.0.1) Getting out of a vehicle you drive from the gunner seat while it rolls: Gunner Drive brakes it to a stop.
+-- Getting out of a moving tank could kill you and fling you away: the game puts the gunner out beside the turret, in
+-- the path of a tank that kept rolling once the drive let go (worst with the turret turned round, MBT Turrets).
+-- brake = {vehicle, t0, dir, v0} while braking (see brake_frame).
+local brake = nil
+local BRAKE = {max_time = 6, stop_ratio = 0.1, stop_min = 0.5, done = 0, handbrake = 0x2D}
 -- ------------------------------------------------------------------------------------------ horn (2.1)
 -- The horn from the gunner seat: F (controller: the left stick click) while you drive (Tank and FRV Gunner Drive). The driver's F (the game's input
 -- action 19) makes the game's driver code call game.dll+0x70E7B0 (_, vehicle, on), which only sets one byte: the
@@ -1382,6 +1487,7 @@ local function horn_set(vehicle, on)
     return true
 end
 local function horn_key()
+    if binds.down.horn then return true end      -- (3.0.1) the key set in the Mod Bindings Menu
     local SR = rawget(_G, 'stingray')
     if type(SR) ~= 'table' then return false end
     if horn.key == nil then local kb = field(SR, 'Keyboard'); horn.key = kb and button_of(kb, {'f'}) or false end
@@ -1429,6 +1535,8 @@ local function stop_driving(why)
     if drive.counted then hist('stopped: ' .. tostring(why)) end
     -- (1.2.1: not in the middle of a seat move - getting in or out - either: settle_engine decides once it ends)
     if drive.engine_on and why == 'moving_seat' then pending_off = {vehicle = drive.vehicle} end
+    -- (3.0.1) getting out (or moving seats) while it rolls: braked to a stop first (brake_frame)
+    if why == 'moving_seat' and drive.counted and FEAT.panel then brake = {vehicle = drive.vehicle, t0 = S.time} end
     if drive.engine_on and why ~= 'has_driver' and why ~= 'moving_seat' and why ~= 'you took the driver seat' then
         local okc, ok, err = pcall(engine_switch, drive.vehicle, false)
         S.engine = S.engine .. ((okc and ok) and '; switched off when you stopped'
@@ -1442,6 +1550,7 @@ end
 -- occupied seat row (someone in that tank's driver seat keeps its engine running).
 local function settle_engine(mine, verdict, others)
     if not pending_off or verdict == 'moving_seat' then return end
+    if brake and brake.vehicle == pending_off.vehicle then return end     -- (3.0.1: after the braking)
     local v = pending_off.vehicle
     pending_off = nil
     if mine and mine.vehicle == v and (DRIVER_ROLES[mine.role] or verdict == 'has_driver' or verdict == 'drive') then return end
@@ -1458,6 +1567,45 @@ local function settle_engine(mine, verdict, others)
 end
 
 -- One frame of driving: copies your keys into the tank's driver-input record.
+-- (3.0.1) One frame of braking: the opposite throttle to the way the vehicle rolls (reverse while it rolls forward;
+-- forward when its gear says reverse), written into its driver-input record (looked up fresh, page-checked) with the
+-- driver flag set - what a driver holding S does - and the handbrake held: record byte +0x2D, the one the Space key
+-- sets (input action 6). The throttle direction is kept from the first frame to the stop (the tank's gearbox goes over
+-- to the other direction almost at once, and letting go then barely braked). It ends, and the record is cleared, once
+-- the vehicle is down to a crawl (the game's speed figure below 10% of what it was, or 0.5), after BRAKE.max_time
+-- seconds, or as soon as someone takes the driver seat or you drive it again (see poll).
+local function brake_frame()
+    local b = brake
+    local record, index, hdr = driver_record(b.vehicle)
+    if not record then brake = nil; return end
+    local inst = b.inst or {}
+    b.inst = inst
+    if not read_instruments(index, hdr, inst) or not inst.speed then
+        clear_record(record); brake = nil; hist('braking stopped: speed unreadable'); return
+    end
+    local t = S.time - b.t0
+    if not b.dir then
+        b.dir, b.v0 = (inst.gear == -1) and 1 or -1, inst.speed
+        if TESTER then itrace(string.format('braking: speed %.2f, gear %s', inst.speed, tostring(inst.gear))) end
+    end
+    if TESTER and S.frames % 10 == 0 then itrace(string.format('braking: %.1f s, speed %.2f, gear %s', t, inst.speed, tostring(inst.gear))) end
+    if inst.speed <= max(BRAKE.stop_min, b.v0 * BRAKE.stop_ratio) or t > BRAKE.max_time then
+        clear_record(record); brake = nil
+        if b.v0 > BRAKE.stop_min then
+            BRAKE.done = BRAKE.done + 1
+            S.brakes = string.format('%d time(s) (last: speed %.1f down to %.1f in %.1f s)', BRAKE.done, b.v0, inst.speed, t)
+            hist(string.format('braked to a stop as you got out (%.1f s)', t))
+        end
+        return
+    end
+    local f = ffi.cast(F32P, record)
+    for i = 0, 5 do f[i] = 0 end
+    f[6], f[7], f[8] = b.dir > 0 and 1 or 0, b.dir < 0 and 1 or 0, 0
+    record[0x2C] = 1
+    for o = 0x2D, 0x2F do record[o] = 0 end
+    record[BRAKE.handbrake] = 1
+end
+
 local function drive_frame()
     local record, index, hdr = driver_record(drive.vehicle)   -- (on failure `index` is the reason)
     if not record then
@@ -1480,6 +1628,8 @@ local function drive_frame()
     end
     if not drive.gear_at or S.frames >= drive.gear_at then          -- instruments every 4 frames
         drive.gear_at = S.frames + 4
+        local inst_time = drive.inst_time
+        drive.inst_time = S.time
         if (drive.kind == SMK.kind and not drive.smoke_off) and smoke.id and (S.frames >= smoke.rounds_at or S.frames >= (smoke.rounds_soon or 1e9)) then
             smoke.rounds_at, smoke.rounds_soon = S.frames + 30, nil    -- (smoke rounds left, for the panel)
             local okr, n = pcall(smoke_rounds, smoke.id)
@@ -1511,8 +1661,9 @@ local function drive_frame()
                     drive.answered = true; S.response = 'yes'
                     if drive.silent then hist('the tank answers the throttle now') end
                 elseif held then
-                    drive.pushed = (drive.pushed or 0) + 4
-                    if drive.pushed >= 180 and not drive.silent then
+                    -- (3.0.1 review) seconds of game time (3.0.0: 180 frames, 1.25 s at 144 fps)
+                    drive.pushed = (drive.pushed or 0) + min(0.25, S.time - (inst_time or S.time))
+                    if drive.pushed >= 3 and not drive.silent then
                         drive.silent = true
                         S.response = string.format('no: throttle held 3 s, %.0f rpm, speed figure %.0f (the tank may be run by another player\'s game)',
                             SEAT_PUB.rpm or 0, SEAT_PUB.speed or 0)
@@ -1526,8 +1677,9 @@ local function drive_frame()
     -- the engine: started the game's own way when you start driving, and again if it stops. After a switch-on the
     -- next look waits 5 s: the game marks the engine as started only once its start-up has run (Test 8 switched it
     -- on 3 times at every start, checking every half second). Up to 3 switch-ons in a row that don't take, then it
-    -- stops trying; once the engine runs, that count starts over.
-    if not drive.engine_check or S.frames >= drive.engine_check then
+    -- stops trying; once the engine runs, that count starts over. (3.0.1 review) The 5 s are game time (engine_hold;
+    -- 3.0.0: 300 frames, 2.1 s at 144 fps, so a slow start-up could be switched on again).
+    if (not drive.engine_check or S.frames >= drive.engine_check) and S.time >= (drive.engine_hold or 0) then
         drive.engine_check = S.frames + 30
         local started = engine_started(index, hdr)
         SEAT_PUB.engine = started
@@ -1537,7 +1689,7 @@ local function drive_frame()
             local okc, ok, why = pcall(engine_switch, drive.vehicle, true)
             if okc and ok then
                 drive.engine_on = true; S.engine_starts = S.engine_starts + 1
-                drive.engine_check = S.frames + 300
+                drive.engine_hold = S.time + 5
                 drive.switch_ons = (drive.switch_ons or 0) + 1
                 S.engine = drive.switch_ons == 1 and 'started by Gunner Drive' or ('started again (' .. drive.switch_ons .. ' switch-ons this drive)')
                 if drive.switch_ons > 1 then hist('engine had stopped: switched on again') end
@@ -1589,24 +1741,27 @@ end
 -- slots, weapon at +0). Rounds: u32 at [ammo table +0x48] + index x 16 (map +0x20). The reload table (map +0x20) must
 -- hold the gun and you must be its operator ([operators +0x38] + index x 4, map +0x18), all read fresh in the frame
 -- of the call: the game's code doesn't check them itself and closes the game on a weapon it no longer has.
--- If the magazine is still empty AUTO.retry frames after a start (the game turned it down: still firing, or no
--- magazines left), it is asked again, every AUTO.retry frames for as long as the magazine stays empty (2.1.0 review:
--- after two refusals it used to give up on that magazine, so magazines gained later, e.g. a resupply, would wait for
--- the R key). The retry waits longer than any tank reload takes (2.1.0 Test 1: Maelstrom 5.9 s, Bastion 4.8-5.0 s,
--- perks only shorten them), so a running reload is never asked again. (Test 1 also showed the game ignores a start
--- while a reload runs, so an early retry is harmless; and that the reload table holds no progress field to read.)
--- (2.1.0 review) It checks every AUTO.every frames, on its own clock, not on every Tank Core poll (every 3 frames while
--- driving), and keeps your gun's id between checks (read again every AUTO.gun_every frames or when the seat changes):
--- the gun is checked fresh against the reload table and its operator anyway before every reload start.
--- (2.1 review) a start the game turns down (still firing) is asked again AUTO.quick frames later, AUTO.quick_tries
--- times, before the long wait (it used to wait the whole AUTO.retry, slower than pressing R). (3.0 review) Those quick
--- asks also come while an accepted reload is still running (the reload table has no progress to read): the game
--- ignores a start then (Test 1), so they only cost a call, and the status speaks of a refusal only once the
--- magazine has stayed empty longer than any reload takes (AUTO.longest).
+-- (3.0.1: a Maelstrom locked up in a test match with 3.0.0 - magazine empty, spare magazines on the HUD, and neither
+-- the Autoloader's starts nor the R key reloaded it again.) The first start used to come in the very frame the
+-- magazine ran dry, while the gun was still firing (and the game or the R key may start one in that frame too), with
+-- two quick repeats 0.75 s apart. Now:
+-- * the first start waits AUTO.settle seconds after the magazine runs dry (by then a reload you or the game began has
+--   cleared the gun's can-reload flag, and the trigger is let go);
+-- * a start is only asked while the gun's reload record says it can reload (byte +0x14 bit 0: the same flag the
+--   game's own can-reload check reads, game.dll+0x775580), so it never lands on a reload that is running;
+-- * after a start, the next one waits AUTO.retry seconds, longer than any tank reload takes (2.1.0 Test 1: Maelstrom
+--   5.9 s, Bastion 4.8-5.0 s; perks only shorten them), for as long as the magazine stays empty (a start the game
+--   turns down, e.g. no magazines left, costs nothing, and a resupply is then picked up by itself).
+-- The Tester log writes the reload record's first 0x18 bytes at each step, to see what a lock-up looks like.
+-- It checks every AUTO.every frames, on its own clock, and keeps your gun's id between checks (read again every
+-- AUTO.gun_every frames or when the seat changes): the gun is checked fresh against the reload table and its
+-- operator anyway before every reload start.
 -- (2.1 review) the autoloader, scoped
 local auto, autoloader_wanted, autoload
 do
-local AUTO = {retry = 480, quick = 45, quick_tries = 2, every = 6, gun_every = 60, longest = 420}
+-- (3.0.1 review) retry, settle and flag_wait in seconds of game time (S.time; 3.0.0 counted frames, as if at 60 fps);
+-- every and gun_every are poll cadences, in frames
+local AUTO = {retry = 8, settle = 1, flag_wait = 0.5, every = 6, gun_every = 60}
 auto = {gun = nil, seat = nil, gun_at = 0, next_check = 0, tries = 0, next_try = 0, empty_at = nil, memo = {}, rmemo = {}, omemo = {}, tmemo = {}}
 S.autoloader, S.reloads = 'off (option not installed)', 0
 autoloader_wanted = function() return rawget(_G, 'ArmoredOverhaulAutoloaderOn') == true and menu_opts.autoloader ~= false end
@@ -1641,19 +1796,20 @@ autoload = function(mine, me)
     if rounds > 0 then
         if auto.empty_at then
             if TESTER then atrace(string.format('magazine full again: %d rounds, %.1f s after it ran dry (%d start(s) asked)', rounds,
-                (S.frames - auto.empty_at) / 60, auto.tries)) end
+                S.time - auto.empty_at, auto.tries)) end
             auto.empty_at = nil
         end
         auto.tries, auto.next_try = 0, 0; S.autoloader = 'ready'; return
     end
-    if not auto.empty_at then auto.empty_at = S.frames; if TESTER then atrace(string.format('magazine empty (gun %08x)', gun)) end end
-    if S.frames < auto.next_try then
-        if auto.tries >= AUTO.quick_tries and S.frames - auto.empty_at > AUTO.longest then
-            S.autoloader = 'waiting (the game turned the reload down: no magazines left?), asking again every 8 s'
-        end
+    if not auto.empty_at then
+        auto.empty_at, auto.can = S.time, nil
+        if TESTER then atrace(string.format('magazine empty (gun %08x)', gun)) end
+    end
+    if S.time - auto.empty_at < AUTO.settle then S.autoloader = 'waiting (the magazine just ran dry)'; return end
+    if S.time < auto.next_try then
+        if auto.tries > 0 then S.autoloader = 'waiting (asked ' .. auto.tries .. ' time(s); the game turned it down or it is reloading)' end
         return
     end
-    auto.next_try = S.frames + (auto.tries < AUTO.quick_tries and AUTO.quick or AUTO.retry)
     -- the gun in the reload table and you its operator, read now (see above)
     local rh, R = table_hdr(F.mgr, 0x40)
     -- (2.1 review) the game's reload start reads the gun's record through [table +0x38] + index x 8 without a check:
@@ -1661,7 +1817,19 @@ autoload = function(mine, me)
     local ri = rh and map_get(rh, 0x20, gun, auto.rmemo)
     local rarr = ri and str_ptr(rh, 0x38)
     local rp = ri and rarr and fetch_ptr(rarr + ri * 8)
-    if not rp or not fetch(rp, 8) then S.autoloader = 'waiting (the gun is not in the reload table)'; return end   -- (3.0 review: the record too)
+    if not rp or not fetch(rp, 0x18) then S.autoloader = 'waiting (the gun is not in the reload table)'; return end   -- (3.0 review: the record too)
+    local can = mem[0x14] % 2 == 1
+    if TESTER and can ~= auto.can then
+        auto.can = can
+        local b = {}
+        for i = 0, 0x17 do b[#b + 1] = string.format('%02x', mem[i]) end
+        atrace(string.format('reload record %s (%s)', table.concat(b), can and 'can reload' or 'can not reload'))
+    end
+    if not can then
+        auto.next_try = S.time + AUTO.flag_wait
+        S.autoloader = 'waiting (the game says the gun can not reload right now)'
+        return
+    end
     local oh = table_hdr(F.oper, 0x40)
     local oi = oh and map_get(oh, 0x18, gun, auto.omemo)
     local oarr = oh and str_ptr(oh, 0x38)
@@ -1669,11 +1837,11 @@ autoload = function(mine, me)
     if op ~= me.entity then S.autoloader = 'waiting (someone else operates the gun)'; return end
     if not reload_start then reload_start = ffi.cast('void (*)(void *, uint32_t, uint8_t)', F.fn) end
     auto.tries = auto.tries + 1
+    auto.next_try = S.time + AUTO.retry
     reload_start(R, gun, 0)
     if auto.tries == 1 then S.reloads = S.reloads + 1 end
-    S.autoloader = auto.tries == 1 and 'reload started'
-        or ('reload started (asked ' .. auto.tries .. ' times: the game ignores a repeat while it reloads)')
-    if TESTER then atrace(string.format('reload start asked (try %d)', auto.tries)) end
+    S.autoloader = auto.tries == 1 and 'reload started' or ('reload asked again (' .. auto.tries .. ' times: the magazine stayed empty)')
+    if TESTER then atrace(string.format('reload start asked (try %d, %.1f s after it ran dry)', auto.tries, S.time - auto.empty_at)) end
 end
 
 end
@@ -1796,23 +1964,34 @@ local function poll()
         S.gunner_drive = (flags % 2 == 1 and 'tanks on' or 'tanks off') .. ', ' .. (flags >= 2 and 'FRV on' or 'FRV off')
             .. (flags > 0 and '' or ' (seat reader for the Vehicle Indicator only)')
     end
+    -- (3.0.1 review) the Autoloader switched off in the Mod Options Menu is said so in the log (autoload isn't called
+    -- then, and 3.0.0 kept showing its last state, 'ready' or 'reload started')
+    local auto_off = menu_opts.autoloader == false
+    if auto_off then S.autoloader = 'off (Mod Options Menu)'
+    elseif S.autoloader == 'off (Mod Options Menu)' then S.autoloader = FEAT.reload and 'ready' or 'not available in this game version' end
     local seats, why = read_seats()
     -- (only with you found: without it, your own row would be among the others)
     if seats and seats.me then note_drivers(seats) end
     if not seats then
-        publish(nil); health_for = nil
+        publish(nil); health_for = nil; brake = nil
         stop_driving(why); settle = nil; pending_off = nil; tries = nil      -- (3.0 review: tank ids are reused next mission)
         -- (2.0.1 review) no seat table: out of the mission. Tank ids are reused by the next one, so what was
         -- remembered per tank (who drove it last, its full smoke count) goes.
         if last_driver_n > 0 then last_driver, last_driver_n = {}, 0 end
         if smoke.full_any then smoke.full, smoke.full_any = {}, false end
+        -- (3.0.1 review) the Autoloader's gun and empty magazine too: the next mission's tank and gun can carry the same
+        -- ids, and 3.0.0 then took its old empty-magazine time and start count (no wait, or none for up to 8 s)
+        auto.gun, auto.seat, auto.empty_at, auto.tries, auto.next_try, auto.next_check = nil, nil, nil, 0, 0, 0
         S.phase, S.verdict = 'waiting', why
         next_poll = S.frames + TUNING.menu_every
         return
     end
     if not seats.anyone or not seats.mine then
         publish(nil); health_for = nil
-        if auto.gun then auto.gun, auto.next_check = nil, 0; S.autoloader = FEAT.reload and 'ready (not in the gunner seat)' or S.autoloader end
+        if brake and seats.others then        -- (3.0.1) someone took the driver seat of the tank being braked
+            for _, o in ipairs(seats.others) do if o.vehicle == brake.vehicle and DRIVER_ROLES[o.role] then brake = nil; break end end
+        end
+        if auto.gun then auto.gun, auto.next_check = nil, 0; S.autoloader = (FEAT.reload and not auto_off) and 'ready (not in the gunner seat)' or S.autoloader end
         stop_driving('left the seat'); settle = nil
         settle_engine(nil, 'not_seated', seats.others)
         S.phase, S.verdict = 'watching', seats.anyone and 'not_seated' or 'nobody_in_vehicles'
@@ -1856,11 +2035,21 @@ local function poll()
     end
     if not drive_wanted(mine.kind) then                      -- seat reader only (Vehicle Indicator without Gunner Drive)
         stop_driving(mine.kind == FRV_KIND and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off'); settle = nil
+        -- (3.0.1 review) a switch-off left pending by a seat move is settled here too (Gunner Drive turned Off in the Mod
+        -- Options Menu during the move left the engine idling); with the option off nobody drives from the gunner seat
+        if pending_off then
+            local v = seat_verdict(mine, seats.others)
+            settle_engine(mine, v == 'drive' and 'option_off' or v, seats.others)
+        end
         S.phase, S.verdict = 'watching', 'seat reader only'
         next_poll = S.frames + TUNING.idle_every
         return
     end
     local verdict = seat_verdict(mine, seats.others)
+    if brake then                               -- (3.0.1) a driver now, or you drive it again: braking ends
+        if verdict == 'drive' and mine.vehicle == brake.vehicle then brake = nil
+        else for _, o in ipairs(seats.others) do if o.vehicle == brake.vehicle and DRIVER_ROLES[o.role] then brake = nil; break end end end
+    end
     settle_engine(mine, verdict, seats.others)
     if verdict ~= S.verdict then
         if verdict == 'has_driver' then
@@ -1874,21 +2063,27 @@ local function poll()
     S.verdict = verdict
     if verdict ~= 'drive' then
         stop_driving((verdict == 'other_seat' and DRIVER_ROLES[mine.role]) and 'you took the driver seat' or verdict); settle = nil
-        if verdict == 'moving_seat' then return end
+        -- (3.0.1 review) a seat move is followed closely, but not every frame (3.0.0 read the seat table every frame
+        -- of the get-in and get-out animations)
+        if verdict == 'moving_seat' then next_poll = S.frames + TUNING.settle_every; return end
         next_poll = S.frames + TUNING.idle_every
         return
     end
-    -- Only a different tank or seat ends the drive; the game rebuilding its seat list (same tank, same seat) does not.
-    if drive and (drive.vehicle ~= mine.vehicle or drive.row ~= mine.index) then
+    -- Only a different tank ends the drive; the game rebuilding its seat list (same tank, same seat) does not.
+    -- (3.0.1 review) The drive and a settling seat are known by the vehicle, not by the row: the game keeps the seat
+    -- rows packed, so a teammate leaving a vehicle moves your row, and 3.0.0 then stopped the drive ('seat changed'),
+    -- switching the engine off and on again. The verdict already says you are its gunner (one gunner seat each).
+    if drive and drive.vehicle ~= mine.vehicle then
         stop_driving('seat changed')
     end
     if not drive then
-        if not settle or settle.vehicle ~= mine.vehicle or settle.row ~= mine.index then
-            settle = {vehicle = mine.vehicle, row = mine.index, n = 0}
+        if not settle or settle.vehicle ~= mine.vehicle then
+            settle = {vehicle = mine.vehicle, n = 0}
         end
         settle.n = settle.n + 1
-        if settle.n < TUNING.settle_polls then S.phase = 'settling'; return end
-        drive = {vehicle = mine.vehicle, row = mine.index, kind = mine.kind}
+        -- (3.0.1 review) the polls counted are settle_every frames apart (3.0.0: two frames in a row)
+        if settle.n < TUNING.settle_polls then S.phase = 'settling'; next_poll = S.frames + TUNING.settle_every; return end
+        drive = {vehicle = mine.vehicle, kind = mine.kind}
         settle = nil
     end
     drive.me = seats.me
@@ -1943,13 +2138,33 @@ end
 local phase = 'start'
 local function tick()
     S.frames = S.frames + 1
+    -- (3.0.1 review) the game time: the frame time the game passes to update (S.dt), else the C runtime's clock (wall
+    -- time on Windows), else 1/60 s a frame. The waits in frames assumed 60 fps: at 144 fps the Autoloader's 1 s wait
+    -- was 0.42 s and its 8 s between starts 3.3 s, shorter than the Maelstrom's reload.
+    local dt = S.dt
+    if type(dt) ~= 'number' or dt <= 0 or dt >= 1 then
+        local okc, c = false, nil
+        if type(os) == 'table' and type(os.clock) == 'function' then okc, c = pcall(os.clock) end
+        if not okc or type(c) ~= 'number' then c = nil end
+        dt = c and S.clock_at and c - S.clock_at
+        S.clock_at = c
+        if not dt or dt <= 0 or dt >= 1 then dt = 1 / 60 end
+    end
+    S.time = S.time + dt
     menu_link(S.frames)
+    binds.link(S.frames)
     if phase == 'start' then
-        local r = start()
-        if r == true then phase = 'run'; S.phase = 'watching'; S.status = 'ready'
-        elseif r == 'search' then phase = 'search'
-        elseif r == nil then phase = 'off'; S.phase = 'off' end
-        write_log(true)
+        -- (3.0.1 review) game.dll not loaded yet: looked for once a second, and the log written once for it (3.0.0
+        -- looked and rewrote the log every frame)
+        if S.frames >= (S.start_at or 0) then
+            S.start_at = S.frames + 60
+            local r = start()
+            if r == true then phase = 'run'; S.phase = 'watching'; S.status = 'ready'
+            elseif r == 'search' then phase = 'search'
+            elseif r == nil then phase = 'off'; S.phase = 'off'
+            else S.status = 'waiting for game.dll' end
+            if r ~= false then write_log(true) end
+        end
     elseif phase == 'search' then
         if search_step() then
             local picked, counts = {}, {}
@@ -1972,6 +2187,10 @@ local function tick()
             write_log(true)
         end
     elseif phase == 'run' then
+        if brake then
+            local okb, berr = pcall(brake_frame)
+            if not okb then S.errors = S.errors + 1; S.last_error = 'braking: ' .. tostring(berr); brake = nil end
+        end
         if S.frames >= next_poll then poll()
         elseif drive and (not drive_wanted(drive.kind) or not drive_frame()) then
             if drive then stop_driving(drive.kind == FRV_KIND and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off') end
@@ -1996,11 +2215,19 @@ local function after_game(ok, ...)
                 pcall(horn_release)
                 pcall(smoke_restore)                -- (3.0 review) the smoke launcher's operator and your slot too
                 local okr, rec = pcall(driver_record, drive.vehicle)
-                if not okr and drive.record then
+                if not okr then
+                    -- (3.0.1 review) a look-up that threw gives its error text, never a record (3.0.0 cast that text
+                    -- to a pointer and zeroed it)
+                    rec = nil
                     -- (the look-up itself failed: the record kept from the last good frame is used only while the
-                    -- game's vehicle table is still the one it came from)
+                    -- game's vehicle table is still the one it came from, and (3.0.1 review) only when its page passes
+                    -- a fresh check now: 3.0.0 wrote to it with no page check in this frame)
                     local okm, m = pcall(fetch_ptr, G.vehicles)
-                    if okm and m ~= nil and m == drive.record_mgr then rec = drive.record end   -- (pointers compare by address)
+                    local old = drive.record
+                    if old and okm and m ~= nil and m == drive.record_mgr then   -- (pointers compare by address)
+                        local okp, plain = pcall(data_pages, old, VEH.stride, true)
+                        if okp and plain == true then rec = old end
+                    end
                 end
                 if rec then pcall(clear_record, rec) end
             end
@@ -2011,7 +2238,7 @@ local function after_game(ok, ...)
     end
     return ...
 end
-update = function(...) return after_game(pcall(game_update, ...)) end
+update = function(...) S.dt = ...; return after_game(pcall(game_update, ...)) end   -- (3.0.1 review) dt: see tick
 shutdown = function(...)
     pcall(stop_driving, 'game closing'); publish(nil)
     S.phase = 'off'

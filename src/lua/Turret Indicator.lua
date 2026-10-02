@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.0.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
+-- Armored Overhaul 3.0.1 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
 -- FRV or M-103 Supply FRV (any seat), a small outline on your screen shows which way the turret points compared to the
 -- hull, like a real tank's display, colored by the vehicle's health (the FRV's tires too). The turret always points
 -- up; the hull outline turns around it, with a notch at its front. Drawn only on your screen. Written from scratch.
@@ -18,7 +18,7 @@ if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true)
 if rawget(_G, 'ArmoredOverhaulIndicator') then return end
 
 local TESTER = false
-local atan2, cos, sin, sqrt, floor, min, max, pi = math.atan2, math.cos, math.sin, math.sqrt, math.floor, math.min, math.max, math.pi
+local cos, sin, sqrt, floor, max, pi = math.cos, math.sin, math.sqrt, math.floor, math.max, math.pi
 
 local SEAT_FRESH = 45                -- frames a published seat stays valid (the core refreshes it every few frames)
 local RECHECK_EVERY = 60             -- frames between checks of the overlay world and the screen size
@@ -31,7 +31,7 @@ local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.lo
 -- (Test 6: moved off the bottom centre, where it covered the game's kill chain counter; thinner and see-through)
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
 
-local S = {version = '3.0.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.0.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
@@ -46,26 +46,33 @@ local SR = rawget(_G, 'stingray')
 -- The log is what a user attaches to a bug report: whether the engine offers what the option needs, where it
 -- draws, the settings, your seat and tank, and what went wrong. Tester builds add counters and details.
 local LOG_MAIN = {'version', 'status', 'api', 'gui', 'options_menu', 'seat', 'tank', 'pick', 'angle', 'health', 'tires', 'skull', 'dock', 'errors', 'last_error'}
-local LOG_TESTER = {'frames', 'drawn', 'finds', 'shapes'}
+local LOG_TESTER = {'frames', 'drawn', 'finds', 'shapes', 'hulls', 'hull_changes', 'tilts', 'tips'}
 local notes, test_notes = {}, {}
 local function note(s)
     for _, n in ipairs(notes) do if n == s then return end end
     if #notes < 20 then notes[#notes + 1] = s end
 end
 local function test_note(s) if #test_notes < 20 then test_notes[#test_notes + 1] = s end end
+-- (3.0.1 review) the file is written only when its text changed (3.0 rewrote it on every tank search, every 5 s
+-- while a gun could not be found)
+local log_text
 local function log()
     pcall(function()
+        local b = {'Armored Overhaul - ', TITLE, '\n'}
+        for _, k in ipairs(LOG_MAIN) do b[#b + 1] = (k:gsub('_', ' ')) .. ': ' .. tostring(S[k]) .. '\n' end
+        for _, n in ipairs(notes) do b[#b + 1] = 'note: ' .. n .. '\n' end
+        if TESTER then
+            b[#b + 1] = '-- tester details --\n'
+            for _, k in ipairs(LOG_TESTER) do b[#b + 1] = k .. ': ' .. tostring(S[k]) .. '\n' end
+            for _, n in ipairs(test_notes) do b[#b + 1] = 'note: ' .. n .. '\n' end
+        end
+        local text = table.concat(b)
+        if text == log_text then return end
         local f = loader.open_log and loader.open_log(LOG_FILE)
         if not f then return end
-        f:write('Armored Overhaul - ', TITLE, '\n')
-        for _, k in ipairs(LOG_MAIN) do f:write((k:gsub('_', ' ')), ': ', tostring(S[k]), '\n') end
-        for _, n in ipairs(notes) do f:write('note: ', n, '\n') end
-        if TESTER then
-            f:write('-- tester details --\n')
-            for _, k in ipairs(LOG_TESTER) do f:write(k, ': ', tostring(S[k]), '\n') end
-            for _, n in ipairs(test_notes) do f:write('note: ', n, '\n') end
-        end
+        f:write(text)
         f:close()
+        log_text = text
     end)
 end
 
@@ -124,8 +131,9 @@ do
         if mine then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
-        for _, g in ipairs(MENU_ORDER) do add(M, g) end
-        for g in pairs(hub.groups) do add(M, g) end          -- (a group not in MENU_ORDER: last)
+        -- (3.0.1 review) each group on its own pcall: a malformed group from another (older) copy can't stop this addon
+        for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
+        for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
@@ -190,10 +198,10 @@ local TRI_MATERIAL = 'core/performance_hud/debug'   -- the engine's own debug GU
 local ov = {world = nil, gui = nil, ids = {}, bitmaps = {}, key = nil, style = nil, visible = nil}
 local draw_fails = 0                                -- drawing failures this session (turn it off at a limit)
 -- One look at the engine's world list: the overlay world (the one that is not the main world), and whether `w` is
--- still in the list.
+-- still in the list (nil: the list could not be read, so not known).
 local function scan_worlds(main, w)
     local okw, worlds = pcall(A.worlds)
-    if not okw or type(worlds) ~= 'table' then return nil, 0, false end
+    if not okw or type(worlds) ~= 'table' then return nil, 0, nil end     -- (3.0.1 review: not known, not 'gone')
     local target, live = nil, false
     for i = 1, #worlds do
         local x = worlds[i]
@@ -215,6 +223,8 @@ local function gui_alive()
     if not ov.gui then return false end
     if ov.alive_frame == S.frames then return true end
     local _, _, live = scan_worlds(nil, ov.world)
+    -- (3.0.1 review) the world list unreadable: not touched now, but kept (3.0 forgot it and left its shapes on screen)
+    if live == nil then return false end
     if not live then forget_gui(); return false end
     ov.alive_frame = S.frames
     return true
@@ -232,10 +242,11 @@ local function set_visible(v)
 end
 local function overlay_gui(main)
     if ov.gui and S.frames < (ov.next_check or 0) then return ov.gui end     -- checked once a second
-    if type(main) == 'function' then main = main() end                       -- (the panel: fetched only now)
     if main == nil then return nil end
     ov.next_check = S.frames + RECHECK_EVERY
     local target, count, live = scan_worlds(main, ov.world)
+    -- (3.0.1 review) the world list unreadable: nothing drawn this frame, the GUI kept, and checked again next frame
+    if live == nil then ov.next_check = 0; S.gui = 'world list unreadable'; return nil end
     -- (2.0.1 review) a GUI whose world is still there and isn't the main world is kept, even when another world now
     -- comes first in the list (2.0 moved it to whichever non-main world came first)
     if ov.gui and live and ov.world ~= main then ov.alive_frame = S.frames; return ov.gui end
@@ -617,10 +628,19 @@ end
 local function skull_proven()
     if sk.watch and sk.watch <= 570 then sk.watch = nil; skullcheck('ok\n') end
 end
+-- (3.0.1 review) the skull refused without the game closing: the octagon for now, and the marker no longer says
+-- 'trying' (3.0 left it, so the next start skipped the skull, saying the game had closed)
+local function skull_refused(why)
+    sk.off, sk.why, sk.watch, S.skull = true, why, nil, why
+    skullcheck('refused\n')
+end
 -- the material for this frame (with the skull bound to it when the pick needs that) and its size scale, or nil (octagon)
 local function skull_material(g, set)
     if set.skull < 0.5 then S.skull = 'off'; return nil end
     if sk.gui ~= g then
+        -- (3.0.1 review) a try in the previous GUI (a mission loaded or left) is settled first: its 'trying' marker
+        -- read as a crash here (this GUI went to the octagon) and at the next start
+        if sk.watch then skull_proven(); if sk.watch then skullcheck('interrupted\n') end end
         sk = {gui = g}
         local last = skullcheck()
         if last and last:find('^trying') then
@@ -648,28 +668,28 @@ local function skull_material(g, set)
         sk.frame, sk.m = S.frames, nil
         local c, ID = sk.pick, SR.IdString64
         local okm, m = pcall(ID.from_hex, c.mat)
-        if not okm or not m then sk.off = true; S.skull = 'octagon (ids unusable)'; sk.why = S.skull; return nil end
+        if not okm or not m then skull_refused('octagon (ids unusable)'); return nil end
         if c.tex then
             local okt, t = pcall(ID.from_hex, c.tex)
             local oks, slot = pcall(ID.from_hex, c.slot)
             local okg, mh = false, nil
             if okt and oks then okg, mh = pcall(G.material, g, m) end
-            if not okg or mh == nil or not pcall(SR.Material.set_texture, mh, slot, t) then sk.off = true; S.skull = 'octagon (the UI material was refused)'; sk.why = S.skull; return nil end
+            if not okg or mh == nil or not pcall(SR.Material.set_texture, mh, slot, t) then skull_refused('octagon (the UI material was refused)'); return nil end
         end
         sk.m = m
     end
     return sk.m, sk.pick.scale
 end
-local function draw(g, sw, sh, set, angle, band, frv, tires, nogun)
+local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place)
     colors(set.opacity)
     local b = band and HEALTH_BANDS[band]
     local HULL = b and C(floor(245 * set.opacity + 0.5), b[3], b[4], b[5]) or GREY
     local cx, cy = set.x * sw, set.y * sh
     local L = set.size * sh                          -- hull length in pixels
     -- (2.0) docked: just left of the driver panel (its left edge is 6.3 letter heights left of its centre, and its
-    -- middle 0.5 below it), with room for the outline turned any way (0.6 hull lengths) and a gap
-    local place = rawget(_G, 'ArmoredOverhaulDriverPanelPlace')
-    if set.dock >= 0.5 and type(place) == 'table' and type(place.x) == 'number' and place.show then
+    -- middle 0.5 below it), with room for the outline turned any way (0.6 hull lengths) and a gap. (3.0.1 review)
+    -- `place`: the panel's place when tick found the panel can show in this vehicle, else nil (its own spot)
+    if place then
         local u = place.size * sh
         cx, cy = place.x * sw - 6.3 * u - 1.2 * u - 0.6 * L, place.y * sh - 0.5 * u
     end
@@ -735,7 +755,10 @@ local function draw(g, sw, sh, set, angle, band, frv, tires, nogun)
         local size = L * scale
         local okb, id = pcall(G.bitmap, g, skm, V3(cx - size / 2, cy - size / 2, LAYER + 2), V2(size, size), C(floor(255 * set.opacity + 0.5), 255, 255, 255))
         if okb and id ~= nil then
-            ov.bitmaps[#ov.bitmaps + 1] = id; S.skull = sk.pick.name .. ' (' .. sk.tried .. ')'
+            -- (3.0.1 review) the log text made once per GUI (3.0: on every redraw, every frame while the turret turns)
+            ov.bitmaps[#ov.bitmaps + 1] = id
+            if not sk.text then sk.text = sk.pick.name .. ' (' .. sk.tried .. ')' end
+            S.skull = sk.text
             -- the gun line from the skull's top (drawn after the skull: the bitmap sits a layer above the lines anyway)
             -- (2.0.1 review: drawn only once the skull is up, so a refused skull no longer leaves two gun lines)
             for pass = 1, nogun and 0 or 2 do
@@ -743,7 +766,7 @@ local function draw(g, sw, sh, set, angle, band, frv, tires, nogun)
             end
             return
         end
-        S.skull = 'octagon (bitmap refused: ' .. tostring(id) .. ')'; sk.off = true; sk.why = S.skull
+        skull_refused('octagon (bitmap refused: ' .. tostring(id) .. ')')
     end
     for pass = 1, 2 do
         local col, rr = pass == 1 and SHADOW or YELLOW, pass == 1 and r + 1 or r
@@ -783,15 +806,160 @@ local function core_seat(frv)
     if type(seat) ~= 'table' or type(core) ~= 'table' then return nil, nil, false, 'waiting for Tank Core (seat reader)' end
     local cf = core.frames or 0
     if cf ~= core_watch.frames then core_watch.frames, core_watch.seen = cf, S.frames end
+    core_watch.gd = core.gd_flags          -- (3.0.1 review) Gunner Drive's vehicles: 1 tanks, 2 the FRV (for docking)
     local core_ok = core.phase ~= 'off' and S.frames - (core_watch.seen or S.frames) <= CORE_STALL
     if not core_ok then return nil, cf, false, 'waiting: Tank Core is not running (' .. tostring(core.status) .. ')' end
     local seated = seat.kind and (TANKS[seat.kind] or (frv and FRV_KINDS[seat.kind])) and cf - (seat.frame or -1e9) <= SEAT_FRESH
     return seated and seat or nil, cf, true, 'watching'
 end
 
+-- (3.0.1 Test 13, tester builds) The Maelstrom's hull is sometimes missing from the moment it is called in (only its
+-- turret shows, on any skin; rare, other players see it too). Every 2 s, for every Bastion and Maelstrom in the
+-- world, the number of meshes and which of them the engine has hidden (Mesh.visibility), in the log: 'hulls' now and
+-- 'hull_changes' (the last 8 changes), to see whether the game hides the meshes when it happens.
+local hullwatch = {next = 0, last = {}, changes = {}}
+local function hull_watch()
+    if S.frames < hullwatch.next then return end
+    hullwatch.next = S.frames + 120
+    local SA, SW, SU, SM = SR and SR.Application, SR and SR.World, SR and SR.Unit, SR and SR.Mesh
+    if not (SA and SW and SU and SM) then S.hulls = 'engine tables missing'; return end
+    local okw, world = pcall(SA.main_world)
+    if not okw or world == nil then return end
+    local parts, now = {}, {}
+    for _, kind in ipairs({0x2B, 0x2C}) do
+        local t = TT.TANKS[kind]
+        local oku, units = pcall(SW.units_by_resource, world, t.hull)
+        if oku and type(units) == 'table' then
+            for i, u in ipairs(units) do
+                local okn, n = pcall(SU.num_meshes, u)
+                local hidden, failed = {}, nil
+                if okn and type(n) == 'number' then
+                    for m = 1, n do
+                        local okm, mesh = pcall(SU.mesh, u, m)
+                        if not okm then okm, mesh = pcall(SU.mesh, u, m - 1) end
+                        if okm and mesh then
+                            local okv, vis = pcall(SM.visibility, mesh)
+                            if not okv then failed = tostring(vis) elseif vis == false then hidden[#hidden + 1] = m end
+                        else failed = 'mesh ' .. m .. ': ' .. tostring(mesh) end
+                    end
+                end
+                local key = t.name .. ' ' .. i
+                local text = string.format('%s: %s meshes, hidden %s%s', key, tostring(n), #hidden > 0 and table.concat(hidden, ',') or 'none',
+                    failed and (' (' .. failed .. ')') or '')
+                parts[#parts + 1] = text
+                now[key] = text
+                if hullwatch.last[key] ~= text then
+                    if #hullwatch.changes >= 8 then table.remove(hullwatch.changes, 1) end
+                    hullwatch.changes[#hullwatch.changes + 1] = 'f' .. S.frames .. ' ' .. text
+                end
+            end
+        end
+    end
+    hullwatch.last = now
+    local was = S.hulls
+    S.hulls = #parts > 0 and table.concat(parts, '; ') or 'no tanks in the world'
+    S.hull_changes = #hullwatch.changes > 0 and table.concat(hullwatch.changes, ' | ') or 'none'
+    if S.hulls ~= was then log() end
+end
+
+-- (3.0.1, tester builds) For reports of tanks tipping over. Ten times a second, for every
+-- Bastion and Maelstrom in the world, how far the hull leans (its up axis against the world's; roll < 0: its right
+-- side down; pitch > 0: nose up), with its speed, turn rate and rise/fall measured from its movement. 'tilts': the
+-- most each tank leaned (since the game started). 'tips' (the last 8): each time a hull leans past 35 degrees, what it was doing
+-- in the second before (speed, turning, rising or falling, lean), and then whether it came back or went over.
+local rollwatch = {next = 0, tanks = setmetatable({}, {__mode = 'k'}), tips = {}, TIP = 35, OVER = 100, BACK = 20, KEEP = 10}
+local function roll_watch()
+    if S.frames < rollwatch.next then return end
+    rollwatch.next = S.frames + 6
+    local SA, SW, SU, SQ = SR and SR.Application, SR and SR.World, SR and SR.Unit, SR and SR.Quaternion
+    if not (SA and SW and SU and SQ and SQ.up) then S.tilts = 'engine tables missing'; return end
+    local okw, world = pcall(SA.main_world)
+    if not okw or world == nil then return end
+    local okt, now = pcall(SA.time_since_launch)
+    if not okt or type(now) ~= 'number' then now = S.frames / 60 end
+    local deg, R = math.deg, rollwatch
+    local function tip(text)
+        if #R.tips >= 8 then table.remove(R.tips, 1) end
+        R.tips[#R.tips + 1] = 'f' .. S.frames .. ' ' .. text
+        S.tips = table.concat(R.tips, ' | ')
+    end
+    local parts, changed = {}, false
+    for _, kind in ipairs({0x2B, 0x2C}) do
+        local t = TT.TANKS[kind]
+        local oku, units = pcall(SW.units_by_resource, world, t.hull)
+        if oku and type(units) == 'table' then
+            for i, u in ipairs(units) do
+                local q = SU.world_rotation(u, 1)
+                local _, _, uz = tt_comps(SQ.up(q))     -- (only the heights of the axes are needed)
+                local fx, fy, fz = tt_comps(SQ.forward(q))
+                local _, _, rz = tt_comps(SQ.right(q))
+                local p = SU.world_position(u, 1)
+                local px, py, pz = tt_comps(p)
+                if uz and fz and rz and pz then
+                    local w = R.tanks[u]
+                    if not w then w = {max = 0, side = 0, n = 0, hist = {}, state = 'level'}; R.tanks[u] = w end
+                    local lean = deg(math.acos(math.max(-1, math.min(1, uz))))
+                    local roll = deg(math.asin(math.max(-1, math.min(1, rz))))
+                    local pitch = deg(math.asin(math.max(-1, math.min(1, fz))))
+                    local heading = math.atan2(fx, fy)
+                    local speed, turn, climb = 0, 0, 0
+                    if w.t and now > w.t then
+                        local dt = now - w.t
+                        speed = math.sqrt((px - w.x) ^ 2 + (py - w.y) ^ 2) / dt
+                        local dh = heading - w.h
+                        if dh > math.pi then dh = dh - 2 * math.pi elseif dh < -math.pi then dh = dh + 2 * math.pi end
+                        turn, climb = deg(dh) / dt, (pz - w.z) / dt
+                        if speed > 60 then speed, turn, climb = 0, 0, 0 end        -- (a teleport or a respawn, not driving)
+                    end
+                    w.t, w.x, w.y, w.z, w.h = now, px, py, pz, heading
+                    w.n = w.n % R.KEEP + 1
+                    local h = w.hist[w.n]                -- plain numbers kept; the text is only made for a tip
+                    if not h then h = {}; w.hist[w.n] = h end
+                    h[1], h[2], h[3], h[4], h[5] = speed * 3.6, turn, climb, roll, pitch
+                    if lean > w.max then w.max, w.side = lean, roll; changed = true end
+                    local name = t.name .. ' ' .. i
+                    if w.state == 'level' and lean > R.TIP then
+                        w.state, w.peak = 'tipping', lean
+                        local before = {}
+                        for k = 1, R.KEEP do
+                            local e = w.hist[(w.n + k - 1) % R.KEEP + 1]
+                            if e then
+                                before[#before + 1] = string.format('%.0f km/h, turning %+.0f deg/s, %+.1f m/s up, roll %+.0f pitch %+.0f',
+                                    e[1], e[2], e[3], e[4], e[5])
+                            end
+                        end
+                        tip(string.format('%s leaned past %d (%s side down: roll %+.0f, pitch %+.0f); the second before: %s', name, R.TIP,
+                            roll < 0 and 'right' or 'left', roll, pitch, table.concat(before, ' / ')))
+                        changed = true
+                    elseif w.state == 'tipping' then
+                        if lean > w.peak then w.peak = lean end
+                        if lean > R.OVER then w.state = 'over'; tip(name .. ' went over (lean ' .. string.format('%.0f', lean) .. ')'); changed = true
+                        elseif lean < R.BACK then w.state = 'level'; tip(string.format('%s came back (most %.0f)', name, w.peak)); changed = true end
+                    elseif w.state == 'over' and lean < R.BACK then
+                        w.state = 'level'; tip(name .. ' upright again'); changed = true
+                    end
+                    parts[#parts + 1] = name; parts[#parts + 1] = w; parts[#parts + 1] = lean
+                end
+            end
+        end
+    end
+    S.tips = S.tips or 'none'
+    -- the text is only rebuilt when something worth logging changed (the log is written then)
+    if changed or not S.tilts then
+        local txt = {}
+        for k = 1, #parts, 3 do
+            local w = parts[k + 1]
+            txt[#txt + 1] = string.format('%s: most %.0f (roll %+.0f), now %.0f', parts[k], w.max, w.side, parts[k + 2])
+        end
+        S.tilts = #txt > 0 and table.concat(txt, '; ') or 'no tanks in the world'
+        log()
+    end
+end
+
 local function tick()
     S.frames = S.frames + 1
     menu_link(S.frames)
+    if TESTER then pcall(hull_watch); pcall(roll_watch) end
     local seat, cf, core_ok, idle = core_seat(true)
     local turned_off = seat and settings.show < 0.5
     if turned_off then seat, idle = nil, 'off (turned off in the Mod Options Menu)' end
@@ -800,8 +968,12 @@ local function tick()
         skull_proven()
         if ov.gui and #ov.ids > 0 then clear_shapes() end
         set_visible(false)
-        S.seat = turned_off and 'in a vehicle (the indicator is off)' or (core_ok and 'not in a tank' or 'unknown')
-        if S.status ~= idle then S.status = idle; log() end
+        S.seat = turned_off and 'in a vehicle (the indicator is off)' or (core_ok and 'not in a vehicle' or 'unknown')
+        -- (3.0.1 review) last_logged kept up to date (3.0: sitting back in wrote nothing, and the file kept the idle
+        -- status for up to 30 s); an option that is off for good (the engine lacks something, drawing failed) keeps
+        -- saying so (3.0: the idle text replaced it)
+        if S.api == 'ok' or S.api == 'unchecked' then S.status = idle end
+        if S.status ~= last_logged then last_logged = S.status; log() end
         return
     end
     if not api_ok() then if S.status ~= last_logged then last_logged = S.status; log() end return end
@@ -850,9 +1022,17 @@ local function tick()
     local band = settings.health >= 0.5 and health_band(seat.health) or nil
     -- (2.0) docked next to the driver panel: redrawn when the panel moves, is resized, shown or hidden
     -- (compared as numbers: no text made every frame)
+    -- (3.0.1 review) only where the panel can show: its addon runs (place.show: false once it stopped or is off) and
+    -- Gunner Drive drives this vehicle (Tank Core's gd_flags: Off in the Mod Options Menu, or the M-103, which is
+    -- never driven: 3.0 docked next to a panel that never showed)
     local place, dock, px, py, ps = settings.dock >= 0.5 and rawget(_G, 'ArmoredOverhaulDriverPanelPlace'), 0, 0, 0, 0
     if type(place) == 'table' and type(place.x) == 'number' then
-        if place.show then dock, px, py, ps = 3, place.x, place.y, place.size else dock = 2 end
+        local gd = core_watch.gd
+        local driven = TANKS[seat.kind] and (type(gd) ~= 'number' or gd % 2 == 1)
+            or (seat.kind == FRV_KIND and (type(gd) ~= 'number' or gd >= 2))
+        if not place.show then dock = 2
+        elseif not driven then dock = 4
+        else dock, px, py, ps = 3, place.x, place.y, place.size end
     elseif settings.dock >= 0.5 then dock = 1 end
     local tires = FRV_KINDS[seat.kind] and tire_code(seat, settings.health >= 0.5) or nil
     if not ov.key or step ~= ov.step or sw ~= ov.sw or sh ~= ov.sh or settings.sig ~= ov.sig or band ~= ov.band
@@ -862,7 +1042,7 @@ local function tick()
         ov.kind = seat.kind
         ov.frv, ov.nogun = FRV_KINDS[seat.kind] ~= nil, nogun
         ov.tires = tires
-        local okd, err = pcall(draw, g, sw, sh, settings, angle, band, ov.frv, ov.frv and tire_bands or nil, nogun)
+        local okd, err = pcall(draw, g, sw, sh, settings, angle, band, ov.frv, ov.frv and tire_bands or nil, nogun, dock == 3 and place or nil)
         if not okd then
             S.errors = S.errors + 1; S.last_error = 'drawing failed: ' .. tostring(err); clear_shapes(true)
             -- (2.0.1 review) only drawing failures count towards turning it off (2.0 counted the tracker's too)
@@ -872,8 +1052,9 @@ local function tick()
         end
         ov.key, ov.step, ov.sw, ov.sh, ov.sig, ov.band, ov.dock, ov.px, ov.py, ov.ps = true, step, sw, sh, settings.sig, band, dock, px, py, ps
         S.dock = dock == 0 and 'off (the menu\'s position is used)'
-            or (dock == 1 and 'its position (the driver panel is not installed or not running)')
-            or (dock == 2 and 'its position (the driver panel is hidden)') or 'left of the driver panel'
+            or (dock == 1 and 'its position (the driver panel is not installed)')
+            or (dock == 2 and 'its position (the driver panel is not running)')
+            or (dock == 4 and 'its position (no driver panel in this vehicle: Gunner Drive is off for it)') or 'left of the driver panel'
         -- (3.0 review) the log texts only when what they say changed (2.1: every redraw); the shape counts are tester-only
         local hk = band and (band * 1000 + floor(seat.health * 100 + 0.5)) or (settings.health >= 0.5 and -1 or -2)
         if hk ~= ov.health_logged then

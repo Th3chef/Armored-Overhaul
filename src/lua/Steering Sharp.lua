@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_steering
--- Armored Overhaul 3.0.0 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.0.1 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'steering' option, Sharp). Written from scratch.
 --
 -- How it works: the tanks drive on the engine's Havok vehicle kit. When a tank is set up, the game scales its Havok
@@ -50,11 +50,14 @@ local TAIL = '8B 48 08 48 69 C1 ?? ?? ?? ?? 48 05 ?? ?? ?? ??'   -- mov ecx,[rax
 local SLOTS = '41 83 F9 ??'                                         -- cmp r9d, slot count
 local KNOWN_RVA = 0x507A00
 local KNOWN_TIMESTAMP = 0x6AB3B43F
+-- (3.0.1 review) the game's own values on that build (both tanks): what is found there must be these, or it was
+-- already scaled (an earlier copy of this addon whose Lua was rebuilt while the game kept running)
+local VANILLA = {grip = 0.7, steering = 2.25, power = 0.4}
 local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.0.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.0.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
@@ -293,7 +296,10 @@ local scan = {offset = 0x1000, hits = {}}
 local function scan_step()
     local size = min(0x40000 + 0x100, image_size - scan.offset)
     if size <= 0 then return true end
-    if VirtualQuery(game + scan.offset, region, ffi.sizeof('TtRegion')) == 0 then return true end
+    -- (3.0.1 review) a page that can't be queried is stepped over (it ended the search, with the rest unsearched)
+    if VirtualQuery(game + scan.offset, region, ffi.sizeof('TtRegion')) == 0 then
+        scan.offset = scan.offset + 0x1000; return scan.offset >= image_size
+    end
     local r = region[0]
     local region_end = num(r.base) + tonumber(r.size) - num(game)
     local exec = r.state == 0x1000 and (r.protection == 0x20 or r.protection == 0x40 or r.protection == 0x10)
@@ -333,7 +339,8 @@ end
 local acc, base
 local originals, tries, wants, shown_values = {}, {}, {}, {}
 -- (3.0 review) another mod writing the same values: a tank this addon had set, found changed back 3 times within a
--- minute, is left alone for the rest of the mission (2.1 rewrote it every 10 s for ever)
+-- minute, is left alone (2.1 rewrote it every 10 s for ever) until the next pick in the Mod Options Menu
+-- (3.0.1 review: menu_set starts over; a mod still changing it is found again within ~3 checks)
 local fight = {set = {}, backs = {}}
 local settled = false           -- true once both tanks hold the preset
 local function differs(a, b)
@@ -353,9 +360,24 @@ local function apply()
             state.tanks[t.key] = 'not found'; shown_values[t.key] = nil; open = open + 1
         else
             if not originals[t.key] then
-                originals[t.key] = current
+                local o = current
+                -- (3.0.1 review) on the known build, values that aren't the game's own were scaled already (this
+                -- addon's Lua rebuilt while the game kept running): the game's own are used, not compounded
+                if timestamp == KNOWN_TIMESTAMP then
+                    for _, k in ipairs(FIELD_NAMES) do
+                        if math.abs(current[k] - VANILLA[k]) > 1e-4 then
+                            o = {}
+                            for _, f in ipairs(FIELD_NAMES) do o[f] = VANILLA[f] end
+                            state.errors = state.errors + 1
+                            state.last_error = string.format('%s: %s found at %.3f, not the game\'s %.3f: the game\'s own used',
+                                t.name, k, current[k], VANILLA[k])
+                            break
+                        end
+                    end
+                end
+                originals[t.key] = o
                 local want = {}
-                for _, k in ipairs(FIELD_NAMES) do want[k] = current[k] * mult end
+                for _, k in ipairs(FIELD_NAMES) do want[k] = o[k] * mult end
                 wants[t.key] = want
             end
             local o, want = originals[t.key], wants[t.key]
@@ -455,8 +477,9 @@ do
         if mine then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
-        for _, g in ipairs(MENU_ORDER) do add(M, g) end
-        for g in pairs(hub.groups) do add(M, g) end          -- (a group not in MENU_ORDER: last)
+        -- (3.0.1 review) each group on its own pcall: a malformed group from another (older) copy can't stop this addon
+        for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
+        for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
@@ -478,6 +501,9 @@ menu_set = function(key, v)
         for _, f in ipairs(FIELD_NAMES) do w[f] = o[f] * mult end
         wants[k] = w
     end
+    -- (3.0.1 review) a pick is a new decision: a tank given up on (another mod changing it back, or failed writes) is
+    -- tried again (before, later picks, Off too, were silently ignored for it while the log said they applied)
+    tries = {}; fight = {set = {}, backs = {}}
     state.preset = v == MENU_PICK and string.format('%s (%s times the game\'s %s, picked in the mod manager)', PRESET_NAME, tostring(PRESET), P.what)
         or (v == 1 and string.format('off: the game\'s own %s (Mod Options Menu)', P.what)
         or string.format('%s (%g times the game\'s %s, Mod Options Menu)', MENU_CHOICES[v], mult, P.what))
@@ -556,7 +582,8 @@ local function tick()
             for _, t in ipairs(TANKS) do if state.tanks[t.key] == 'not found' then missing = missing + 1 end end
             state.status = missing == 0 and 'active' or string.format('active, %d tank(s) not found (see below)', missing)
         end
-        local summary = state.status .. state.errors
+        -- (3.0.1 review) the options menu and the preset are in it: a menu linked late (with the pick's value) is logged
+        local summary = state.status .. state.errors .. state.options_menu .. state.preset
         for _, t in ipairs(TANKS) do summary = summary .. (state.tanks[t.key] or '') end
         if summary ~= shown then shown = summary; log() end
         next_check = state.frames + ((okA and settled) and SETTLED_EVERY or CHECK_EVERY)
@@ -572,4 +599,29 @@ local function after(ok, ...)
     return ...
 end
 update = function(...) return after(pcall(previous_update, ...)) end
+-- (3.0.1 review) the game closing (or this Lua being rebuilt): the game's own values are put back, so a new copy of
+-- this addon never reads already-scaled values as the game's (x1.5 became x2.25). Only values this addon holds are
+-- written back (another mod's are left to it), through the same page-checked write; the previous shutdown is called.
+do
+    local previous_shutdown = shutdown
+    shutdown = function(...)
+        pcall(function()
+            if not acc or not base or phase == 'closed' then return end
+            phase = 'closed'                                -- (nothing is written after this)
+            local b = table_base(acc) or base
+            for _, t in ipairs(TANKS) do
+                local o, want = originals[t.key], wants[t.key]
+                local rec = o and want and find_record(b, acc, t)
+                local current = rec and sane(rec)
+                if current and differs(current, o) and not differs(current, want) then
+                    local ok, how = write_floats(rec, SPAN, FIELD, o)
+                    if not ok then state.errors = state.errors + 1; state.last_error = t.name .. ': putting the game\'s values back failed: ' .. tostring(how) end
+                end
+            end
+            state.status = 'stopped (game closing): the game\'s own values put back'
+            log()
+        end)
+        if type(previous_shutdown) == 'function' then return previous_shutdown(...) end
+    end
+end
 log()

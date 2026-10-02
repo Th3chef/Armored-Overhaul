@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.0.0 - Gunner camera option (Far): how far behind the turret the tank
+-- Armored Overhaul 3.0.1 - Gunner camera option (Far): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -36,7 +36,7 @@ local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
 local distance = PRESET          -- (3.0) metres back along the rise: the mod manager's pick, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.0.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.0.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -174,7 +174,7 @@ local function distances(s, o)
     local v = {}
     for _, k in ipairs(FIELD_NAMES) do
         local x = f32(s, o + FIELD[k])
-        if not x or x < -200 or x > 200 then return nil end
+        if not x or not (x >= -200 and x <= 200) then return nil end      -- (3.0.1 review: NaN rejected too)
         v[k] = x
     end
     return v
@@ -182,6 +182,7 @@ end
 -- A preset is accepted only with its own prefix and between its numbered neighbours (id - 1 and id + 1).
 -- `loose` (the known game build, at the known place): the prefix may differ - another camera mod may have changed the
 -- gunner view's other values (1.2.2: 1.2.0-1.2.1 then switched themselves off, and a user saw no change on Far).
+-- (3.0.1 review) every re-check once the preset was found is loose too, on every build (see apply).
 local prefix_differs = false
 local function check(rec, loose)
     local s = read(rec - STRIDE, STRIDE * 3)
@@ -195,8 +196,17 @@ local function check(rec, loose)
     return distances(s, STRIDE), id
 end
 
+-- (3.0.1 review) The turret limits at +0x4C (pitch min/max, yaw min/max) as the game has them (-15..25, -40..40) or as
+-- the Turret core widens them (yaw all the way round, pitch lower and higher): the preset's second signature.
+local function limits_ok(s, o)
+    local p0, p1, y0, y1 = f32(s, o + 0x4C), f32(s, o + 0x50), f32(s, o + 0x54), f32(s, o + 0x58)
+    if not (y1 and p0 >= -90 and p0 <= -15 and p1 >= 25 and p1 <= 90) then return false end
+    return y0 == -40 and y1 == 40 or y0 == -180 and y1 == 180
+end
 -- Other builds: one 256 KB chunk of the game's writable data per frame, looking for the preset's prefix.
-local scan = {offset = 0x1000}
+-- (3.0.1 review) every match is kept (3.0.1 took the first): one with the limits too wins, else a single match with the
+-- prefix only; more than one: not certain, left alone (see scan_pick)
+local scan = {offset = 0x1000, both = {}, one = {}}
 local function scan_step()
     local size = min(0x40000 + 0x40, image_size - scan.offset)
     if size <= 0 then return true end
@@ -214,12 +224,21 @@ local function scan_step()
             local f = s:find(PREFIX, at, true)
             if not f then break end
             local rec = game + scan.offset + f - 1 - 4
-            if check(rec) then scan.found = rec; return true end
+            -- (a match in the overlap with the next chunk is taken there)
+            if f - 1 < 0x40000 and check(rec) then
+                local list = limits_ok(read(rec, STRIDE), 0) and scan.both or scan.one
+                list[#list + 1] = rec
+            end
             at = f + 1
         end
     end
     scan.offset = scan.offset + min(0x40000, size)
     return scan.offset >= image_size
+end
+local function scan_pick()
+    if #scan.both == 1 then return scan.both[1] end
+    if #scan.both == 0 and #scan.one == 1 then return scan.one[1] end
+    return nil, #scan.both + #scan.one
 end
 
 -- ---------------------------------------------------------------- turret tracker (shared source: turret_tracker.lua.inc)
@@ -512,9 +531,9 @@ local tries = 0
 local settled = false
 local blocked = false        -- (2.0.1 review) the record is left alone: gave up, or no longer a valid preset
 local target = {}            -- what the record should hold now (the base offset turned with the turret)
-local direct, direct_check   -- the record's page is plain read/write data (checked now and then): written directly
 local function differs(a, b)
-    for _, k in ipairs(FIELD_NAMES) do if math.abs(a[k] - b[k]) > 1e-3 then return true end end
+    -- (3.0.1 review) written so a NaN counts as different (it compared as equal before, so it was never corrected)
+    for _, k in ipairs(FIELD_NAMES) do if not (math.abs(a[k] - b[k]) <= 1e-3) then return true end end
     return false
 end
 -- The base offset (straight behind the turret) turned by the turret angle `a` (radians, positive = right; x is
@@ -529,29 +548,49 @@ end
 -- the nose up the camera sank behind or under the tank the further back it was (a user: "the gunner can't aim at
 -- anything" on a steep slope). The offset wanted in the world (behind the turret's heading, height straight up) is
 -- turned into the tank's frame with its axes `B`. Near-vertical turret headings use the plain turn.
+-- (3.0.1 Test 4) Only the climb is levelled: with the turret pointing downhill the camera follows the slope again (it
+-- sits up the slope behind the turret, as the game's own view does), since a level camera stayed down at the turret's
+-- height and the tank's own hull hid the ground ahead (a user: "impossible to see ahead of the tank when you're going
+-- downhill" with the further cameras). Roll stays levelled either way; level ground is unchanged.
 local function set_target_level(a, B)
     local c, s = math.cos(a), math.sin(a)
     local gx, gy = B.fx * c + B.rx * s, B.fy * c + B.ry * s          -- the turret's heading in the world, flattened
+    local gz = B.fz * c + B.rz * s                                   -- and its climb (negative: pointing downhill)
     local l = math.sqrt(gx * gx + gy * gy)
     if l < 0.2 then return set_target(a) end
-    gx, gy = gx / l, gy / l
-    local wx, wy, wz = gy * want.side + gx * want.back, -gx * want.side + gy * want.back, want.up
+    local rx, ry = gy / l, -gx / l                                   -- right of the heading, level
+    local px, py, pz = gx / l, gy / l, 0                             -- along the heading: level when climbing...
+    if gz < 0 then local n = math.sqrt(l * l + gz * gz); px, py, pz = gx / n, gy / n, gz / n end   -- ...down the slope
+    local ux, uy, uz = ry * pz, -rx * pz, rx * py - ry * px          -- up, square to both (straight up when level)
+    local wx = rx * want.side + px * want.back + ux * want.up
+    local wy = ry * want.side + py * want.back + uy * want.up
+    local wz = pz * want.back + uz * want.up
     target.side = wx * B.rx + wy * B.ry + wz * B.rz
     target.back = wx * B.fx + wy * B.fy + wz * B.fz
     target.up = wx * B.ux + wy * B.uy + wz * B.uz
 end
-local function write(values)
-    if direct == nil or state.frames >= (direct_check or 0) then
-        local prot, kind = page_info(rec, FIELD.up + 4)
-        direct = (prot == 4 or prot == 8) and (kind == 0x20000 or kind == 0x40000 or kind == 0x1000000)
-        direct_check = state.frames + SETTLED_EVERY
-    end
-    if direct then poke(rec, values); return true, 'direct' end
-    return write_floats(rec, FIELD.up + 4, values)
+-- (3.0.1 review) the page is looked at before every write (they are rare: a quarter degree of turret turn or a
+-- centimetre); 3.0.1 looked every 10 s and wrote straight through in between, into a page that may have turned read-only
+local function write(values) return write_floats(rec, FIELD.up + 4, values) end
+local function note_written()               -- (the target was written and read back)
+    written.side, written.back, written.up = target.side, target.back, target.up
+    written.counted = false                 -- (3.0.1 review) a change after it may be counted as a fight-back again
 end
 local function apply()
-    local now = check(rec, state.loose)
-    if not now then state.view = 'preset no longer valid'; settled = false; blocked = true; return 0 end
+    -- (3.0.1 review) once found, the record is checked by its numbered neighbours only, on every build: another camera
+    -- mod changing the gunner view's other values (+0x04..+0x1F) later no longer makes it 'no longer valid' (3.0.1:
+    -- then it stopped turning and could leave the camera turned sideways for the session)
+    local now, id = check(rec, true)
+    if not now then
+        -- its neighbours still in place but its distances unreadable (NaN, out of range): straight behind is written
+        -- once before it is left alone, so it is not left turned sideways
+        if id and original and not state.rescued then
+            state.rescued = true; set_target(0)
+            local ok = write(target)
+            if ok then note_written() end
+        end
+        state.view = 'preset no longer valid'; settled = false; blocked = true; return 0
+    end
     if not original then
         original, want = now, {}
         want.side = now.side
@@ -560,22 +599,25 @@ local function apply()
         set_target(0)
     end
     local changed, problem = 0, nil
-    if confirmed and differs(now, written) and differs(now, target) then   -- (not when it already holds what we want)
+    if confirmed and not written.counted and differs(now, written) and differs(now, target) then   -- (not when it already holds what we want)
         -- (3.0 review) changed since this addon last wrote it: another mod (or the game) wrote it. Three times within a
         -- minute and it is left alone (the 'gave up' below); 2.1 rewrote it every 10 s for ever
+        -- (3.0.1 review) one change counted once until this addon writes it again: a write that keeps failing is not
+        -- another mod changing it back
+        written.counted = true
         fight_backs[#fight_backs + 1] = state.frames
         while state.frames - fight_backs[1] > 3600 do table.remove(fight_backs, 1) end
-        if #fight_backs >= 3 then tries = MAX_TRIES end
+        if #fight_backs >= 3 then tries = MAX_TRIES; state.fought = true end
     end
     if differs(now, target) then
         if tries < MAX_TRIES then
             local ok, how = write(target)
-            now = check(rec, state.loose) or now
+            now = check(rec, true) or now
             if ok and not differs(now, target) then
                 changed, tries, confirmed = 1, 0, true; state.applied = state.applied + 1
-                written.side, written.back, written.up = target.side, target.back, target.up
+                note_written()
             else
-                tries = tries + 1; state.errors = state.errors + 1
+                tries = tries + 1; state.errors = state.errors + 1; state.last_fail = tostring(how)
                 state.last_error = 'write failed: ' .. tostring(how); problem = 'write failed: ' .. tostring(how)
             end
         else
@@ -587,8 +629,10 @@ local function apply()
         .. (problem and ' [' .. problem .. ']' or '')
     if problem == 'gave up' and not state.fight_noted then
         -- the record keeps being changed back: something else (another mod) writes the gunner camera too
+        -- (3.0.1 review) or this addon's own writes kept failing: said as such (3.0.1 always blamed another mod)
         state.fight_noted = true
-        state.last_error = 'the gunner camera keeps being changed back (another camera mod?): stopped writing it'
+        state.last_error = state.fought and 'the gunner camera keeps being changed back (another camera mod?): stopped writing it'
+            or ('the gunner camera writes kept failing: stopped (last: ' .. tostring(state.last_fail) .. ')')
     end
     settled = not problem or problem == 'gave up'      -- (3.0 review: given up = left alone, not checked every 2 s)
     -- (2.0.1 review) once it has given up, turning with the turret stops writing too (2.0 kept writing it every turn,
@@ -602,7 +646,8 @@ end
 local seat_watch = {}
 local last_step, retry_at
 local basis, level = {}, false
-TT.want_up = true                   -- (the tracker keeps the hull's up axis too, for the level offset)
+-- (the tracker keeps the hull's up axis too, for the level offset; 3.0.1 review: only while a distance is picked)
+TT.want_up = distance ~= nil
 -- (3.0 review) the turning text, rebuilt only when what it says changes (2.1: every frame in the gunner seat)
 local turning_was = {}
 local function turning_text(found, tank, extra)
@@ -614,12 +659,18 @@ local function turning_text(found, tank, extra)
 end
 local function follow_turret()
     local seat, core = rawget(_G, 'ArmoredOverhaulSeat'), rawget(_G, 'ArmoredOverhaulGunnerDrive')
-    local a = 0
+    local a, hold = 0, false
     if type(seat) == 'table' and type(core) == 'table' then
         local cf = core.frames or 0
         if cf ~= seat_watch.frames then seat_watch.frames, seat_watch.seen = cf, state.frames end
         local core_ok = core.phase ~= 'off' and state.frames - (seat_watch.seen or state.frames) <= CORE_STALL
-        if core_ok and seat.role == 2 and seat.kind and TT.TANKS[seat.kind] and cf - (seat.frame or -1e9) <= SEAT_FRESH then
+        local seated = core_ok and seat.role == 2 and seat.kind and TT.TANKS[seat.kind] and cf - (seat.frame or -1e9) <= SEAT_FRESH
+        if seated and (blocked or not distance) then
+            -- (3.0.1 review) nothing to turn (left alone, or Off in the menu): the turret is not tracked (3.0.1 tracked it
+            -- every frame first); Off writes the game's own view, straight behind, once below
+            level = false; turning_was[1] = nil; seat_watch.kind = nil
+            state.turning = blocked and 'no: the gunner camera is left alone (see last error)' or 'straight behind (Off in the Mod Options Menu)'
+        elseif seated then
             -- (3.0 review) the main world only when this frame's angle isn't shared yet (the Vehicle Indicator usually
             -- reads it first), or the hull has to be searched below
             local SR = rawget(_G, 'stingray')
@@ -646,15 +697,24 @@ local function follow_turret()
                     if hull ~= nil then local okb, B = pcall(TT.basis, hull, basis); level = okb and B ~= nil end
                 end
                 turning_text(true, TT.tank, level)
-            else turning_text(false, TT.tank, why) end
+                -- (3.0.1 review) the seat and tank the angle was read for (a unit handle, not a per-frame value)
+                local pubnow = rawget(_G, 'ArmoredOverhaulTurretAngle')
+                seat_watch.kind, seat_watch.vehicle = seat.kind, seat.vehicle
+                seat_watch.hull = type(pubnow) == 'table' and pubnow.key == cf and pubnow.hull or TT.found.unit
+            else
+                turning_text(false, TT.tank, why)
+                -- (3.0.1 review) no angle this frame (the tank looked up again: 0.5 to 5 s) in the same seat of the same,
+                -- still alive tank: the camera stays where it is (3.0.1 snapped it behind the hull meanwhile)
+                hold = seat_watch.kind == seat.kind and seat_watch.vehicle == seat.vehicle and TT.alive(seat_watch.hull)
+            end
         else
-            TT.reset(); level = false; turning_was[1] = nil
+            TT.reset(); level = false; turning_was[1] = nil; seat_watch.kind = nil
             state.turning = 'straight behind (not in a tank gunner seat)'
         end
     else
-        state.turning = 'no: Tank Core is not running (it comes with this option)'; turning_was[1] = nil
+        state.turning = 'no: Tank Core is not running (it comes with this option)'; turning_was[1] = nil; seat_watch.kind = nil
     end
-    if blocked or state.frames < (retry_at or 0) then return end
+    if blocked or hold or state.frames < (retry_at or 0) then return end
     -- (3.0 review) Off in the menu: the game's own view, straight behind, never turned or levelled
     if not distance then set_target(0) elseif level then set_target_level(a, basis) else set_target(math.floor(a / ANGLE_STEP + 0.5) * ANGLE_STEP) end
     if last_step and math.abs(target.side - written.side) < 0.01 and math.abs(target.back - written.back) < 0.01
@@ -662,7 +722,7 @@ local function follow_turret()
     local ok, how = write(target)
     if ok then
         last_step, retry_at = true, nil; state.turns = state.turns + 1
-        written.side, written.back, written.up = target.side, target.back, target.up
+        note_written()
     else                                                      -- (a failed write is tried again after a second)
         retry_at, last_step = state.frames + 60, nil        -- (what the record holds is unknown: written again)
         state.errors = state.errors + 1; state.last_error = 'turning write failed: ' .. tostring(how)
@@ -718,12 +778,14 @@ do
         if mine then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
-        for _, g in ipairs(MENU_ORDER) do add(M, g) end
-        for g in pairs(hub.groups) do add(M, g) end          -- (a group not in MENU_ORDER: last)
+        -- (3.0.1 review) each group on its own pcall: a malformed group from another (older) copy can't stop this addon
+        for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
+        for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
+local next_check = 0                                    -- (main loop: frame of the next check; set by the menu too)
 local MENU_PRESETS = {false, -0.5, 2, 4, 6}             -- Off (the game's own view), Close, Far, Farther, Farthest
 local MENU_PICK = 2
 for i, d in ipairs(MENU_PRESETS) do if d == PRESET then MENU_PICK = i end end
@@ -743,11 +805,17 @@ menu_set = function(key, v)
         want.up = distance and (original.up - BASE_DOWN + distance * math.sin(RISE)) or original.up
         set_target(0); settled = false; last_step = nil
     end
+    -- (3.0.1 review) checked at the next frame, as the Turret core does (3.0.1: up to 10 s later after a turning error)
+    next_check = 0
+    -- (3.0.1 review) the hull's up axis is asked for only while a distance is picked (Off: the Vehicle Indicator stops
+    -- reading it for this addon)
+    TT.want_up = distance ~= nil
+    local pub = rawget(_G, 'ArmoredOverhaulTurretAngle')
+    if not distance and type(pub) == 'table' then pub.want_up = nil end
 end
 
 -- ---------------------------------------------------------------- main loop
 local phase = 'gate'
-local next_check = 0
 local shown
 local function tick()
     state.frames = state.frames + 1
@@ -759,7 +827,7 @@ local function tick()
             state.turning = 'off after an error (the camera stays straight behind)'; set_target(0)
             local okw, wrote = true, false
             if not blocked then okw, wrote = pcall(write, target) end              -- (3.0 review: not after giving up)
-            if okw and wrote then written.side, written.back, written.up = target.side, target.back, target.up end
+            if okw and wrote then note_written() end
             log()
         end
     end
@@ -794,11 +862,13 @@ local function tick()
     end
     if phase == 'scan' then
         if not scan_step() then return end
-        if not scan.found then
-            phase = 'off'; state.status = 'not active: the gunner camera preset was not found in this game version'
+        local found, n = scan_pick()
+        if not found then
+            phase = 'off'; state.status = (n or 0) > 1 and string.format('not active: %d places in the game data look like the gunner '
+                .. 'camera preset, so none is changed', n) or 'not active: the gunner camera preset was not found in this game version'
             state.view = 'the game\'s own'; log(); return
         end
-        rec = scan.found; phase = 'ready'
+        rec = found; phase = 'ready'
         state.how = string.format('found by search at game.dll+0x%X', num(rec) - num(game)); cache_save(num(rec) - num(game))
     end
     if phase == 'ready' then
@@ -806,7 +876,8 @@ local function tick()
         local okA, changed = pcall(apply)
         if not okA then state.errors = state.errors + 1; state.last_error = tostring(changed); state.status = 'error: ' .. tostring(changed)
         else state.status = 'active' end
-        local summary = state.status .. state.view .. state.errors .. state.turning
+        -- (3.0.1 review) the options menu and the preset too: a menu linked later is in the log
+        local summary = state.status .. state.view .. state.errors .. state.turning .. state.options_menu .. state.preset
         if summary ~= shown then shown = summary; log() end
         next_check = state.frames + ((okA and settled) and SETTLED_EVERY or CHECK_EVERY)
     end
