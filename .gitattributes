@@ -1,2 +1,5 @@
-# The Lua addons are plain Lua files (src/lua/); the art scripts are Python and shell
+# The Lua addons are plain Lua files (src/lua/); the art scripts are Python and shell.
+# The 2.0 build's templates (.lua.in, .lua.inc) are Lua too (GitHub would count .inc as Pascal).
 *.lua linguist-language=Lua
+*.lua.in linguist-language=Lua
+*.lua.inc linguist-language=Lua
