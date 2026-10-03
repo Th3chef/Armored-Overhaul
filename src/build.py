@@ -1,7 +1,7 @@
 """Armored Overhaul 3.1 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-  python tools/unpack_release.py Armored-Overhaul-3.1.0.zip     (once: the game-derived parts, see below)
-  python build.py [--check Armored-Overhaul-3.1.0.zip]
+  python tools/unpack_release.py Armored-Overhaul-3.1.1.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.1.1.zip]
 
 - lua/<folder>.lua: each option folder's Lua addon, as shipped (DERIVED folders are made from another folder's file). Its first line names the addon
   ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
@@ -60,13 +60,19 @@ def resource_hash(name):
     return v
 
 
+def read_text(path):
+    """A text file as the release has it: LF line ends. (3.1.1) Git for Windows checks text files out with CRLF by
+    default; the release's files are LF, so they are read back to LF and the build stays byte for byte."""
+    return open(path, 'rb').read().replace(b'\r\n', b'\n')
+
+
 def lua_text(folder):
     if folder in DERIVED:
         src, old, new = DERIVED[folder]
-        text = open(os.path.join(HERE, 'lua', src + '.lua'), 'rb').read()
+        text = read_text(os.path.join(HERE, 'lua', src + '.lua'))
         assert text.count(old) == 1, folder + ': the line to change is not in ' + src
         return text.replace(old, new)
-    return open(os.path.join(HERE, 'lua', folder + '.lua'), 'rb').read()
+    return read_text(os.path.join(HERE, 'lua', folder + '.lua'))
 
 
 def lua_patch(text):
@@ -86,12 +92,15 @@ def zput(z, name, data):
 
 
 def main():
-    manifest = open(os.path.join(HERE, 'manifest.json'), 'rb').read()
+    manifest = read_text(os.path.join(HERE, 'manifest.json'))
     name = json.loads(manifest)['Name']
     version = name.rsplit(' ', 1)[-1]
+    if '--check' in sys.argv and sys.argv.index('--check') + 1 >= len(sys.argv):
+        sys.exit('usage: python build.py [--check Armored-Overhaul-<version>.zip]')
     for _, sub in GAME_FOLDERS:
-        if not os.path.exists(os.path.join(HERE, sub, PATCH)):
-            sys.exit('missing %s/%s: run tools/unpack_release.py on a release zip first' % (sub, PATCH))
+        for ext in ('', '.gpu_resources', '.stream'):          # (3.1.1: all three files, not just the first)
+            if not os.path.exists(os.path.join(HERE, sub, PATCH + ext)):
+                sys.exit('missing %s/%s%s: run tools/unpack_release.py on the release zip (Armored-Overhaul-<version>.zip) first' % (sub, PATCH, ext))
     out_dir = os.path.join(HERE, 'build'); os.makedirs(out_dir, exist_ok=True)
     out = os.path.join(out_dir, 'Armored-Overhaul-%s.zip' % version)
     with zipfile.ZipFile(out + '.tmp', 'w') as z:
