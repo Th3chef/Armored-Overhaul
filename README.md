@@ -60,8 +60,10 @@ Get the latest zip from the [Releases page](../../releases) (the Armored-Overhau
 ## Install / update
 
 1. Install Bingus Shared Loader v15 or newer.
-2. Add Armored-Overhaul-3.1.0.zip in Arsenal or the HD2 Mod Manager and check the options you want.
+2. Add Armored-Overhaul-3.1.1.zip in Arsenal or the HD2 Mod Manager and check the options you want.
 3. Deploy, then restart the game.
+
+Updating from 3.1.0: install it over 3.1.0, then check your options are still as you had them (your mod manager may set them back to the first choice when it imports the update).
 
 Updating from 3.0: install it over 3.0.1 (or 3.0.0), then look over your options (your mod manager may set them back to the first choice when it imports the update). Tank Turret Traverse's speeds changed, so pick it again, and FRV Stability now lists *Stable* first. From 3.0.0, Tank Suspension's *Firm* and *Heavy* are now *Balanced* and *Planted*: pick one again.
 
@@ -73,7 +75,7 @@ Remove it in your mod manager and deploy. Nothing is left behind in the game; it
 ## Compatibility
 
 - Don't combine it with other mods that change the Bastion or Maelstrom turrets, models, handling or suspension (for example casemate or traverse turret mods, tank model replacers or tank reskins that replace the hull models), or with other drive-from-the-gunner-seat or gunner camera mods. Turn off the matching option instead if you want to keep another mod. If another mod keeps changing the same tank or camera values back, Armored Overhaul leaves them to it and says so in its log.
-- FRV Stability changes the same files as other FRV handling mods; use one or the other.
+- FRV Stability changes the same files as other FRV handling or anti-flip mods; use one or the other.
 - The exosuits are not changed.
 - Made and tested on the September 2026 game version.
 
@@ -109,8 +111,8 @@ The Tank MBT Turrets models, the Tank Suspension and FRV Stability presets and t
 
 ```
 cd src
-python tools/unpack_release.py Armored-Overhaul-3.1.0.zip
-python build.py --check Armored-Overhaul-3.1.0.zip
+python tools/unpack_release.py Armored-Overhaul-3.1.1.zip
+python build.py --check Armored-Overhaul-3.1.1.zip
 ```
 
 `--check` compares the zip it makes with the release zip, file by file (every file is the same, byte for byte). `src_physics/` holds the scripts that make the suspension and FRV presets from the game's physics files, `src_models/` the scripts that rebuild the two tank hulls for the turning turrets, and `src/art/` how the pictures are made.
