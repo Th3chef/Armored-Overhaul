@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.1.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.1.1 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -39,7 +39,9 @@ local GUNNER, DRIVER_ROLES = 2, {[1] = true, [4] = true}
 local menu_opts = {}
 local function tank_drive_on() return rawget(_G, 'ArmoredOverhaulGunnerDriveOn') == true and menu_opts.tanks ~= false end
 local function frv_drive_on() return rawget(_G, 'ArmoredOverhaulFRVDriveOn') == true and menu_opts.frv ~= false end
+local drive_available = true     -- (3.1.1 review) false when this game version's driving code wasn't found (see resolve_globals)
 local function drive_wanted(kind)
+    if not drive_available then return false end
     if kind == FRV_KIND then return frv_drive_on() end
     return VEHICLES[kind] ~= nil and tank_drive_on()
 end
@@ -136,11 +138,21 @@ local SITES = {
     uiblock = {rva = 0xA8E780, anchor_at = 144, anchor_len = 55, pattern = [[48 83 EC 08 8B 41 28 3B 05 ?? ?? ?? ?? 75 ?? 32 C0 48 83 C4 08 C3 3B 05 ?? ?? ?? ?? 4C 8B 15 ?? ?? ?? ?? 75 ?? B8 FF FF FF FF EB ?? 45 8B 8A 00 01 00 00 45 33 C0 48 89 5C 24 10 41 8B 9A 08 01 00 00 48 89 6C 24 18 0F AF D8 41 8D 69 FF 48 89 74 24 20 48 89 3C 24 45 85 C9 74 ?? 49 8B BA F8 00 00 00 41 8B B2 04 01 00 00 66 0F 1F 44 00 00 8B CD 41 8D 14 18 48 23 D1 8B 0C D7 4C 8D 1C D7 3B CE 74 ?? 3B C8 74 ?? 41 FF C0 45 3B C1 72 ?? B8 FF FF FF FF 48 8B 74 24 20 48 8B 6C 24 18 48 8B 5C 24 10 48 8B 3C 24 8B C8 48 69 C1 38 12 00 00 42 8B 84 10 88 E8 53 00 48 C1 E8 09 24 01 48 83 C4 08 C3 3B C8 75 ?? 41 8B 43 04 EB ??]]},
     drive = {rva = 0xA7E42F, anchor_at = 360, anchor_len = 15, pattern = [[3B 1D ?? ?? ?? ?? F3 41 0F 10 BC 24 E0 7A 0A 00 F2 41 0F 10 B4 24 E0 7A 0A 00 45 8B BC 24 E8 7A 0A 00 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8B 35 ?? ?? ?? ?? 48 8D 14 49 48 03 D2 F2 0F 11 34 D0 44 89 7C D0 08 3B 1D ?? ?? ?? ?? F2 41 0F 10 B4 24 D4 7A 0A 00 45 8B BC 24 DC 7A 0A 00 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8D 14 49 48 B9 04 00 00 00 02 00 00 00 48 03 D2 F2 0F 11 74 D0 0C 44 89 7C D0 14 E8 ?? ?? ?? ?? 48 8B 35 ?? ?? ?? ?? 8B C0 48 C1 E0 05 3B 1D ?? ?? ?? ?? F3 42 0F 10 B4 20 AC 33 00 00 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8D 14 49 48 B9 04 00 00 00 03 00 00 00 48 03 D2 F3 0F 11 74 D0 18 E8 ?? ?? ?? ?? 48 8B 35 ?? ?? ?? ?? 8B C0 48 C1 E0 05 3B 1D ?? ?? ?? ?? F3 42 0F 10 B4 20 AC 33 00 00 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8B 35 ?? ?? ?? ?? 48 8D 14 49 48 03 D2 F3 0F 11 74 D0 1C 3B 1D ?? ?? ?? ?? 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8B 35 ?? ?? ?? ?? 48 8D 14 49 48 03 D2 F3 0F 11 7C D0 20 3B 1D ?? ?? ?? ?? 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8D 14 49 48 B9 04 00 00 00 06 00 00 00 48 03 D2 C6 44 D0 2C 01 E8 ?? ?? ?? ?? 48 8B 35 ?? ?? ?? ?? 8B C0 48 C1 E0 05 3B 1D ?? ?? ?? ?? 46 0F B6 BC 20 A8 33 00 00 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8D 14 49 48 B9 04 00 00 00 04 00 00 00 48 03 D2 44 88 7C D0 2D E8 ?? ?? ?? ?? 48 8B 35 ?? ?? ?? ?? 8B C0 48 C1 E0 05 3B 1D ?? ?? ?? ?? 46 0F B6 BC 20 A8 33 00 00 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 48 8B 46 58 48 8D 14 49 48 B9 04 00 00 00 05 00 00 00 48 03 D2 44 88 7C D0 2E E8 ?? ?? ?? ?? 48 8B 35 ?? ?? ?? ?? 8B C0 48 C1 E0 05 3B 1D ?? ?? ?? ?? 46 0F B6 BC 20 A8 33 00 00 74 ?? 48 8D 4E 38 41 B0 01 8B D3 E8 ?? ?? ?? ?? 48 85 C0 74 ?? 39 18 75 ?? 8B 40 04 EB ?? 8B C7 8B C8 45 0F 57 ED 48 8B 46 58 48 8D 14 49 48 03 D2 44 88 7C D0 2F]]},
 }
-local SITE_ORDER = {'seat', 'player', 'blocked', 'uiblock', 'drive'}
+-- (3.1.1 review) Only the seat reader's places are needed for the addon to run (the Vehicle Indicator, Gunner Camera,
+-- Autoloader and health read the seat): seat and player. The driving code's places (driver input, and the two input
+-- checks that prove the tags) only turn Gunner Drive on: if a game update changes those alone, everything else keeps
+-- working (3.1.0 needed all five, so a change to the 776-byte driving code would have stopped every option).
+local SITE_ORDER = {'seat', 'player'}
+local DRIVE_ORDER = {'blocked', 'uiblock', 'drive'}
 -- RIP-relative globals inside the patterns: {site, displacement position, instruction end}
 local GLOBALS = {
     seats = {{'seat', 17, 21}},
     players = {{'player', 12, 16}},
+    -- (3.1.1 review) the invalid-entity id: the same compare starts the player code and is in the seat code (3.1.0 took it
+    -- from the driving code); the two must agree, and the driving code's (below) with them
+    sentinel = {{'player', 2, 6}, {'seat', 29, 33}},
+}
+local DRIVE_GLOBALS = {
     sentinel = {{'drive', 2, 6}},
     vehicles = {{'drive', 75, 79}, {'drive', 194, 198}, {'drive', 289, 293}, {'drive', 356, 360},
                 {'drive', 420, 424}, {'drive', 511, 515}, {'drive', 604, 608}, {'drive', 697, 701}},
@@ -169,9 +181,15 @@ SITES.trigger = {rva = 0x786BE0, anchor_at = 0, anchor_len = 18, pattern = [[48 
 -- (2.1) the horn: the function the driver's horn key calls (it sets the vehicle's horn byte in the vehicle buttons
 -- component, which it loads here)
 SITES.horn = {rva = 0x70E7B0, anchor_at = 36, anchor_len = 20, pattern = [[41 56 3B 15 ?? ?? ?? ?? 45 0F B6 F0 4C 8B 1D ?? ?? ?? ?? 75 ?? B8 FF FF FF FF 8B C8 49 8B 43 50 48 8D 14 89 44 88 44 90 06 41 5E C3 45 8B 4B 38 45 33 C0 48 89 5C 24 10 41 8B 5B 40 48 89 6C 24 18 0F AF DA 41 8D 69 FF 48 89 74 24 20 48 89 7C 24 28 45 85 C9 74 ?? 49 8B 7B 30 41 8B 73 3C 90 8B C5 41 8D 0C 18 48 23 C8 8B 04 CF 4C 8D 14 CF 3B C6 74 ?? 3B C2 74 ?? 41 FF C0 45 3B C1 72 ?? B8 FF FF FF FF 48 8B 74 24 20 48 8B 6C 24 18 48 8B 5C 24 10 48 8B 7C 24 28 8B C8 49 8B 43 50 48 8D 14 89 44 88 74 90 06 41 5E C3 3B C2 75 ?? 41 8B 42 04 EB ??]]}
-local EXTRA_ORDER = {'engine', 'layout', 'gearread', 'component', 'selector', 'uifont', 'health', 'reload', 'ammo', 'trigger', 'horn'}
+-- (3.1.1 review) the smoke launcher's release (the trigger release call) and the main-gun table (loaded by the game's
+-- main-gun lookup), for smoke on any game build
+SITES.release = {rva = 0x786DF0, anchor_at = 18, anchor_len = 33, pattern = [[40 53 57 41 54 41 57 48 83 EC 28 44 8B 0D ?? ?? ?? ?? 45 33 D2 48 89 6C 24 58 48 8B F9 48 89 74 24 60 4C 89 6C 24 68 4C 89 74 24 20 45 8B E0 41 3B D1 74 ?? 44 8B 59 38 45 8B C2 8B 59 40 0F AF DA 45 8D 73 FF 45 85 DB 74 ?? 48 8B 71 30 8B 69 3C 41 8B C6 41 8D 0C 18 48 23 C8 8B 04 CE 48 8D 0C CE]]}
+SITES.guns = {rva = 0x77E8C0, anchor_at = 69, anchor_len = 31, pattern = [[48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC 20 8B 05 ?? ?? ?? ?? 33 F6 8B DA 3B D0 74 ?? 48 8B 0D ?? ?? ?? ?? 44 8B C6 44 8B 49 30 44 8B 59 38 44 0F AF DB 45 8D 71 FF 45 85 C9 74 ?? 48 8B 79 28 8B 69 34 0F 1F 40 00 41 8B CE 43 8D 14 18 48 23 D1 8B 0C D7 4C 8D 14 D7 3B CD 74 ?? 3B CB 74 ?? 41 FF C0 45 3B C1 72 ?? EB ?? 3B CB 75 ?? 41 83 7A 04 FF 0F 85 ?? ?? ?? ??]]}
+local EXTRA_ORDER = {'engine', 'layout', 'gearread', 'component', 'selector', 'uifont', 'health', 'reload', 'ammo', 'trigger', 'horn',
+                     'release', 'guns'}
 local ALL_ORDER = {}
 for _, n in ipairs(SITE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
+for _, n in ipairs(DRIVE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
 for _, n in ipairs(EXTRA_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
 for _, name in ipairs(ALL_ORDER) do
     local s = SITES[name]
@@ -196,7 +214,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.1.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.1.1', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -295,18 +313,19 @@ end
 -- Hash map lookup; `hdr` is an already-read copy of the owning object and `at` the map's offset in it.
 -- `memo` keeps the last slot, so a repeat lookup costs one read.
 local function map_get(hdr, at, key, memo)
-    local entries, cap, empty, mult = str_ptr(hdr, at), le32(hdr, at + 8), le32(hdr, at + 12), le32(hdr, at + 16)
-    if not entries or not cap or not empty or not mult then return nil, 'map empty' end
-    local eid = addr(entries)
-    if memo and memo.key == key and memo.entries == eid and memo.cap == cap and fetch(entries + memo.slot * 8, 8)
-        and mem_u32(0) == key and mem_u32(4) == memo.value then
+    local lo, hi, cap, empty, mult = le32(hdr, at), le32(hdr, at + 4), le32(hdr, at + 8), le32(hdr, at + 12), le32(hdr, at + 16)
+    if memo and memo.key == key and memo.lo == lo and memo.hi == hi and memo.cap == cap and lo and cap and empty and mult
+        and fetch(memo.slot_ptr, 8) and mem_u32(0) == key and mem_u32(4) == memo.value then
         return memo.value
     end
+    local entries = str_ptr(hdr, at)
+    if not entries or not cap or not empty or not mult then return nil, 'map empty' end
+    local eid = addr(entries)
     local value, slot = hashmap_find(key, cap, empty, mult, function(i)
         if not fetch(entries + i * 8, 8) then return nil end
         return mem_u32(0), mem_u32(4)
     end)
-    if value and memo then memo.key, memo.entries, memo.cap, memo.slot, memo.value = key, eid, cap, slot, value end
+    if value and memo then memo.key, memo.entries, memo.cap, memo.slot, memo.value, memo.lo, memo.hi, memo.slot_ptr = key, eid, cap, slot, value, lo, hi, entries + slot * 8 end
     return value, slot
 end
 
@@ -418,6 +437,7 @@ local GD = {{name = 'Off', tanks = false, frv = false}}
 menu_rows.gunner_drive = function()
     local tanks, frv = rawget(_G, 'ArmoredOverhaulGunnerDriveOn') == true, rawget(_G, 'ArmoredOverhaulFRVDriveOn') == true
     if not tanks and not frv then return {} end
+    GD = {{name = 'Off', tanks = false, frv = false}}        -- (3.1.1 review: built afresh; 3.1.0 appended to it each call)
     if tanks and frv then GD[#GD + 1] = {name = 'Tanks and FRV', tanks = true, frv = true} end
     if tanks then GD[#GD + 1] = {name = 'Tanks', tanks = true, frv = false} end
     if frv then GD[#GD + 1] = {name = 'FRV', tanks = false, frv = true} end
@@ -473,25 +493,47 @@ local function site_bytes(name, rva)
     return s and fits(s, 1, SITES[name].mask) and s or nil
 end
 
-local function resolve_globals(rvas)
-    local found = {}
-    for gname, refs in pairs(GLOBALS) do
-        local target
+-- (3.1.1 review: one helper; the decode was written out five times) the game.dll offset a RIP-relative instruction in
+-- site bytes `s` (found at `rva`) points at: its 4-byte displacement at `at`, the instruction ending at `ends`
+local function rip_rva(s, rva, at, ends)
+    local d = s and le32(s, at)
+    if not d then return nil end
+    d = d >= 0x80000000 and d - TWO32 or d
+    local t = rva + ends + d
+    return (t > 0 and t + 8 <= image_size) and t or nil
+end
+-- every global in `list` from its references (all of them agreeing, and with what `found` already holds)
+local function resolve_refs(rvas, list, found)
+    for gname, refs in pairs(list) do
+        local target = found[gname]
         for _, ref in ipairs(refs) do
             local site, disp_at, ends = ref[1], ref[2], ref[3]
             local s = rvas[site] and site_bytes(site, rvas[site])
             if not s then return nil, site .. ' pattern' end
-            local d = le32(s, disp_at)
-            d = d >= 0x80000000 and d - TWO32 or d
-            local t = rvas[site] + ends + d
-            if t <= 0 or t + 8 > image_size or (target and t ~= target) then return nil, gname .. ' reference' end
+            local t = rip_rva(s, rvas[site], disp_at, ends)
+            if not t or (target and t ~= target) then return nil, gname .. ' reference' end
             target = t
         end
         found[gname] = target
     end
+    return found
+end
+local drive_missing = nil          -- (3.1.1 review) why Gunner Drive's places weren't found (nil: found)
+local function resolve_globals(rvas)
     for _, name in ipairs(SITE_ORDER) do
-        if not site_bytes(name, rvas[name]) then return nil, name .. ' pattern' end
+        if not (rvas[name] and site_bytes(name, rvas[name])) then return nil, name .. ' pattern' end
     end
+    local found, why = resolve_refs(rvas, GLOBALS, {})
+    if not found then return nil, why end
+    drive_missing = nil
+    for _, name in ipairs(DRIVE_ORDER) do
+        if not (rvas[name] and site_bytes(name, rvas[name])) then drive_missing = name .. ' pattern'; break end
+    end
+    if not drive_missing then
+        local d, dwhy = resolve_refs(rvas, DRIVE_GLOBALS, {sentinel = found.sentinel})
+        if d then found.vehicles = d.vehicles else drive_missing = dwhy end
+    end
+    drive_available = drive_missing == nil
     return found
 end
 
@@ -507,64 +549,43 @@ local function resolve_extras(rvas)
         local rva = rvas and rvas[n]
         if rva and rva > 0 and rva + #SITES[n].mask <= image_size and site_bytes(n, rva) then ok[n] = rva end
     end
+    -- the game global a found place's RIP-relative load points at (nil if the place wasn't found)
+    local function global_at(name, at, ends)
+        local t = ok[name] and rip_rva(site_bytes(name, ok[name]), ok[name], at, ends)
+        return t and (game + t) or nil
+    end
     FEAT.engine = ok.engine and (game + ok.engine) or nil
     FEAT.panel = (ok.layout and ok.gearread) and true or nil
-    FEAT.component = nil
-    if ok.component then
-        local s = site_bytes('component', ok.component)
-        local d = s and le32(s, 18)
-        if d then
-            d = d >= 0x80000000 and d - TWO32 or d
-            local t = ok.component + 22 + d                  -- mov rbp, [rip+disp] ends at pattern offset 22
-            if t > 0 and t + 8 <= image_size then FEAT.component = game + t end
-        end
-    end
+    FEAT.component = global_at('component', 18, 22)                   -- mov rbp, [rip+disp] ends at pattern offset 22
     FEAT.selector = (FEAT.component and ok.selector) and true or nil
     FEAT.font = nil
-    if ok.uifont then
-        local s = site_bytes('uifont', ok.uifont)
-        local function target(at, ends)
-            local d = s and le32(s, at)
-            if not d then return nil end
-            d = d >= 0x80000000 and d - TWO32 or d
-            local t = ok.uifont + ends + d
-            return (t > 0 and t + 8 <= image_size) and (game + t) or nil
-        end
-        local owner, font, atlas = target(13, 17), target(33, 37), target(49, 53)
-        if owner and font and atlas then FEAT.font = {owner = owner, font = font, atlas = atlas} end
-    end
-    FEAT.health = nil
-    if ok.health then
-        local s = site_bytes('health', ok.health)
-        local d = s and le32(s, 14)
-        if d then
-            d = d >= 0x80000000 and d - TWO32 or d
-            local t = ok.health + 18 + d                     -- mov r11, [rip+disp] ends at pattern offset 18
-            if t > 0 and t + 8 <= image_size then FEAT.health = game + t end
-        end
-    end
+    local owner, font, atlas = global_at('uifont', 13, 17), global_at('uifont', 33, 37), global_at('uifont', 49, 53)
+    if owner and font and atlas then FEAT.font = {owner = owner, font = font, atlas = atlas} end
+    FEAT.health = global_at('health', 14, 18)                         -- mov r11, [rip+disp] ends at pattern offset 18
     -- (2.1) the Autoloader's places: the reload start and the tables its code loads (reload table, operators, ammo,
     -- triggers); all of them, or the option stays off
     FEAT.reload = nil
-    local function global_at(name, at, ends)
-        local s = ok[name] and site_bytes(name, ok[name])
-        local d = s and le32(s, at)
-        if not d then return nil end
-        d = d >= 0x80000000 and d - TWO32 or d
-        local t = ok[name] + ends + d
-        return (t > 0 and t + 8 <= image_size) and (game + t) or nil
-    end
     if ok.reload and ok.ammo and ok.trigger then
         local mgr, oper = global_at('reload', 33, 37), global_at('reload', 162, 166)     -- mov r13 / mov r10, [rip+disp]
         local ammo, trig = global_at('ammo', 22, 26), global_at('trigger', 18, 22)       -- mov rsi / mov rdi, [rip+disp]
         if mgr and oper and ammo and trig then FEAT.reload = {fn = game + ok.reload, mgr = mgr, oper = oper, ammo = ammo, trigger = trig} end
     end
     FEAT.horn = ok.horn and global_at('horn', 15, 19) or nil                -- mov r11, [rip+disp] (the component)
+    -- (3.1.1 review) the Maelstrom's smoke: its trigger, operator, gun-and-smoke and ammo tables are the Autoloader's
+    -- (same globals), the press is the trigger place; the release and the main-gun table have their own places. Found
+    -- by pattern like the rest, so smoke keeps working after a game update (3.1.0: the Sept 2026 build only).
+    FEAT.smoke = nil
+    if FEAT.reload and ok.release and ok.guns then
+        local guns = global_at('guns', 41, 45)                                       -- mov rcx, [rip+disp]
+        if guns then FEAT.smoke = {trig = FEAT.reload.trigger, oper = FEAT.reload.oper, pair = FEAT.reload.mgr,
+            ammo = FEAT.reload.ammo, guns = guns, press = game + ok.trigger, release = game + ok.release} end
+    end
     for _, pair in ipairs({{'engine switch', FEAT.engine}, {'instruments', FEAT.panel}, {'gear selector', FEAT.selector},
                            {'HUD font', FEAT.font}, {'tank health', FEAT.health}, {'autoloader', FEAT.reload},
-                           {'horn', FEAT.horn}}) do
+                           {'horn', FEAT.horn}, {'smoke launcher', FEAT.smoke}, {'Gunner Drive', drive_available}}) do
         have[#have + 1] = pair[1] .. (pair[2] and ' found' or ' not found')
     end
+    if not drive_available then have[#have] = have[#have] .. ' (' .. tostring(drive_missing) .. ': the seat reader only)' end
     S.extras = table.concat(have, ', ')
     return ok
 end
@@ -580,7 +601,8 @@ local function cache_load(tag)
     local text = f:read('*a'); f:close()
     -- (2.1 review) 'sites 2': a cache saved by 2.0.1 after a game update lacks the 2.1 places (autoloader, horn),
     -- and taking it would leave them off for good; it is searched again instead
-    if not text:find('^armored overhaul gunner drive sites 2\n' .. tag:gsub('%p', '%%%0') .. '\n') then return nil end
+    -- (3.1.1 review) 'sites 3': the smoke places (release, guns) added; an older cache is searched again once
+    if not text:find('^armored overhaul gunner drive sites 3\n' .. tag:gsub('%p', '%%%0') .. '\n') then return nil end
     local out = {}
     for k, v in text:gmatch('(%a+)=(%x+)') do out[k] = tonumber(v, 16) end
     return out
@@ -589,7 +611,7 @@ local function cache_save(tag, rvas)
     local path = cache_file()
     local f = path and io and io.open and io.open(path, 'w')
     if not f then return end
-    f:write('armored overhaul gunner drive sites 2\n', tag, '\n')
+    f:write('armored overhaul gunner drive sites 3\n', tag, '\n')
     for _, name in ipairs(ALL_ORDER) do if rvas[name] then f:write(name, '=', string.format('%X', rvas[name]), '\n') end end
     f:close()
 end
@@ -637,18 +659,23 @@ local me_cache                             -- (the local player; see local_playe
 local function manager(name)
     local c = cached[name]
     if c and c.frame == S.frames then return c.ptr end
-    local p = fetch_ptr(G[name])
+    local lo, hi
+    if fetch(G[name], 8) then lo, hi = mem_u32(0), mem_u32(4) end
+    if c and lo and c.lo == lo and c.hi == hi then c.frame = S.frames; return c.ptr end
+    local p = lo and mem_ptr(0) or nil
     if c and c.ptr ~= nil and (p == nil or p ~= c.ptr) then          -- (pointers compare by address)
         page_ok, page_ok_count, me_cache = {}, 0, nil
     end
     if not c then c = {}; cached[name] = c end
-    c.ptr, c.frame = p, S.frames
+    c.ptr, c.frame, c.lo, c.hi = p, S.frames, lo, hi
     return p
 end
 
-local sentinel
+local sentinel, sentinel_at = nil, 0
 local function invalid_entity()
-    if not sentinel or S.frames % TUNING.refresh_every == 0 then sentinel = fetch_u32(G.sentinel) end
+    -- (3.1.1 review) re-read every refresh_every frames (3.1.0 only on frames that were multiples of it, which polls a few
+    -- frames apart could miss for the whole session)
+    if not sentinel or S.frames >= sentinel_at then sentinel = fetch_u32(G.sentinel); sentinel_at = S.frames + TUNING.refresh_every end
     return sentinel
 end
 
@@ -734,17 +761,46 @@ end
 
 -- The vehicle's driver-input record (checked every frame: records move when vehicles come and go).
 -- Also returns the vehicle's index and the table header copy (for the gear, read from the same table).
+-- (3.1.1 review) The last look-up is reused while the table's header (its map, data, state and fuel pointers) and the
+-- vehicle's map slot still say the same: one header read and one slot read a frame, and far fewer new Lua objects
+-- (3.1.0 made a 64-byte string and about 7 pointer objects every driving frame). When the slot changed (the game moved
+-- the vehicle in its table) the header is read again before the full look-up: the slot read has replaced it in `mem`.
+local HDR_N = VEH.fuel - VEH.map + 8
+local DATA_AT, STATES_AT, FUEL_AT = VEH.data - VEH.map, VEH.states - VEH.map, VEH.fuel - VEH.map
+local HDR_WORDS = {0, 4, 8, DATA_AT, DATA_AT + 4, STATES_AT, STATES_AT + 4, FUEL_AT, FUEL_AT + 4}
+local dr = {h = {}}
 local function driver_record(vehicle)
     local vehicles = manager('vehicles')
     if not vehicles then return nil, 'no vehicle table' end
-    local hdr = fetch_str(vehicles + VEH.map, VEH.fuel - VEH.map + 8)
-    if not hdr then cached.vehicles = nil; return nil, 'vehicle table unreadable' end
-    local index, why = map_get(hdr, 0, vehicle, memo.vehicle)
-    if not index then return nil, why end
-    local data = str_ptr(hdr, VEH.data - VEH.map)
+    if dr.mgr ~= vehicles then dr.mgr, dr.at, dr.record = vehicles, vehicles + VEH.map, nil end
+    if not fetch(dr.at, HDR_N) then cached.vehicles = nil; dr.record = nil; return nil, 'vehicle table unreadable' end
+    if dr.record and dr.vehicle == vehicle then
+        local same, h = true, dr.h
+        for i = 1, #HDR_WORDS do if mem_u32(HDR_WORDS[i]) ~= h[i] then same = false; break end end
+        if same then
+            local seen = page_ok[dr.key]
+            if fetch(dr.slot, 8) and mem_u32(0) == vehicle and mem_u32(4) == dr.index
+                and ((seen and seen.n == VEH.stride and S.frames - seen.frame < TUNING.refresh_every) or data_pages(dr.record, VEH.stride)) then
+                return dr.record, dr.index, dr.hdr
+            end
+            -- (mem now holds the slot, not the header)
+            if not fetch(dr.at, HDR_N) then cached.vehicles = nil; dr.record = nil; return nil, 'vehicle table unreadable' end
+        end
+    end
+    dr.record = nil
+    local hdr = ffi.string(mem, HDR_N)
+    local index, slot = map_get(hdr, 0, vehicle, memo.vehicle)
+    if not index then return nil, slot end
+    local data = str_ptr(hdr, DATA_AT)
     if not data or index > 0xFFFF then return nil, 'vehicle data' end
     local record = data + index * VEH.stride
     if not data_pages(record, VEH.stride) then return nil, 'record not plain data' end
+    local entries = str_ptr(hdr, 0)
+    local s = memo.vehicle.key == vehicle and memo.vehicle.slot or slot
+    if entries and s then
+        for i = 1, #HDR_WORDS do dr.h[i] = le32(hdr, HDR_WORDS[i]) end
+        dr.vehicle, dr.index, dr.hdr, dr.slot, dr.record, dr.key = vehicle, index, hdr, entries + s * 8, record, addr(record)
+    end
     return record, index, hdr
 end
 
@@ -763,11 +819,14 @@ local function read_instruments(index, hdr, out)
     if g >= 0x80000000 then g = g - TWO32 end
     out.gear = (g >= -1 and g <= 8) and g or nil
     out.rpm = MEMF[1]                                    -- (3.0 review: the precast view of mem)
+    if not (out.rpm >= 0 and out.rpm < 100000) then out.rpm = nil end   -- (3.1.1 review: NaN or an odd read, not published)
     -- (published as it is: 1.2.0-1.2.1 took it for metres a second and multiplied it by 3.6, and a user saw 112 km/h;
     -- the driver panel now measures the speed from the hull's movement and only falls back on this figure)
     out.speed = math.abs(MEMF[2])
+    if not (out.speed < 1000) then out.speed = nil end
     local fuels = str_ptr(hdr, VEH.fuel - VEH.map)
     out.fuel = (fuels and fetch(fuels + index * 8 + 4, 4)) and MEMF[0] or nil
+    if out.fuel and not (out.fuel >= 0 and out.fuel < 100000) then out.fuel = nil end   -- (3.1.1 review, as health is)
     S.gear_read = out.gear and 'ok' or ('gear out of range: ' .. g)
     return true
 end
@@ -921,7 +980,9 @@ do
             if pad == nil then break end
             local d = info(pad)
             local on = true
-            if d.active then local ok, r = pcall(d.active); on = not ok or r == true end
+            -- (3.1.1 review) a pad whose `active` fails is taken as not connected; with no `active` at all, the first pad
+            -- only (3.1.0 read every pad then: all eight, after a game update that changed it)
+            if d.active then local ok, r = pcall(d.active); on = ok and r == true else on = n == 1 end
             if on then list[#list + 1] = d end
         end
         return list
@@ -1153,6 +1214,10 @@ local SEAT_PUB = {kind = nil, role = 0, vehicle = 0, frame = 0, driving = false,
 S.engine, S.engine_starts, S.gear_read, S.hud_font = 'not driven yet', 0, 'not read yet', 'not read yet'
 S.control = 'no other driver seen'
 rawset(_G, 'ArmoredOverhaulSeat', SEAT_PUB)
+-- (3.1.1 review: one place; it was written out twice) the driving fields: nothing driven any more
+local function clear_drive_pub()
+    SEAT_PUB.driving, SEAT_PUB.gear, SEAT_PUB.selector, SEAT_PUB.rpm, SEAT_PUB.speed, SEAT_PUB.fuel, SEAT_PUB.engine, SEAT_PUB.smoke, SEAT_PUB.smoke_full, SEAT_PUB.remote = false
+end
 local last_driver, last_driver_n = {}, 0     -- (1.3) who drove each vehicle last: 'me' / 'other' (see note_drivers)
 
 -- ------------------------------------------------------------------------------------------ smoke (1.2.2)
@@ -1171,17 +1236,19 @@ local last_driver, last_driver_n = {}, 0     -- (1.3) who drove each vehicle las
 -- also remembered the launcher from the driver seat, dropped because the game reuses tank ids.)
 -- Rounds left: u32 at [ammo table +0x48] + index x 16, read every 30 frames and just after each press and release.
 -- Known game build only: the tables move with game updates, and then Mouse 3 does nothing and the log says so.
+-- a game global's table pointer and its header (the smoke launcher and the Autoloader)
+local function mgr_hdr(global, n)
+    local p = fetch_ptr(global)
+    return p and fetch_str(p, n), p
+end
 -- (2.1 review) the smoke launcher, scoped: only what is used further down is a top-level local
 local SMK, smoke, smoke_rounds, keys, field, button_of, pressed, smoke_restore, smoke_frame
 do
-SMK = {trig = 0x3326420, oper = 0x3326730, pair = 0x3326A70, ammo = 0x3326648, guns = 0x33267A0,
-             press = 0x786BE0, release = 0x786DF0, kind = 0x2C, restore = 3, retry = 300}   -- (3.0.1 review: restore in seconds)
+-- (3.1.1 review) the tables and calls come from FEAT.smoke (found by pattern); SMK keeps the constants
+SMK = {kind = 0x2C, restore = 3, retry = 300}   -- (3.0.1 review: restore in seconds)
+local NOSMOKE = {}     -- (no smoke places in this game version: every table look-up finds nothing)
 smoke = {id = nil, vehicle = nil, next_find = 0, held = false, active = nil, full = {}, memo = {}, check = 0, rounds_at = 0}
 S.smoke, S.smoke_shots = 'not used yet', 0
-local function mgr_hdr(rva, n)
-    local p = fetch_ptr(game + rva)
-    return p and fetch_str(p, n), p
-end
 -- the key of the entry holding `value` in the map at `at` of header `h`
 local function map_key(h, at, value)
     local entries, cap, empty = str_ptr(h, at), le32(h, at + 8), le32(h, at + 12)
@@ -1195,14 +1262,14 @@ local function map_key(h, at, value)
 end
 -- your trigger record and the trigger manager
 local function my_trigger(entity)
-    local th, T = mgr_hdr(SMK.trig, 0x70)
+    local th, T = mgr_hdr((FEAT.smoke or NOSMOKE).trig, 0x70)
     local ti = th and map_get(th, 0x30, entity)
     local recs = th and str_ptr(th, 0x60)
     if not ti or not recs then return nil end
     return recs + ti * 0x1D0, T
 end
 local function operator_at(w)
-    local oh = mgr_hdr(SMK.oper, 0x40)
+    local oh = mgr_hdr((FEAT.smoke or NOSMOKE).oper, 0x40)
     local idx = oh and map_get(oh, 0x18, w)
     local arr = oh and str_ptr(oh, 0x38)
     if not idx or not arr then return nil end
@@ -1214,14 +1281,14 @@ local function set_u32(p, v)
     return true
 end
 smoke_rounds = function(w)
-    local ah = mgr_hdr(SMK.ammo, 0x50)
+    local ah = mgr_hdr((FEAT.smoke or NOSMOKE).ammo, 0x50)
     local idx = ah and map_get(ah, 0x20, w, smoke.memo)
     local arr = ah and str_ptr(ah, 0x48)
     local n = idx and arr and fetch_u32(arr + idx * 16)
     return n and n <= 1000 and n or nil
 end
 local function find_smoke(vehicle, gun)
-    local ph, ah, gh = mgr_hdr(SMK.pair, 0x40), mgr_hdr(SMK.ammo, 0x50), mgr_hdr(SMK.guns, 0x40)
+    local ph, ah, gh = mgr_hdr((FEAT.smoke or NOSMOKE).pair, 0x40), mgr_hdr((FEAT.smoke or NOSMOKE).ammo, 0x50), mgr_hdr((FEAT.smoke or NOSMOKE).guns, 0x40)
     if not ph or not ah or not gh then return nil, 'weapon tables unreadable' end
     local gp, ga = map_get(ph, 0x20, gun), map_get(ah, 0x20, gun)
     if not gp or not ga then return nil, 'your gun is not in the weapon tables' end
@@ -1259,7 +1326,7 @@ local function find_smoke(vehicle, gun)
 end
 -- (tester) your trigger slot, its trigger bytes and state bits, the operator entry and the rounds, as one text
 local function smoke_detail(entity, w, slot)
-    local th = mgr_hdr(SMK.trig, 0x70)
+    local th = mgr_hdr((FEAT.smoke or NOSMOKE).trig, 0x70)
     local ti = th and map_get(th, 0x30, entity)
     local recs = th and str_ptr(th, 0x60)
     local sw = ti and recs and fetch_u32(recs + ti * 0x1D0 + slot * 0x50)
@@ -1337,8 +1404,8 @@ local function smoke_down(me, w)
     u[0], u[1] = w, invalid_entity() or 0
     set_u32(op, me.entity)
     if not smk_press then
-        smk_press = ffi.cast('void (*)(void *, uint32_t, uint32_t)', game + SMK.press)
-        smk_release = ffi.cast('void (*)(void *, uint32_t, uint32_t)', game + SMK.release)
+        smk_press = ffi.cast('void (*)(void *, uint32_t, uint32_t)', FEAT.smoke.press)
+        smk_release = ffi.cast('void (*)(void *, uint32_t, uint32_t)', FEAT.smoke.release)
     end
     a.restore_at = nil
     smoke.active = a
@@ -1369,7 +1436,7 @@ smoke_restore = function()
 end
 -- every frame you drive the Maelstrom from the gunner seat
 smoke_frame = function(me, paused)
-    if not S.known_build then S.smoke = 'not available in this game version'; return end
+    if not FEAT.smoke then S.smoke = 'not available in this game version'; return end
     if smoke.vehicle ~= drive.vehicle then smoke_restore(); smoke.vehicle, smoke.id, smoke.next_find, smoke.rounds_at = drive.vehicle, nil, 0, 0 end
     if not smoke.id and S.frames >= smoke.next_find then
         smoke.next_find = S.frames + SMK.retry
@@ -1378,7 +1445,7 @@ smoke_frame = function(me, paused)
         local why
         if gun and gun ~= 0 then smoke.id, why = find_smoke(drive.vehicle, gun) else why = 'your gun slot is empty' end
         if TESTER then
-            local ph, ah = mgr_hdr(SMK.pair, 0x40), mgr_hdr(SMK.ammo, 0x50)
+            local ph, ah = mgr_hdr((FEAT.smoke or NOSMOKE).pair, 0x40), mgr_hdr((FEAT.smoke or NOSMOKE).ammo, 0x50)
             local function ix(h, w) return h and w and map_get(h, 0x20, w) or '-' end
             local slots = {}
             local r = rec and fetch_str(rec, 0x1D0)
@@ -1457,6 +1524,7 @@ local pending_off = nil
 -- the path of a tank that kept rolling once the drive let go (worst with the turret turned round, MBT Turrets).
 -- brake = {vehicle, t0, dir, v0} while braking (see brake_frame).
 local brake = nil
+local cancel_brake     -- (3.1.1 review; below brake_frame)
 local BRAKE = {max_time = 6, stop_ratio = 0.1, stop_min = 0.5, done = 0, handbrake = 0x2D}
 -- ------------------------------------------------------------------------------------------ horn (2.1)
 -- The horn from the gunner seat: F (controller: the left stick click) while you drive (Tank and FRV Gunner Drive). The driver's F (the game's input
@@ -1515,7 +1583,7 @@ end
 
 end
 local function stop_driving(why)
-    SEAT_PUB.driving, SEAT_PUB.gear, SEAT_PUB.selector, SEAT_PUB.rpm, SEAT_PUB.speed, SEAT_PUB.fuel, SEAT_PUB.engine, SEAT_PUB.smoke, SEAT_PUB.smoke_full, SEAT_PUB.remote = false
+    clear_drive_pub()
     if not drive then return end
     if why == 'game closing' then
         -- the game is taking its objects apart: the tank is left alone (no record write, no engine call)
@@ -1536,7 +1604,10 @@ local function stop_driving(why)
     -- (1.2.1: not in the middle of a seat move - getting in or out - either: settle_engine decides once it ends)
     if drive.engine_on and why == 'moving_seat' then pending_off = {vehicle = drive.vehicle} end
     -- (3.0.1) getting out (or moving seats) while it rolls: braked to a stop first (brake_frame)
-    if why == 'moving_seat' and drive.counted and FEAT.panel then brake = {vehicle = drive.vehicle, t0 = S.time} end
+    if why == 'moving_seat' and drive.counted and FEAT.panel then
+        if brake and brake.vehicle ~= drive.vehicle then cancel_brake('you drove another vehicle') end   -- (3.1.1 review)
+        brake = {vehicle = drive.vehicle, t0 = S.time}
+    end
     if drive.engine_on and why ~= 'has_driver' and why ~= 'moving_seat' and why ~= 'you took the driver seat' then
         local okc, ok, err = pcall(engine_switch, drive.vehicle, false)
         S.engine = S.engine .. ((okc and ok) and '; switched off when you stopped'
@@ -1574,10 +1645,26 @@ end
 -- to the other direction almost at once, and letting go then barely braked). It ends, and the record is cleared, once
 -- the vehicle is down to a crawl (the game's speed figure below 10% of what it was, or 0.5), after BRAKE.max_time
 -- seconds, or as soon as someone takes the driver seat or you drive it again (see poll).
+-- (3.1.1 review) braking ended early (the seat table unreadable, a driver took the seat, an error): the vehicle's
+-- driver-input record is cleared too (looked up fresh, page-checked) - 3.1.0 just dropped the brake, which could leave
+-- the throttle, handbrake and driver flag held on an empty vehicle (the game burns fuel while that flag is set)
+cancel_brake = function(why)
+    local b = brake
+    brake = nil
+    if not b then return end
+    local okr, record = pcall(driver_record, b.vehicle)
+    if okr and record then pcall(clear_record, record) end
+    if why then hist('braking stopped: ' .. why) end
+end
 local function brake_frame()
     local b = brake
     local record, index, hdr = driver_record(b.vehicle)
-    if not record then brake = nil; return end
+    -- (3.1.1 review) a look-up that fails is tried again each frame until the braking time is up (3.1.0 dropped the brake
+    -- at once, with the throttle, handbrake and driver flag left in the record)
+    if not record then
+        if S.time - b.t0 > BRAKE.max_time then brake = nil; hist('braking stopped: the vehicle can no longer be found') end
+        return
+    end
     local inst = b.inst or {}
     b.inst = inst
     if not read_instruments(index, hdr, inst) or not inst.speed then
@@ -1729,7 +1816,7 @@ local function publish(mine)
     else
         SEAT_PUB.kind, SEAT_PUB.role, SEAT_PUB.vehicle, SEAT_PUB.health = nil, 0, 0, nil
         local tt = SEAT_PUB.tires; if tt then tt[1], tt[2], tt[3], tt[4] = nil, nil, nil, nil end   -- (2.1 review)
-        SEAT_PUB.driving, SEAT_PUB.gear, SEAT_PUB.selector, SEAT_PUB.rpm, SEAT_PUB.speed, SEAT_PUB.fuel, SEAT_PUB.engine, SEAT_PUB.smoke, SEAT_PUB.smoke_full, SEAT_PUB.remote = false
+        clear_drive_pub()
     end
 end
 
@@ -1765,10 +1852,7 @@ local AUTO = {retry = 8, settle = 1, flag_wait = 0.5, every = 6, gun_every = 60}
 auto = {gun = nil, seat = nil, gun_at = 0, next_check = 0, tries = 0, next_try = 0, empty_at = nil, memo = {}, rmemo = {}, omemo = {}, tmemo = {}}
 S.autoloader, S.reloads = 'off (option not installed)', 0
 autoloader_wanted = function() return rawget(_G, 'ArmoredOverhaulAutoloaderOn') == true and menu_opts.autoloader ~= false end
-local function table_hdr(global, n)
-    local p = fetch_ptr(global)
-    return p and fetch_str(p, n), p
-end
+local table_hdr = mgr_hdr          -- (3.1.1 review: one helper; it was written twice)
 local reload_start
 autoload = function(mine, me)
     local F = FEAT.reload
@@ -1973,23 +2057,38 @@ local function poll()
     -- (only with you found: without it, your own row would be among the others)
     if seats and seats.me then note_drivers(seats) end
     if not seats then
-        publish(nil); health_for = nil; brake = nil
-        stop_driving(why); settle = nil; pending_off = nil; tries = nil      -- (3.0 review: tank ids are reused next mission)
-        -- (2.0.1 review) no seat table: out of the mission. Tank ids are reused by the next one, so what was
-        -- remembered per tank (who drove it last, its full smoke count) goes.
-        if last_driver_n > 0 then last_driver, last_driver_n = {}, 0 end
-        if smoke.full_any then smoke.full, smoke.full_any = {}, false end
-        -- (3.0.1 review) the Autoloader's gun and empty magazine too: the next mission's tank and gun can carry the same
-        -- ids, and 3.0.0 then took its old empty-magazine time and start count (no wait, or none for up to 8 s)
-        auto.gun, auto.seat, auto.empty_at, auto.tries, auto.next_try, auto.next_check = nil, nil, nil, 0, 0, 0
+        -- (3.1.1 review) out of the mission only once the seat table has been gone for 0.25 s: a read that fails for a
+        -- frame or two mid-mission changes nothing - the drive goes on (it checks its vehicle every frame itself), as do a
+        -- brake under way, a pending engine switch-off and what is remembered per tank, and the seat stays published.
+        -- 3.1.0 stopped the drive and switched the engine off, and dropped a brake with the controls left held.
+        S.no_seats_at = S.no_seats_at or S.time
+        local gone = S.time - S.no_seats_at >= 0.25
+        if not gone then
+            if SEAT_PUB.kind then SEAT_PUB.frame = S.frames end
+            next_poll = S.frames + TUNING.idle_every
+            return
+        end
+        publish(nil); health_for = nil
+        stop_driving(why); settle = nil
+        do
+            cancel_brake(); pending_off = nil; tries = nil      -- (3.0 review: tank ids are reused next mission)
+            -- (2.0.1 review) no seat table: out of the mission. Tank ids are reused by the next one, so what was
+            -- remembered per tank (who drove it last, its full smoke count) goes.
+            if last_driver_n > 0 then last_driver, last_driver_n = {}, 0 end
+            if smoke.full_any then smoke.full, smoke.full_any = {}, false end
+            -- (3.0.1 review) the Autoloader's gun and empty magazine too: the next mission's tank and gun can carry the same
+            -- ids, and 3.0.0 then took its old empty-magazine time and start count (no wait, or none for up to 8 s)
+            auto.gun, auto.seat, auto.empty_at, auto.tries, auto.next_try, auto.next_check = nil, nil, nil, 0, 0, 0
+        end
         S.phase, S.verdict = 'waiting', why
         next_poll = S.frames + TUNING.menu_every
         return
     end
+    S.no_seats_at = nil
     if not seats.anyone or not seats.mine then
         publish(nil); health_for = nil
         if brake and seats.others then        -- (3.0.1) someone took the driver seat of the tank being braked
-            for _, o in ipairs(seats.others) do if o.vehicle == brake.vehicle and DRIVER_ROLES[o.role] then brake = nil; break end end
+            for _, o in ipairs(seats.others) do if o.vehicle == brake.vehicle and DRIVER_ROLES[o.role] then cancel_brake('a driver took the seat'); break end end
         end
         if auto.gun then auto.gun, auto.next_check = nil, 0; S.autoloader = (FEAT.reload and not auto_off) and 'ready (not in the gunner seat)' or S.autoloader end
         stop_driving('left the seat'); settle = nil
@@ -2047,8 +2146,8 @@ local function poll()
     end
     local verdict = seat_verdict(mine, seats.others)
     if brake then                               -- (3.0.1) a driver now, or you drive it again: braking ends
-        if verdict == 'drive' and mine.vehicle == brake.vehicle then brake = nil
-        else for _, o in ipairs(seats.others) do if o.vehicle == brake.vehicle and DRIVER_ROLES[o.role] then brake = nil; break end end end
+        if verdict == 'drive' and mine.vehicle == brake.vehicle then brake = nil      -- (you drive it again: your keys fill it)
+        else for _, o in ipairs(seats.others) do if o.vehicle == brake.vehicle and DRIVER_ROLES[o.role] then cancel_brake('a driver took the seat'); break end end end
     end
     settle_engine(mine, verdict, seats.others)
     if verdict ~= S.verdict then
@@ -2075,6 +2174,16 @@ local function poll()
     -- switching the engine off and on again. The verdict already says you are its gunner (one gunner seat each).
     if drive and drive.vehicle ~= mine.vehicle then
         stop_driving('seat changed')
+    end
+    -- (3.1.1 review) a vehicle whose first driving frame failed 3 times is tried again every 5 s; in between the seat is
+    -- still read and published every few frames (3.1.0 paused the whole seat reader for 300 frames: the Vehicle
+    -- Indicator, Gunner Camera and driver panel let go of the seat after 45 and were off most of that time)
+    if tries and tries.vehicle == mine.vehicle and tries.n >= 3 and S.time < (tries.retry_at or 0) and not (drive and drive.counted) then
+        if drive then stop_driving('driving retried every 5 s') end
+        settle = nil
+        S.phase = 'watching'
+        next_poll = S.frames + TUNING.idle_every
+        return
     end
     if not drive then
         if not settle or settle.vehicle ~= mine.vehicle then
@@ -2103,8 +2212,10 @@ local function poll()
         if fresh then
             if not tries or tries.vehicle ~= mine.vehicle then tries = {vehicle = mine.vehicle, n = 0} end
             tries.n = tries.n + 1
+            if tries.n >= 3 then tries.retry_at = S.time + 5 end
         end
-        next_poll = S.frames + ((tries and tries.n >= 3) and TUNING.refresh_every or TUNING.menu_every)
+        -- (3.1.1 review) never longer than the seat stays valid for the other options (they let go after 45 frames)
+        next_poll = S.frames + ((tries and tries.n >= 3) and TUNING.idle_every or TUNING.menu_every)
     end
 end
 
@@ -2189,7 +2300,7 @@ local function tick()
     elseif phase == 'run' then
         if brake then
             local okb, berr = pcall(brake_frame)
-            if not okb then S.errors = S.errors + 1; S.last_error = 'braking: ' .. tostring(berr); brake = nil end
+            if not okb then S.errors = S.errors + 1; S.last_error = 'braking: ' .. tostring(berr); pcall(cancel_brake, 'an error') end
         end
         if S.frames >= next_poll then poll()
         elseif drive and (not drive_wanted(drive.kind) or not drive_frame()) then
@@ -2231,6 +2342,7 @@ local function after_game(ok, ...)
                 end
                 if rec then pcall(clear_record, rec) end
             end
+            pcall(cancel_brake)                     -- (3.1.1 review: a vehicle being braked is let go of cleanly too)
             drive = nil; publish(nil)
             S.phase, S.status = 'off', 'stopped after an error: ' .. tostring(err)
             write_log(true)

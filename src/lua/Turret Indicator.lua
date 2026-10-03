@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.1.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
+-- Armored Overhaul 3.1.1 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
 -- FRV or M-103 Supply FRV (any seat), a small outline on your screen shows which way the turret points compared to the
 -- hull, like a real tank's display, colored by the vehicle's health (the FRV's tires too). The turret always points
 -- up; the hull outline turns around it, with a notch at its front. Drawn only on your screen. Written from scratch.
@@ -32,7 +32,7 @@ local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.lo
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
 local PANEL_DEFAULT = {x = 0.5, y = 0.1, size = 0.022}   -- (3.1.0 Test 26) the Driver Panel's default place (its SETTINGS)
 
-local S = {version = '3.1.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.1.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
@@ -334,7 +334,11 @@ local function tt_comps(v)
     local ok, x, y, z = pcall(tt_xyz, v)             -- (2.0.1 review: no new function made on every call)
     if ok and type(x) == 'number' then return x, y, z end
     local V3 = select(5, TT.api())
-    if V3 and type(V3.to_elements) == 'function' then return V3.to_elements(v) end
+    -- (3.1.1 review) through pcall too: a value in another form after a game update errored here, outside any pcall
+    if V3 and type(V3.to_elements) == 'function' then
+        local ok2, a, b, c = pcall(V3.to_elements, v)
+        if ok2 and type(a) == 'number' then return a, b, c end
+    end
     return nil
 end
 local function tt_dist2(a, b)
@@ -524,7 +528,6 @@ function TT.shared_angle(world, kind, frame, key)
         local pa, ax = pub.axes, TT.axes
         ax.ok = type(pa) == 'table' and pa.ok == true
         if ax.ok then ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz = pa.fx, pa.fy, pa.fz, pa.rx, pa.ry, pa.rz, pa.ux, pa.uy, pa.uz end
-        if TT.want_up then pub.want_up = true end
         return pub.angle, pub.why
     end
     local angle, why = TT.angle(world, kind, frame)
@@ -536,7 +539,7 @@ function TT.shared_angle(world, kind, frame, key)
     if type(pa) ~= 'table' then pa = {}; pub.axes = pa end
     pa.ok = angle ~= nil and ax.ok
     if pa.ok then pa.fx, pa.fy, pa.fz, pa.rx, pa.ry, pa.rz, pa.ux, pa.uy, pa.uz = ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz end
-    if TT.want_up then pub.want_up = true end
+    -- (3.1.1 review: the Vehicle Indicator never asks for the up axis itself; the Gunner camera sets pub.want_up)
     return angle, why
 end
 
@@ -1043,9 +1046,9 @@ local function tick()
         else dock, px, py, ps = 3, place.x, place.y, place.size end
     elseif settings.dock >= 0.5 then dock = 1 end
     local tires = FRV_KINDS[seat.kind] and tire_code(seat, settings.health >= 0.5) or nil
-    if not ov.key or step ~= ov.step or sw ~= ov.sw or sh ~= ov.sh or settings.sig ~= ov.sig or band ~= ov.band
+    if (not ov.key or step ~= ov.step or sw ~= ov.sw or sh ~= ov.sh or settings.sig ~= ov.sig or band ~= ov.band
         or dock ~= ov.dock or px ~= ov.px or py ~= ov.py or ps ~= ov.ps or ov.kind ~= seat.kind or ov.nogun ~= nogun
-        or (tires and tires ~= ov.tires) then
+        or (tires and tires ~= ov.tires)) and S.frames >= (ov.retry_at or 0) then
         clear_shapes(true)
         ov.kind = seat.kind
         ov.frv, ov.nogun = FRV_KINDS[seat.kind] ~= nil, nogun
@@ -1054,10 +1057,17 @@ local function tick()
         if not okd then
             S.errors = S.errors + 1; S.last_error = 'drawing failed: ' .. tostring(err); clear_shapes(true)
             -- (2.0.1 review) only drawing failures count towards turning it off (2.0 counted the tracker's too)
+            -- (3.1.1 review) failures in a row, tried again half a second later (3.1.0 counted every failure of the session
+            -- and retried the next frame: five quick ones, or five spread over a long session, turned it off for good)
             draw_fails = draw_fails + 1
-            if draw_fails >= 5 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)' end
+            ov.retry_at = S.frames + 30
+            if draw_fails >= 5 then
+                S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)'
+                if sk.watch then sk.watch = nil; pcall(skullcheck, 'refused\n') end    -- (3.1.1 review: not left 'trying')
+            end
             log(); return
         end
+        draw_fails, ov.retry_at = 0, nil
         ov.key, ov.step, ov.sw, ov.sh, ov.sig, ov.band, ov.dock, ov.px, ov.py, ov.ps = true, step, sw, sh, settings.sig, band, dock, px, py, ps
         S.dock = dock == 0 and 'off (the menu\'s position is used)'
             or (dock == 1 and 'its position (the driver panel is not installed)')
@@ -1113,6 +1123,9 @@ local function after(ok, ...)
         local okT, err = pcall(tick)
         if not okT then
             broken = true; S.errors = S.errors + 1; S.last_error = tostring(err); S.status = 'stopped after an error: ' .. tostring(err)
+            -- (3.1.1 review) a skull try under way is settled (3.1.0 left 'trying': the next start skipped the skull as if the
+            -- game had closed)
+            if sk.watch then sk.watch = nil; pcall(skullcheck, 'refused\n') end
             pcall(set_visible, false)                       -- (2.0.1 review: not left frozen on screen)
             log()
         end

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.1.0 - Driver panel, part of the Gunner Drive option: while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.1.1 - Driver panel, part of the Gunner Drive option: while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
@@ -31,11 +31,17 @@ local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.1.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.1.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
            speed = 'not measured yet', speed_check = 'none'}
 rawset(_G, 'ArmoredOverhaulDriverPanel', S)
+-- (3.1.1 review) While the panel shows, the 'gear' line (selector, gear, rpm, speed, fuel) is made when it is read (the log,
+-- or a test), from the last values drawn: 3.1.0 made the text on every live redraw, up to 40 times a second at 240 fps.
+local gear_text = nil
+setmetatable(S, {__index = function(_, k)
+    if k == 'gear' and gear_text then local ok, s = pcall(gear_text); return ok and s or '?' end
+end})
 
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
@@ -117,7 +123,11 @@ local function xyz(v) return v.x, v.y, v.z end
 local function comps(v)
     local ok, x, y, z = pcall(xyz, v)
     if ok and type(x) == 'number' then return x, y, z end
-    if V3 and type(V3.to_elements) == 'function' then return V3.to_elements(v) end
+    -- (3.1.1 review) through pcall too: a value in another form after a game update errored here, outside any pcall
+    if V3 and type(V3.to_elements) == 'function' then
+        local ok2, a, b, c = pcall(V3.to_elements, v)
+        if ok2 and type(a) == 'number' then return a, b, c end
+    end
     return nil
 end
 
@@ -125,7 +135,7 @@ end
 -- ---------------------------------------------------------------- the overlay screen GUI (as HD2 HUD+ does it)
 local LAYER, DEPTH = 3, 0
 local TRI_MATERIAL = 'core/performance_hud/debug'   -- the engine's own debug GUI material (used if a plain triangle fails)
-local ov = {world = nil, gui = nil, ids = {}, bitmaps = {}, key = nil, style = nil, visible = nil}
+local ov = {world = nil, gui = nil, key = nil, style = nil, visible = nil}
 local draw_fails = 0                                -- drawing failures this session (turn it off at a limit)
 -- One look at the engine's world list: the overlay world (the one that is not the main world), and whether `w` is
 -- still in the list (nil: the list could not be read, so not known).
@@ -144,7 +154,7 @@ end
 -- world is gone (2.0 forgot only part of it, then later destroyed the old skull and panel ids on the new GUI).
 local function forget_gui()
     ov.gui, ov.world, ov.visible, ov.alive_frame = nil, nil, nil, nil
-    ov.ids, ov.bitmaps, ov.key = {}, {}, nil
+    ov.key = nil
     ov.hud, ov.hud_t, ov.hkey, ov.hudl, ov.hudl_t, ov.lkey, ov.slots, ov.items = {}, {}, nil, {}, {}, nil, nil, nil
 end
 -- (2.0.1 review) Before shapes are destroyed or the GUI hidden outside the draw path (leaving the seat, errors): is the
@@ -159,12 +169,6 @@ local function gui_alive()
     if not live then forget_gui(); return false end
     ov.alive_frame = S.frames
     return true
-end
-local function clear_shapes(checked)
-    if ov.gui and not checked and not gui_alive() then return end
-    if ov.gui then for _, id in ipairs(ov.ids) do pcall(G.destroy_triangle, ov.gui, id) end end
-    if ov.gui and ov.bitmaps then for _, id in ipairs(ov.bitmaps) do pcall(G.destroy_bitmap, ov.gui, id) end end
-    ov.ids, ov.key, ov.bitmaps = {}, nil, {}
 end
 -- the driver panel (gears, rpm, speed, fuel) is its own group: it changes far more often than the outline
 -- (two parts: the frame, labels and selector, which rarely change, and the live values: rpm, speed, fuel)
@@ -221,7 +225,7 @@ local function overlay_gui(main)
     if ov.gui and live and ov.world ~= main then ov.alive_frame = S.frames; return ov.gui end
     -- the old GUI goes with its world; a GUI in a world that is gone is forgotten, never touched
     if ov.gui and live then
-        clear_shapes(true); clear_hud(true)
+        ov.key = nil; clear_hud(true)        -- (3.1.1 review: the panel only draws into its own lists)
         if W.destroy_gui then pcall(W.destroy_gui, ov.world, ov.gui) else pcall(G.set_visible, ov.gui, false) end
     end
     forget_gui()
@@ -265,7 +269,7 @@ local function tri(g, a, b, c, color)
         local uv = V2(0, 0)
         id = G.triangle(g, a, b, c, LAYER, color, TRI_MATERIAL, uv, uv, uv)
     end
-    if id ~= nil then local sink = ov.sink or ov.ids; sink[#sink + 1] = id end
+    if id ~= nil and ov.sink then local sink = ov.sink; sink[#sink + 1] = id end
 end
 
 -- ---------------------------------------------------------------- turret tracker (shared source: turret_tracker.lua.inc)
@@ -284,12 +288,9 @@ local TT = {
     -- its machine gun's direction and its health. Kept apart from TANKS: the Gunner camera is tanks only.
     HULLS = {[0x1A] = {name = 'FRV', hull = 'content/fac_helldivers/vehicles/frv/frv',
                        gun = 'content/fac_helldivers/vehicles/frv/armaments/frv_mg/frv_mg', gun_node = 'horizontal_axis'}},
-    GUN_NODE = 'traverse',       -- the gun's turning bone (the whole turret turns with it)
-    GUN_REACH = 5.0,             -- metres: a gun must be this close to the hull to belong to it
     FIND_EVERY = 30,             -- frames between searches while seated and not yet found
     FIND_SLOW = 300,             -- ... after FIND_MISSES misses in a row (a search can go through every unit)
     FIND_MISSES = 5,
-    found = {unit = nil, gun = nil, gun_node = 1, kind = nil, next_find = 0, misses = 0, miss_kind = nil},
     tank = 'none', pick = 'none', pick_note = nil, finds = 0, errors = 0, last_error = nil,
 }
 function TT.api()
@@ -302,7 +303,11 @@ local function tt_comps(v)
     local ok, x, y, z = pcall(tt_xyz, v)             -- (2.0.1 review: no new function made on every call)
     if ok and type(x) == 'number' then return x, y, z end
     local V3 = select(5, TT.api())
-    if V3 and type(V3.to_elements) == 'function' then return V3.to_elements(v) end
+    -- (3.1.1 review) through pcall too: a value in another form after a game update errored here, outside any pcall
+    if V3 and type(V3.to_elements) == 'function' then
+        local ok2, a, b, c = pcall(V3.to_elements, v)
+        if ok2 and type(a) == 'number' then return a, b, c end
+    end
     return nil
 end
 local function tt_dist2(a, b)
@@ -384,8 +389,6 @@ local function tt_hull_of(world, t)
 end
 -- Forget the tank (you left the seat).
 function TT.reset()
-    local f = TT.found
-    f.unit, f.gun, f.miss_kind = nil, nil, nil
     if TT.hull_found then TT.hull_found.unit, TT.hull_found.kind = nil, nil end
 end
 -- (1.2.2) Only the hull of your tank (the Driver panel measures the speed from how it moves): the one the Turret
@@ -814,8 +817,12 @@ local function connected_pads()
         local pad = field(SR, 'Pad' .. n)
         if pad == nil then break end
         local d = device_fns(pad, PAD_AXES)
-        local on = true
-        if d.active then local ok, r = pcall(d.active); on = not ok or r == true end
+        -- (3.1.1 review) only a pad that says it is connected is read (3.1.0 read every pad whose `active` was missing
+        -- or failed: all eight, after a game update that changed it)
+        local on
+        -- (no way to ask - no `active`, or it fails: the first pad only, as one controller)
+        if d.active then local ok, r = pcall(d.active); on = (ok and r == true) or (not ok and n == 1)
+        else on = n == 1 end
         if on then pads[#pads + 1] = pad end
     end
     input.pads = pads
@@ -890,7 +897,7 @@ end
 -- (1.2.2) The speed is measured from how far the tank's hull moves, sampled every 6 frames against the game's clock
 -- and smoothed. 1.2.0-1.2.1 showed the game's own speed figure times 3.6, taking it for metres a second, and a user saw
 -- 112 km/h. Without the hull or a clock the game's figure is shown as it is (tester builds log both, to compare).
-local SPEED_EVERY = 6
+local SPEED_EVERY = 0.1          -- (3.1.1 review) seconds (3.1.0: 6 frames, 25 ms at 240 fps)
 local spd = {hull = nil, x = nil, y = nil, z = nil, t = nil, kmh = nil, next = 0, src = nil, check_at = 0}
 local clock = {t = 0, n = 0}          -- the update's frame times, added up (if the engine has no game clock)
 local function game_time()
@@ -902,13 +909,19 @@ local function game_time()
     return nil
 end
 local function speed_reset() spd.hull, spd.kmh, spd.t, spd.next = nil, nil, nil, 0 end
-local function measure_speed(world, seat, key)
-    if S.frames < spd.next then return spd.kmh end
-    spd.next = S.frames + SPEED_EVERY
+-- (3.1.1 review) the panel's own timing in seconds: the update's frame times added up (no engine call), else frames at
+-- 60 when the update gives none. The game's clock is read only when the speed is measured (every 0.1 s), as in 3.1.0.
+local function panel_time()
+    if clock.n > 0 then return clock.t end
+    return S.frames / 60
+end
+local function measure_speed(world, seat, key, now)
+    if now < spd.next then return spd.kmh end
+    spd.next = now + SPEED_EVERY
     local hull
     if U and U.world_position and U.alive and W.units_by_resource then hull = TT.hull(world, seat.kind, S.frames, key) end
     S.tank, S.pick, S.finds = TT.tank, TT.pick, TT.finds
-    local t, src = game_time()
+    local t, src = game_time()                          -- (no clock: the game's figure, as before)
     local x, y, z
     if hull ~= nil and t then
         local okp, p = pcall(U.world_position, hull, 1)
@@ -922,7 +935,7 @@ local function measure_speed(world, seat, key)
         S.speed = how == 1 and 'the game\'s figure (the tank\'s hull not found)' or (how == 2 and 'the game\'s figure (the hull\'s position unreadable)'
             or (how == 3 and 'the game\'s figure (no clock)' or ('measured from the hull\'s movement (' .. src .. ')')))
     end
-    if not x then speed_reset(); spd.next = S.frames + SPEED_EVERY; return nil end
+    if not x then speed_reset(); spd.next = now + SPEED_EVERY; return nil end
     if spd.hull == hull and spd.t and t > spd.t then
         local dt = t - spd.t
         local v = sqrt((x - spd.x) ^ 2 + (y - spd.y) ^ 2 + (z - spd.z) ^ 2) / dt * 3.6
@@ -959,7 +972,15 @@ local function hide_panel(gear_why)
     font_proven('(shown, then hidden normally)')
     if ov.hkey or ov.lkey or ov.slots or ov.items or (ov.hud and #ov.hud > 0) then clear_hud() end
     set_visible(false)
-    S.gear = gear_why
+    gear_text = nil; S.gear = gear_why
+end
+-- the last values drawn, for the 'gear' line (numbers only; the text is made when read)
+local gs = {}
+local function gear_line()
+    return string.format('selector %s, gear %s, %d rpm, %d km/h, fuel %s%s', gs.selector and SELECTOR[gs.selector + 1] or '?',
+        gs.gear == -1 and 'R' or (gs.gear and tostring(gs.gear + 1) or '?'), floor(gs.rpm + 0.5), floor(gs.speed + 0.5),
+        gs.fuel and string.format('%.0f L', gs.fuel) or '?', (gs.smoke and string.format(', smoke %d', gs.smoke) or '')
+        .. (gs.remote and (gs.frv and ', another player controls this FRV' or ', another player controls this tank') or ''))
 end
 -- The main world, asked for once a frame (3.0.1 review: every frame while the panel shows, as the Vehicle Indicator
 -- does, so a new main world has the screen GUI checked at once; 2.0-3.0 asked only on the frames that needed it and
@@ -1008,14 +1029,21 @@ local function tick()
     end
     local sw, sh = screen_size()
     local finds = TT.finds
-    local measured = measure_speed(world, seat, cf)
+    local now = panel_time()
+    local measured = measure_speed(world, seat, cf, now)
     tracker_errors()
     if TT.finds ~= finds then log() end
     -- redrawn when a shown value changes, at most every 6 frames
     local d = panel
     d.selector = type(seat.selector) == 'number' and seat.selector or nil
     d.gear = type(seat.gear) == 'number' and seat.gear or nil
-    d.rpm, d.speed, d.fuel = tonumber(seat.rpm) or 0, measured or tonumber(seat.speed) or 0, tonumber(seat.fuel)
+    -- (3.1.1 review) values out of range (an odd read: NaN, or a huge number) are not shown and don't become the fuel
+    -- bar's full mark (3.1.0 kept one for the session: the bar read near empty in every tank of that kind)
+    local rpm, fuel = tonumber(seat.rpm), tonumber(seat.fuel)
+    d.rpm = (rpm and rpm >= 0 and rpm < 100000) and rpm or 0
+    d.fuel = (fuel and fuel >= 0 and fuel < 100000) and fuel or nil
+    d.speed = measured or tonumber(seat.speed) or 0
+    if not (d.speed >= 0 and d.speed < 1000) then d.speed = 0 end
     if d.fuel then fuel_full[seat.kind] = max(fuel_full[seat.kind] or 0, d.fuel) end
     d.full = fuel_full[seat.kind]
     d.smoke = type(seat.smoke) == 'number' and seat.smoke or nil
@@ -1032,7 +1060,10 @@ local function tick()
     Lv[1], Lv[2], Lv[3], Lv[4] = d.gear or false, d.selector or false, floor(d.rpm / 50 + 0.5), floor(d.speed + 0.5)
     Lv[5], Lv[6], Lv[7] = d.fuel and floor(d.fuel + 0.5) or false, d.smoke or false, d.smoke_full or false
     local frame_due = not ov.hkey or differs(H, hud_was)
-    local live_due = frame_due or ((not ov.lkey or differs(Lv, live_was)) and S.frames >= (ov.lnext or 0))
+    -- (3.1.1 review) the live values at most 10 times a second (3.1.0: every 6 frames, 40 times a second at 240 fps)
+    local live_due = frame_due or (now >= (ov.lnext or 0) and (not ov.lkey or differs(Lv, live_was)))
+    -- (3.1.1 review) after a failed drawing, half a second before the next try (see below)
+    if now < (ov.retry_at or 0) then frame_due, live_due = false, false end
     -- (2.0.1 review) the font's ids are made only on frames that draw text (2.0: every frame)
     if font and (frame_due or live_due) and not font_frame(g) then
         font_refused('stroke letters (the game font ids could not be made)')
@@ -1053,7 +1084,7 @@ local function tick()
         okp, perr = pcall(draw_panel, g, sw, sh, settings, d, 'live')
         ov.sink, ov.tsink = nil, nil
         live_gen = live_gen + 1
-        ov.lkey, ov.lnext = okp and live_gen or nil, S.frames + 6
+        ov.lkey, ov.lnext = okp and live_gen or nil, now + 0.1
         if okp then for i = 1, 7 do live_was[i] = Lv[i] end end
     end
     if ft.ok and (ov.watch or 0) > 0 then
@@ -1063,17 +1094,19 @@ local function tick()
     if not okp then
         S.errors = S.errors + 1; S.last_error = 'driver panel failed: ' .. tostring(perr); clear_hud(true)
         if ft.ok then font_refused('stroke letters (the game font failed: ' .. tostring(perr) .. ')') end
+        -- (3.1.1 review) failures in a row, tried again half a second later (3.1.0 counted every failure of the session and
+        -- retried the next frame: 20 spread over a long session, or a problem lasting 20 frames, turned it off for good)
         draw_fails = draw_fails + 1
+        ov.retry_at = now + 0.5
         if draw_fails >= 20 then S.api = 'drawing failed'; S.status = 'off (drawing failed, see the notes)'; PLACE.show = false; log() end
         return
     end
+    if frame_due or live_due then draw_fails, ov.retry_at = 0, nil end
     -- (the log text on each live redraw, at most every 6 frames; 3.0 review: the shape counts are tester-only)
     if ov.logged ~= ov.lkey then
         ov.logged = ov.lkey
-        S.gear = string.format('selector %s, gear %s, %d rpm, %d km/h, fuel %s%s', d.selector and SELECTOR[d.selector + 1] or '?',
-            d.gear == -1 and 'R' or (d.gear and tostring(d.gear + 1) or '?'), floor(d.rpm + 0.5), floor(d.speed + 0.5),
-            d.fuel and string.format('%.0f L', d.fuel) or '?', (d.smoke and string.format(', smoke %d', d.smoke) or '')
-            .. (d.remote and (d.frv and ', another player controls this FRV' or ', another player controls this tank') or ''))
+        gs.selector, gs.gear, gs.rpm, gs.speed, gs.fuel, gs.smoke, gs.remote, gs.frv = d.selector, d.gear, d.rpm, d.speed, d.fuel, d.smoke, d.remote, d.frv
+        if gear_text ~= gear_line then rawset(S, 'gear', nil); gear_text = gear_line end
         if TESTER then
             local live_n, texts_n = #(ov.hudl or {}), #(ov.hud_t or {}) + #(ov.hudl_t or {})
             for _, it in pairs(ov.items or {}) do live_n = live_n + #it.ids end
@@ -1096,6 +1129,9 @@ local function after(ok, ...)
         local okT, err = pcall(tick)
         if not okT then
             broken = true; S.errors = S.errors + 1; S.last_error = tostring(err); S.status = 'stopped after an error: ' .. tostring(err)
+            -- (3.1.1 review) a font try under way is settled (3.1.0 left 'trying': the next start skipped the font as if
+            -- the game had closed)
+            if ft.ok then pcall(font_refused, 'stroke letters (stopped after an error)') end
             PLACE.show = false                              -- (3.0.1 review) the Indicator no longer docks next to it
             pcall(set_visible, false)                       -- (2.0.1 review: not left frozen on screen)
             log()

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.1.0 - Gunner camera option (Farthest): how far behind the turret the tank
+-- Armored Overhaul 3.1.1 - Gunner camera option (Farthest): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -36,8 +36,8 @@ local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
 local distance = PRESET          -- (3.0) metres back along the rise: the mod manager's pick, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.1.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
-               applied = 0, errors = 0, frames = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
+local state = {version = '3.1.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+               applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
                options_menu = 'not installed (the distance picked in the mod manager is used)'}
@@ -110,11 +110,13 @@ end
 local function write_floats(address, size, values)
     local prot, kind = page_info(address, size)
     if not prot then return false, 'memory not committed' end
-    local how = string.format('page 0x%X/0x%X', prot, kind)
-    if kind ~= 0x20000 and kind ~= 0x40000 and kind ~= 0x1000000 then return false, how end
     -- (3.0 review) 4 read/write; 8 write-copy (a module's data before its first write: writing makes the page
     -- this process's own copy, as any write by the game does)
-    if prot == 4 or prot == 8 then poke(address, values); return true, how end
+    -- (3.1.1 review) the common case first, with no text made (3.1.0 formatted it on every turning write)
+    local data = kind == 0x20000 or kind == 0x40000 or kind == 0x1000000
+    if data and (prot == 4 or prot == 8) then poke(address, values); return true, 'page writable' end
+    local how = string.format('page 0x%X/0x%X', prot, kind)
+    if not data then return false, how end
     if prot ~= 2 then return false, how end
     local opened = VirtualProtect(address, size, 4, old_prot) ~= 0
     if not opened then opened = VirtualProtect(address, size, 8, old_prot) ~= 0 end
@@ -168,6 +170,34 @@ local function cache_save(rva)
     if not f then return end
     f:write(CACHE_HEADER, '\n', build_tag(), '\n', string.format('preset=%X', rva), '\n')
     f:close()
+end
+
+-- (3.1.1 review) The game's own gunner view offset, kept for the life of the game's process (its environment block, which a
+-- reload of the game's Lua doesn't touch; gone when the game closes). A copy of this addon loaded again in the same session
+-- (a mod manager redeploy with the game open) takes it from there: 3.1.0 read back what the first copy wrote as the game's
+-- own, so each redeploy moved the camera further (Far: another 2.5 m back), and one done in a turned turret's gunner seat
+-- kept the camera off to the side. Tagged with the game build.
+local keep_get, keep_set
+do
+    for _, decl in ipairs({'uint32_t GetEnvironmentVariableA(const char *, char *, uint32_t);',
+            'int SetEnvironmentVariableA(const char *, const char *);'}) do pcall(ffi.cdef, decl) end
+    local okg, get = pcall(function() return ffi.cast('uint32_t (*)(const char *, char *, uint32_t)', k32.GetEnvironmentVariableA) end)
+    local oks, set = pcall(function() return ffi.cast('int (*)(const char *, const char *)', k32.SetEnvironmentVariableA) end)
+    local ebuf = ffi.new('char[256]')
+    local KEY = 'ARMORED_OVERHAUL_GUNNER_VIEW'
+    keep_get = function()
+        if not (okg and get ~= nil) then return nil end
+        local n = get(KEY, ebuf, 256)
+        if n == 0 or n >= 256 then return nil end
+        local tag, a, b, c = ffi.string(ebuf, n):match('^([^|]+)|([^,]+),([^,]+),([^,]+)$')
+        a, b, c = tonumber(a), tonumber(b), tonumber(c)
+        if tag ~= build_tag() or not (a and b and c) then return nil end
+        return {side = a, back = b, up = c}
+    end
+    keep_set = function(v)
+        if not (oks and set ~= nil) then return end
+        set(KEY, string.format('%s|%.9g,%.9g,%.9g', build_tag(), v.side, v.back, v.up))
+    end
 end
 
 local function distances(s, o)
@@ -281,7 +311,11 @@ local function tt_comps(v)
     local ok, x, y, z = pcall(tt_xyz, v)             -- (2.0.1 review: no new function made on every call)
     if ok and type(x) == 'number' then return x, y, z end
     local V3 = select(5, TT.api())
-    if V3 and type(V3.to_elements) == 'function' then return V3.to_elements(v) end
+    -- (3.1.1 review) through pcall too: a value in another form after a game update errored here, outside any pcall
+    if V3 and type(V3.to_elements) == 'function' then
+        local ok2, a, b, c = pcall(V3.to_elements, v)
+        if ok2 and type(a) == 'number' then return a, b, c end
+    end
     return nil
 end
 local function tt_dist2(a, b)
@@ -600,10 +634,13 @@ local function apply()
         state.view = 'preset no longer valid'; settled = false; blocked = true; return 0
     end
     if not original then
-        original, want = now, {}
-        want.side = now.side
-        want.back = distance and (now.back - BASE_BACK - distance * math.cos(RISE)) or now.back   -- more negative = further behind
-        want.up = distance and (now.up - BASE_DOWN + distance * math.sin(RISE)) or now.up        -- (distance nil: the game's own)
+        local okk, kept = pcall(keep_get)
+        if okk and kept then original = kept else original = now; pcall(keep_set, now) end
+        local o = original                  -- (the distances below are from the game's own view)
+        want = {}
+        want.side = o.side
+        want.back = distance and (o.back - BASE_BACK - distance * math.cos(RISE)) or o.back   -- more negative = further behind
+        want.up = distance and (o.up - BASE_DOWN + distance * math.sin(RISE)) or o.up        -- (distance nil: the game's own)
         set_target(0)
     end
     local changed, problem = 0, nil
@@ -613,8 +650,8 @@ local function apply()
         -- (3.0.1 review) one change counted once until this addon writes it again: a write that keeps failing is not
         -- another mod changing it back
         written.counted = true
-        fight_backs[#fight_backs + 1] = state.frames
-        while state.frames - fight_backs[1] > 3600 do table.remove(fight_backs, 1) end
+        fight_backs[#fight_backs + 1] = state.clock           -- (3.1.1 review: seconds; 3600 frames was 15 s at 240 fps)
+        while state.clock - fight_backs[1] > 60 do table.remove(fight_backs, 1) end
         if #fight_backs >= 3 then tries = MAX_TRIES; state.fought = true end
     end
     if differs(now, target) then
@@ -631,6 +668,10 @@ local function apply()
         else
             problem = 'gave up'
         end
+    elseif not confirmed then
+        -- (3.1.1 review) already what this option wants (an earlier copy's write, before a reload): taken as this copy's own,
+        -- so its shutdown puts the game's view back and a change by another mod is counted (3.1.0: only after a write)
+        confirmed = true; note_written()
     end
     state.view = string.format('camera %.2f m %s and %.2f m up from the turret (game %.2f m back, %.2f m up)', math.abs(want.back),
         want.back <= 0 and 'back' or 'forward', want.up, math.abs(original.back), original.up)
@@ -899,5 +940,27 @@ local function after(ok, ...)
     if not okT then state.errors = state.errors + 1; state.last_error = tostring(err); state.status = 'error: ' .. tostring(err); phase = 'off'; log() end
     return ...
 end
-update = function(...) return after(pcall(previous_update, ...)) end
+update = function(dt, ...)
+    state.clock = state.clock + ((type(dt) == 'number' and dt > 0 and dt < 0.5) and dt or 1 / 60)   -- (3.1.1 review: seconds)
+    return after(pcall(previous_update, dt, ...))
+end
+-- (3.1.1 review) the game closing (or this Lua being rebuilt): the game's own gunner view is put back if the preset still
+-- holds what this addon wrote (another mod's offset is left to it), as Power/Grip/Steering do
+do
+    local previous_shutdown = shutdown
+    shutdown = function(...)
+        pcall(function()
+            if phase ~= 'ready' or not (rec and original and confirmed) then return end
+            phase = 'closed'                                -- (nothing is written after this)
+            local now = check(rec, true)
+            if now and not differs(now, written) and differs(now, original) then
+                local ok, how = write_floats(rec, FIELD.up + 4, original)
+                if not ok then state.errors = state.errors + 1; state.last_error = 'putting the game\'s view back failed: ' .. tostring(how) end
+            end
+            state.status = 'stopped (game closing): the game\'s own view put back'
+            log()
+        end)
+        if type(previous_shutdown) == 'function' then return previous_shutdown(...) end
+    end
+end
 log()
