@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.1.0 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.1.1 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
@@ -32,11 +32,12 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.1.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.1.1', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
-S.angle, S.gun = setmetatable({}, {__mode = 'k'}), setmetatable({}, {__mode = 'k'})   -- hull -> heading / gun unit (for the test probe)
-S.yaw_rate = {}                    -- tank kind ('bastion' / 'maelstrom') -> the fastest hull turn on the ground now, deg/s
+S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)
+-- (3.1.1 review) S.yaw_rate (no reader since Test 24) is gone; hull -> heading / gun unit only in Tester builds (the probe)
+if TESTER then S.angle, S.gun = {}, {} end
 local seen = {}                    -- tank name -> {turret = fastest turret turn against the hull, hull = fastest hull turn}
 
 -- node places, 0-based in the hull's node list (read from the game's unit files), the engine's numbering found from
@@ -52,8 +53,11 @@ local HULLS = {
               {k = 220, x = 1.422, y = -4.511, z = 1.804}, {k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true}}},
 }
 local GUN_MOUNT = {k = 158, x = 0, y = -1.959, z = 1.363}  -- where the main gun sits (to find it)
-local HULL_EVERY, GUN_EVERY, GUN_WAIT = 30, 60, 120       -- frames between looking for hulls / for a missing gun;
-                                                           -- frames after a hull appears before its gun is looked for
+-- (3.1.1 review) in seconds (3.1.0 counted frames: the 2 s wait before a new hull's gun is looked for - Test 9's crash
+-- margin - was 0.5 s at 240 fps, and the Bastion's whole-world search ran 4 times a second while a gun was missing)
+local HULL_EVERY, GUN_EVERY, GUN_WAIT = 0.5, 1, 2           -- s between looking for hulls / for a missing gun;
+                                                           -- s after a hull appears before its gun is looked for
+local GUN_MISSES, GUN_SLOW = 5, 10                          -- after 5 misses in a row, a missing gun is looked for every 10 s
 
 local GUN_CAP = math.deg(0.8)        -- (Test 31) deg/s: a tank gun's own top turn (measured 46-49; 0.8 rad/s)
 local help_seen = {extra = 0, offset = 0, times = 0}     -- (Test 31) the most mount help given, for the log
@@ -65,6 +69,7 @@ local function log()
             'api: ', S.api, '\n', 'tanks out: ', S.tanks, ' (turrets turning: ', S.turned, ', gun not found: ', S.no_gun,
             ', hull not as expected: ', S.bad_nodes, ')\n', 'gunner seats turned with the turret: ', S.turned - S.no_seat, (S.no_seat > 0 and (' (' .. S.no_seat .. ' seat node(s) not found: those gunners stay put)') or ''), '\n', 'errors: ', S.errors, '\n', 'last error: ', S.last_error, '\n')
         if S.search_note then f:write('note: ', S.search_note, '\n') end
+        if S.recovered then f:write('turrets found already turned when this started (the game\'s Lua reloaded): ', S.recovered, ', put right\n') end
         if help_seen.times > 0 then
             f:write(string.format('mount help (the gun at its own %.0f deg/s limit): %d time(s), up to %.0f deg/s more, the mount turned up to %.0f deg\n',
                 GUN_CAP, help_seen.times, help_seen.extra, help_seen.offset))
@@ -126,7 +131,7 @@ local function quat(q) local ok, x, y, z, w = pcall(Q.to_elements, q); if ok and
 local function now_s()
     local ok, t = pcall(A.time_since_launch)
     if ok and type(t) == 'number' then return t end
-    return S.frames / 60
+    return S.clock                     -- (3.1.1 review: 3.1.0 used frames / 60, wrong at any other frame rate)
 end
 local function wrap(a) return (a + math.pi) % (2 * math.pi) - math.pi end
 -- per hull: turn rates (smoothed over about 6 frames), deg/s
@@ -144,12 +149,12 @@ local function rates(e, a, h, t, hy)
     if math.abs(e.tr) > m.turret + 1 or math.abs(e.hr) > m.hull + 1 then
         m.turret, m.hull = math.max(m.turret, math.abs(e.tr)), math.max(m.hull, math.abs(e.hr)); S.seen_changed = true
     end
-    local k = h.name:lower()
-    S.yaw_rate[k] = math.max(S.yaw_rate[k] or 0, math.abs(e.hr))
 end
 
--- per hull unit (weak keys): its nodes (index, rest position, rest rotation as numbers) and its gun
-local hulls = setmetatable({}, {__mode = 'k'})
+-- per hull unit: its nodes (index, rest position, rest rotation as numbers) and its gun
+-- (3.1.1 review) a plain table, emptied of units that are gone (see tick): 3.1.0's weak keys never let go (each entry
+-- pointed back at its own unit), and a new tank the game put at a destroyed one's place would have taken over its entry
+local hulls = {}
 
 local function node_at(u, base, want)
     local i = base + want.k
@@ -162,9 +167,26 @@ local function node_at(u, base, want)
     return {i = i, x = x, y = y, z = z, q = q}
 end
 
+-- (3.1.1 review) A carried node already turned round the axis (the game's Lua rebuilt with the game open while a
+-- turret was turned: this copy finds the last copy's pose): its turn angle, or nil if it isn't the wanted node turned.
+local function turned_by(u, i, want)
+    local ok, p = pcall(U.local_position, u, i)
+    local x, y, z = xyz(ok and p)
+    if not x or math.abs(z - want.z) > 0.01 then return nil end
+    local wx, wy, nx, ny = want.x - AXIS_X, want.y - AXIS_Y, x - AXIS_X, y - AXIS_Y
+    local r = math.sqrt(wx * wx + wy * wy)
+    if r < 0.2 or math.abs(math.sqrt(nx * nx + ny * ny) - r) > 0.01 then return nil end
+    return math.atan2(ny, nx) - math.atan2(wy, wx)
+end
+local function unturn(n, a)               -- the rest rotation of a node now turned by a
+    if a == 0 then return n end
+    local q = quat(select(2, pcall(Q.multiply, Q(V3(0, 0, 1), -a), Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))))
+    if q then n.q = q end
+    return n
+end
 local function setup(u, h)
     -- (Test 9) the first gun search waits 2 seconds after the hull appears (it is called in, not yet settled)
-    local e = {kind = h, ok = false, gun = nil, trav = nil, next_gun = S.frames + GUN_WAIT, u = u}
+    local e = {kind = h, ok = false, gun = nil, trav = nil, next_gun = S.clock + GUN_WAIT, gun_misses = 0}
     local okh, has = pcall(U.has_node, u, 'root')
     if not (okh and has) then return e end
     local okr, root = pcall(U.node, u, 'root')
@@ -173,11 +195,26 @@ local function setup(u, h)
     e.turn = node_at(u, base, h.turn)
     e.mount = node_at(u, base, GUN_MOUNT)
     e.carry = {}
+    -- (3.1.1 review) carried nodes found turned (all by the same angle): taken back to rest, and the turn node with them
+    local a0
     for _, c in ipairs(h.carry) do
         local n = node_at(u, base, c)
+        if not n then
+            local a = turned_by(u, base + c.k, c)
+            if a and (a0 == nil or math.abs(math.atan2(math.sin(a - a0), math.cos(a - a0))) < 0.01) then
+                a0 = a0 or a
+                local q = quat(select(2, pcall(U.local_rotation, u, base + c.k)))
+                if q then n = {i = base + c.k, x = c.x, y = c.y, z = c.z, q = q, turned = true} end
+            end
+        end
         if n then e.carry[#e.carry + 1] = n
         elseif c.optional then e.no_seat = true
         else return e end
+    end
+    if a0 then
+        for _, n in ipairs(e.carry) do if n.turned then unturn(n, a0); n.turned = nil end end
+        if e.turn then unturn(e.turn, a0) end
+        S.recovered = (S.recovered or 0) + 1
     end
     e.ok = e.turn ~= nil and e.mount ~= nil
     return e
@@ -251,9 +288,9 @@ local HELP_ACCEL, HELP_RETURN = 200, 6
 local HELP_STOP = 2000
 local function set_mount(u, e, m)
     if e.ms == m then return end          -- (3.1.0 review) written only when it changes (straight most of the time)
-    e.ms = m
     local q = e.mount.q
-    pcall(U.set_local_rotation, u, e.mount.i, Q.multiply(Q(V3(0, 0, 1), m), Q.from_elements(q[1], q[2], q[3], q[4])))
+    local ok = pcall(U.set_local_rotation, u, e.mount.i, Q.multiply(Q(V3(0, 0, 1), m), Q.from_elements(q[1], q[2], q[3], q[4])))
+    e.ms = ok and m or nil                -- (3.1.1 review: a write that failed is tried again next frame)
 end
 local function help(u, e, a, t)
     local o = rawget(_G, 'ArmoredOverhaulTurretOptions')
@@ -265,13 +302,21 @@ local function help(u, e, a, t)
     e.hl_t, e.hl_tn = t, a - m
     if not (lt and on) then
         if m ~= 0 then e.m, e.mr = 0, 0; set_mount(u, e, 0) end
+        e.acc_d, e.acc_t = 0, 0
         return
     end
     local dt = t - lt
-    if dt <= 0.001 or dt > 0.5 then return end
-    local rt = math.deg(wrap(a - m - ltn)) / dt                  -- the gun's own turn against its mount
-    e.rt = (e.rt or 0) + (rt - (e.rt or 0)) * 0.3
-    e.rf = (e.rf or 0) + (rt - (e.rf or 0)) * 0.7                  -- (Test 32) quicker, to stop in time
+    if dt <= 0.001 or dt > 0.5 then e.acc_d, e.acc_t = 0, 0; return end
+    -- the gun's own turn against its mount. (3.1.1 review) measured over at least 1/30 s: the game may step the gun at
+    -- a fixed rate below the frame rate, so at 144-240 fps most frames read 0 and the help barely started (reach 3.6 s)
+    e.acc_d, e.acc_t = (e.acc_d or 0) + wrap(a - m - ltn), (e.acc_t or 0) + dt
+    if e.acc_t >= 1 / 30 - 1e-6 then
+        local rt = math.deg(e.acc_d) / e.acc_t
+        e.acc_d, e.acc_t = 0, 0
+        e.rt = (e.rt or 0) + (rt - (e.rt or 0)) * 0.3
+        e.rf = (e.rf or 0) + (rt - (e.rf or 0)) * 0.7              -- (Test 32) quicker, to stop in time
+    end
+    e.rt, e.rf = e.rt or 0, e.rf or 0
     local extra = 25 * trav - GUN_CAP
     local want
     local straining = e.helping and math.abs(e.rf) >= 0.9 * GUN_CAP and e.rf * (e.mr or 0) >= 0
@@ -291,7 +336,9 @@ local function help(u, e, a, t)
     m = wrap(m + math.rad(mr * dt))
     if math.abs(m) < 1e-5 and math.abs(mr) < 1e-3 then m = 0 end
     e.m = m
-    e.hl_tn = a - m
+    -- (3.1.1 review) e.hl_tn keeps the gun's own heading against its mount as read this frame (a - the mount it stood on);
+    -- 3.1.0 reset it to a - the new mount here, so the next frame's "gun's own turn" included the mount's own push, and
+    -- the help went on pushing until the gun slowed under ~12 deg/s instead of 41 (2 deg overshoot with a gun that eases in)
     set_mount(u, e, m)
     if math.abs(mr) > help_seen.extra + 1 or math.abs(math.deg(m)) > help_seen.offset + 1 then
         help_seen.extra = math.max(help_seen.extra, math.abs(mr)); help_seen.offset = math.max(help_seen.offset, math.abs(math.deg(m)))
@@ -302,16 +349,26 @@ end
 local function turn(u, e, a)
     -- (3.1.0 review) the turret hasn't moved since the last write (within 0.006 deg): nothing to write
     if e.ta and math.abs(a - e.ta) < 1e-4 then return end
-    e.ta = a
     local yaw = Q(V3(0, 0, 1), a)
     local t = e.turn
-    pcall(U.set_local_rotation, u, t.i, Q.multiply(yaw, Q.from_elements(t.q[1], t.q[2], t.q[3], t.q[4])))
+    local ok = pcall(U.set_local_rotation, u, t.i, Q.multiply(yaw, Q.from_elements(t.q[1], t.q[2], t.q[3], t.q[4])))
     local c, s = math.cos(a), math.sin(a)
     for _, n in ipairs(e.carry) do
         local dx, dy = n.x - AXIS_X, n.y - AXIS_Y
-        pcall(U.set_local_position, u, n.i, V3(AXIS_X + dx * c - dy * s, AXIS_Y + dx * s + dy * c, n.z))
-        pcall(U.set_local_rotation, u, n.i, Q.multiply(yaw, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4])))
+        ok = pcall(U.set_local_position, u, n.i, V3(AXIS_X + dx * c - dy * s, AXIS_Y + dx * s + dy * c, n.z)) and ok
+        ok = pcall(U.set_local_rotation, u, n.i, Q.multiply(yaw, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))) and ok
     end
+    e.ta = ok and a or nil                -- (3.1.1 review: only a pose that was written is skipped next time)
+end
+-- (3.1.1 review) every node back at its rest pose (the shutdown below)
+local function rest(u, e)
+    pcall(U.set_local_rotation, u, e.turn.i, Q.from_elements(e.turn.q[1], e.turn.q[2], e.turn.q[3], e.turn.q[4]))
+    pcall(U.set_local_rotation, u, e.mount.i, Q.from_elements(e.mount.q[1], e.mount.q[2], e.mount.q[3], e.mount.q[4]))
+    for _, n in ipairs(e.carry) do
+        pcall(U.set_local_position, u, n.i, V3(n.x, n.y, n.z))
+        pcall(U.set_local_rotation, u, n.i, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))
+    end
+    e.ta, e.ms = nil, nil
 end
 
 local list, next_list, shown = {}, 0, -1
@@ -320,23 +377,29 @@ local function tick()
     if not api_ok() then if S.frames == 1 then log() end; return end
     local world = A.main_world()
     if world == nil then return end
-    if S.frames >= next_list then
-        next_list = S.frames + HULL_EVERY
+    if S.clock >= next_list then
+        next_list = S.clock + HULL_EVERY
         list = {}
+        local listed = {}
         for _, h in ipairs(HULLS) do
             local ok, us = pcall(W.units_by_resource, world, h.res)
-            for _, u in ipairs(ok and type(us) == 'table' and us or {}) do list[#list + 1] = {u = u, h = h} end
+            for _, u in ipairs(ok and type(us) == 'table' and us or {}) do list[#list + 1] = {u = u, h = h}; listed[u] = true end
+        end
+        -- (3.1.1 review) units no longer out are forgotten; the rest are written again once (e.ta / e.ms cleared), so a pose
+        -- the game itself put back (a turret parked since) is set right within half a second
+        for u, e in pairs(hulls) do
+            if not listed[u] then hulls[u] = nil else e.ta, e.ms = nil, nil end
         end
     end
     local tanks, turned, no_gun, bad, no_seat = 0, 0, 0, 0, 0
     local t_now = nil
-    S.yaw_rate.bastion, S.yaw_rate.maelstrom = 0, 0
     for _, it in ipairs(list) do
         local u = it.u
         local oka, alive = pcall(U.alive, u)
         if oka and alive then
             tanks = tanks + 1
             local e = hulls[u]
+            if e and e.kind ~= it.h then e = nil end          -- (3.1.1 review: another tank at that unit's place)
             if not e then e = setup(u, it.h); hulls[u] = e end
             if not e.ok then bad = bad + 1
             else
@@ -344,13 +407,20 @@ local function tick()
                     local okg, ga = pcall(U.alive, e.gun)
                     if not (okg and ga) then e.gun = nil end
                 end
-                if not e.gun and S.frames >= e.next_gun then e.next_gun = S.frames + GUN_EVERY; find_gun(u, e, world) end
+                if not e.gun and S.clock >= e.next_gun then
+                    find_gun(u, e, world)
+                    -- (3.1.1 review) a gun that stays missing is looked for less often (the Bastion's search asks the whole world)
+                    e.gun_misses = e.gun and 0 or e.gun_misses + 1
+                    e.next_gun = S.clock + (e.gun_misses >= GUN_MISSES and GUN_SLOW or GUN_EVERY)
+                end
                 local a, hy
                 if e.gun then a, hy = heading(u, e) end
                 if a then turn(u, e, a); turned = turned + 1; if e.no_seat then no_seat = no_seat + 1 end else no_gun = no_gun + 1 end
-                S.angle[u], S.gun[u] = a, e.gun
+                if TESTER then S.angle[u], S.gun[u] = a, e.gun end
                 if a then t_now = t_now or now_s(); rates(e, a, it.h, t_now, hy); help(u, e, a, t_now) else e.last_t, e.hl_t = nil, nil; if (e.m or 0) ~= 0 then e.m, e.mr = 0, 0; set_mount(u, e, 0) end end
             end
+        elseif oka then
+            hulls[u] = nil                                       -- (3.1.1 review: a destroyed tank's entry goes at once)
         end
     end
     -- (3.1.0 review) the log is rewritten when a count changes (compared as numbers: no new text every frame)
@@ -358,8 +428,8 @@ local function tick()
         or S.errors ~= shown
     S.tanks, S.turned, S.no_gun, S.bad_nodes, S.no_seat = tanks, turned, no_gun, bad, no_seat
     S.status = tanks == 0 and 'no tank out' or (turned == tanks and 'turning' or 'turning, some turrets not (see below)')
-    if changed or (S.seen_changed and S.frames >= (S.next_seen_log or 0)) then
-        shown = S.errors; S.seen_changed = false; S.next_seen_log = S.frames + 120; log()
+    if changed or (S.seen_changed and S.clock >= (S.next_seen_log or 0)) then
+        shown = S.errors; S.seen_changed = false; S.next_seen_log = S.clock + 2; log()
     end
 end
 
@@ -374,5 +444,25 @@ local function after(ok, ...)
     end
     return ...
 end
-update = function(...) return after(pcall(previous_update, ...)) end
+update = function(dt, ...)
+    S.clock = S.clock + ((type(dt) == 'number' and dt > 0 and dt < 0.5) and dt or 1 / 60)   -- (3.1.1 review: seconds)
+    return after(pcall(previous_update, dt, ...))
+end
+-- (3.1.1 review) the game closing (or this Lua being rebuilt): every turret still out is put back at rest, so a new copy
+-- of this addon finds the hulls as the game made them (see setup for when this doesn't run)
+do
+    local previous_shutdown = shutdown
+    shutdown = function(...)
+        pcall(function()
+            if S.api ~= 'ok' then return end
+            for u, e in pairs(hulls) do
+                local oka, alive = pcall(U.alive, u)
+                if oka and alive and e.ok then rest(u, e) end
+            end
+            hulls = {}
+            S.status = 'stopped (game closing): turrets put back at rest'
+        end)
+        if type(previous_shutdown) == 'function' then return previous_shutdown(...) end
+    end
+end
 log()

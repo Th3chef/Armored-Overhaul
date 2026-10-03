@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_steering
--- Armored Overhaul 3.1.0 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.1.1 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'steering' option, Quick). Written from scratch.
 --
 -- How it works: the tanks drive on the engine's Havok vehicle kit. When a tank is set up, the game scales its Havok
@@ -53,13 +53,14 @@ local KNOWN_TIMESTAMP = 0x6AB3B43F
 -- (3.0.1 review) the game's own values on that build (both tanks): what is found there must be these, or it was
 -- already scaled (an earlier copy of this addon whose Lua was rebuilt while the game kept running)
 local VANILLA = {grip = 0.7, steering = 2.25, power = 0.4}
+local STRENGTHS = {1.25, 1.5, 2}             -- (3.1.1 review) every option's three strengths (see the originals in apply)
 local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.1.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.1.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
-               applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0,
+               applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0, clock = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
 rawset(_G, P.global, state)
 
@@ -207,6 +208,39 @@ local function cache_path()
     return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-' .. P.file .. '.cache') or nil
 end
 local function build_tag() return string.format('%08X-%X', timestamp, image_size) end
+-- (3.1.1 review) Each tank's game values, kept for the life of the game's process (its environment block, which a reload of
+-- the game's Lua doesn't touch; gone when the game closes), tagged with the game build: a copy of this addon loaded again
+-- in the same session takes them from there, on any build (3.1.0 could only tell scaled values on the Sept 2026 build).
+local keep_get, keep_set
+do
+    for _, decl in ipairs({'uint32_t GetEnvironmentVariableA(const char *, char *, uint32_t);',
+            'int SetEnvironmentVariableA(const char *, const char *);'}) do pcall(ffi.cdef, decl) end
+    local okg, get = pcall(function() return ffi.cast('uint32_t (*)(const char *, char *, uint32_t)', k32.GetEnvironmentVariableA) end)
+    local oks, set = pcall(function() return ffi.cast('int (*)(const char *, const char *)', k32.SetEnvironmentVariableA) end)
+    local ebuf = ffi.new('char[256]')
+    local function name(key) return 'ARMORED_OVERHAUL_' .. PART:upper() .. '_' .. key:upper() end
+    keep_get = function(key)
+        if not (okg and get ~= nil) then return nil end
+        local n = get(name(key), ebuf, 256)
+        if n == 0 or n >= 256 then return nil end
+        local tag, rest = ffi.string(ebuf, n):match('^([^|]+)|(.*)$')
+        if tag ~= build_tag() then return nil end
+        local out, i = {}, 0
+        for v in rest:gmatch('[^,]+') do
+            i = i + 1
+            local x = tonumber(v)
+            if not FIELD_NAMES[i] or not x then return nil end
+            out[FIELD_NAMES[i]] = x
+        end
+        return i == #FIELD_NAMES and out or nil
+    end
+    keep_set = function(key, values)
+        if not (oks and set ~= nil) then return end
+        local parts = {}
+        for i, k in ipairs(FIELD_NAMES) do parts[i] = string.format('%.9g', values[k]) end
+        set(name(key), build_tag() .. '|' .. table.concat(parts, ','))
+    end
+end
 
 -- Grip, steering and power look for the same vehicle-settings table. After a game update only one of them searches the
 -- game code; the other waits and takes its candidates (and takes the search over if the first one stops).
@@ -268,10 +302,11 @@ local function find_record(base, acc, t)
             if index >= acc.slots * 4 then return nil end
             return base + acc.data + index * acc.stride
         end
-        if lo == 0 and hi == 0 then return nil end
+        if lo == 0 and hi == 0 then return nil, 'absent' end      -- (3.1.1 review: not in the table, as opposed to unreadable)
         slot = slot + 1
         if slot >= acc.slots then slot = 0 end
     end
+    return nil, 'absent'
 end
 
 -- A tank record is accepted only if its wheel radius and friction multiplier look like the tank's, and every field
@@ -321,18 +356,24 @@ local function scan_step()
 end
 
 local function resolve(rvas)
+    local second = nil
     for _, rva in ipairs(rvas) do
         local acc = accessor_at(rva)
         local base = acc and table_base(acc)
         if base then
-            local all = true
+            local good, absent = 0, 0
             for _, t in ipairs(TANKS) do
-                local rec = find_record(base, acc, t)
-                if not rec or not sane(rec) then all = false; break end
+                local rec, why = find_record(base, acc, t)
+                if rec and sane(rec) then good = good + 1 elseif why == 'absent' then absent = absent + 1 end
             end
-            if all then return acc, base, rva end
+            if good == #TANKS then return acc, base, rva end
+            -- (3.1.1 review) a table where one tank is sane and the other isn't in it at all (a game update changed that
+            -- tank) is kept as a second choice; one where a tank is there but not sane is another component's table (the
+            -- search finds several accessors over the same settings root) and is never taken
+            if good > 0 and good + absent == #TANKS and not second then second = {acc, base, rva} end
         end
     end
+    if second then return second[1], second[2], second[3] end
 end
 
 -- ---------------------------------------------------------------- applying
@@ -342,6 +383,9 @@ local originals, tries, wants, shown_values = {}, {}, {}, {}
 -- minute, is left alone (2.1 rewrote it every 10 s for ever) until the next pick in the Mod Options Menu
 -- (3.0.1 review: menu_set starts over; a mod still changing it is found again within ~3 checks)
 local fight = {set = {}, backs = {}}
+-- (3.1.1 review) per tank, what it holds that this addon put there (written, or already the wanted values): what the
+-- shutdown compares with. Kept apart from fight.set, which a menu pick clears.
+local held = {}
 local settled = false           -- true once both tanks hold the preset
 local function differs(a, b)
     for _, k in ipairs(FIELD_NAMES) do if math.abs(a[k] - b[k]) > 1e-4 then return true end end
@@ -351,29 +395,41 @@ local function apply()
     -- (2.0.1 review) the table is looked up again each time (two small reads): if the game ever rebuilds it (a mission
     -- loading), the new one is used rather than the one found first
     local b = table_base(acc)
-    if b ~= nil and num(b) ~= num(base) then base = b; tries, shown_values = {}, {}; fight = {set = {}, backs = {}} end
+    if b ~= nil and num(b) ~= num(base) then base = b; tries, shown_values, held = {}, {}, {}; fight = {set = {}, backs = {}} end
     local changed, open = 0, 0
     for _, t in ipairs(TANKS) do
-        local rec = find_record(base, acc, t)
+        local rec, why = find_record(base, acc, t)
         local current = rec and sane(rec)
         if not current then
-            state.tanks[t.key] = 'not found'; shown_values[t.key] = nil; open = open + 1
+            -- (3.1.1 review) a tank this game version's table doesn't have at all doesn't keep the option checking every 2 s
+            state.tanks[t.key] = why == 'absent' and 'not found (not in this game version\'s vehicle settings)' or 'not found'
+            shown_values[t.key] = nil
+            if why ~= 'absent' then open = open + 1 end
         else
             if not originals[t.key] then
-                local o = current
-                -- (3.0.1 review) on the known build, values that aren't the game's own were scaled already (this
-                -- addon's Lua rebuilt while the game kept running): the game's own are used, not compounded
-                if timestamp == KNOWN_TIMESTAMP then
-                    for _, k in ipairs(FIELD_NAMES) do
-                        if math.abs(current[k] - VANILLA[k]) > 1e-4 then
-                            o = {}
-                            for _, f in ipairs(FIELD_NAMES) do o[f] = VANILLA[f] end
-                            state.errors = state.errors + 1
-                            state.last_error = string.format('%s: %s found at %.3f, not the game\'s %.3f: the game\'s own used',
-                                t.name, k, current[k], VANILLA[k])
-                            break
+                -- (3.1.1 review) the game's own values: kept by an earlier copy this session if there was one; else what is
+                -- there, unless it is exactly the game's own times one of the option's strengths (an earlier copy's value
+                -- whose kept copy is gone): then the game's own. Any other value (another mod's, or a game data change) is
+                -- taken as it is (3.1.0, on the Sept 2026 build, replaced any value that wasn't the game's own).
+                local okk, o = pcall(keep_get, t.key)
+                if not (okk and o) then
+                    o = current
+                    -- (on the Sept 2026 build only, whose own values VANILLA holds: after a game update a new value of the
+                    -- game's could be one of those multiples by chance, and the kept values cover a reload there)
+                    for _, k in ipairs(timestamp == KNOWN_TIMESTAMP and FIELD_NAMES or {}) do
+                        for _, m in ipairs(STRENGTHS) do
+                            if math.abs(current[k] - VANILLA[k] * m) < 1e-4 then
+                                o = {}
+                                for _, f in ipairs(FIELD_NAMES) do o[f] = VANILLA[f] end
+                                state.errors = state.errors + 1
+                                state.last_error = string.format('%s: %s found at %.3f, the game\'s %.3f x%g (left by an earlier copy): the game\'s own used',
+                                    t.name, k, current[k], VANILLA[k], m)
+                                break
+                            end
                         end
+                        if o ~= current then break end
                     end
+                    pcall(keep_set, t.key, o)
                 end
                 originals[t.key] = o
                 local want = {}
@@ -385,20 +441,21 @@ local function apply()
             if fight.set[t.key] and differs(current, fight.set[t.key]) then   -- changed since this addon wrote it
                 local bk = fight.backs[t.key] or {}
                 fight.backs[t.key] = bk
-                bk[#bk + 1] = state.frames
-                while state.frames - bk[1] > 3600 do table.remove(bk, 1) end
+                bk[#bk + 1] = state.clock                -- (3.1.1 review: seconds; 3600 frames was 15 s at 240 fps)
+                while state.clock - bk[1] > 60 do table.remove(bk, 1) end
                 if #bk >= 3 and (tries[t.key] or 0) < MAX_TRIES then
                     tries[t.key] = MAX_TRIES; state.errors = state.errors + 1
                     state.last_error = t.name .. ': another mod keeps changing it back: left alone'
                 end
             end
+            if not differs(current, want) then fight.set[t.key] = current; held[t.key] = current end   -- (3.1.1 review: for the shutdown)
             if differs(current, want) then
                 open = open + 1
                 if (tries[t.key] or 0) < MAX_TRIES then
                     local ok, how = write_floats(rec, SPAN, FIELD, want)
                     now = sane(rec) or current
                     if ok and not differs(now, want) then
-                        changed = changed + 1; tries[t.key] = nil; fight.set[t.key] = now; state.applied = state.applied + 1; open = open - 1
+                        changed = changed + 1; tries[t.key] = nil; fight.set[t.key] = now; held[t.key] = now; state.applied = state.applied + 1; open = open - 1
                     else
                         tries[t.key] = (tries[t.key] or 0) + 1; state.errors = state.errors + 1
                         state.last_error = t.name .. ': write failed: ' .. tostring(how)
@@ -598,7 +655,10 @@ local function after(ok, ...)
     if not okT then state.errors = state.errors + 1; state.last_error = tostring(err); state.status = 'error: ' .. tostring(err); phase = 'off'; log() end
     return ...
 end
-update = function(...) return after(pcall(previous_update, ...)) end
+update = function(dt, ...)
+    state.clock = state.clock + ((type(dt) == 'number' and dt > 0 and dt < 0.5) and dt or 1 / 60)   -- (3.1.1 review: seconds)
+    return after(pcall(previous_update, dt, ...))
+end
 -- (3.0.1 review) the game closing (or this Lua being rebuilt): the game's own values are put back, so a new copy of
 -- this addon never reads already-scaled values as the game's (x1.5 became x2.25). Only values this addon holds are
 -- written back (another mod's are left to it), through the same page-checked write; the previous shutdown is called.
@@ -610,10 +670,12 @@ do
             phase = 'closed'                                -- (nothing is written after this)
             local b = table_base(acc) or base
             for _, t in ipairs(TANKS) do
-                local o, want = originals[t.key], wants[t.key]
-                local rec = o and want and find_record(b, acc, t)
+                -- (3.1.1 review) put back where the tank holds what this addon wrote last (3.1.0 compared with the wanted
+                -- values, which a menu pick changes a frame before they are written: then nothing was put back)
+                local o, h = originals[t.key], held[t.key]
+                local rec = o and h and find_record(b, acc, t)
                 local current = rec and sane(rec)
-                if current and differs(current, o) and not differs(current, want) then
+                if current and differs(current, o) and not differs(current, h) then
                     local ok, how = write_floats(rec, SPAN, FIELD, o)
                     if not ok then state.errors = state.errors + 1; state.last_error = t.name .. ': putting the game\'s values back failed: ' .. tostring(how) end
                 end

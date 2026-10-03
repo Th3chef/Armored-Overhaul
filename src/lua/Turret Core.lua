@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.1.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.1.1 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -40,6 +40,7 @@ local GUNS = {
 }
 local RECORD_SIZE = 0x4C
 local FIELD = {yaw_speed = 0x08, pitch_speed = 0x0C, pitch_min = 0x14, pitch_max = 0x18, yaw_min = 0x1C, yaw_max = 0x20}
+local FIELD_ORDER = {'yaw_speed', 'pitch_speed', 'pitch_min', 'pitch_max', 'yaw_min', 'yaw_max'}   -- (3.1.1: for keep_set)
 -- (3.1.0 Test 30) Test 29 also raised +0x10 (0.8 on every tank gun: 45.8 deg/s read as radians) by the traverse factor,
 -- as a guess at the turret's hard top speed: the turret still never turned faster than 46 deg/s against the hull, so
 -- that was not it and +0x10 is left alone again.
@@ -104,14 +105,16 @@ local CAMERA_LIMITS_AT = 0x4C
 -- Traverse speeds the view's left/right up by its own factor, Tank Turret Elevation its up/down.
 local CAMERA_SPEED_AT = 0x04
 local CAMERA_SPEED = {yaw = 0, pitch = 4}
+local CAMERA_LIMIT_FIELDS = {pitch_min = 0, pitch_max = 4, yaw_min = 8, yaw_max = 12}     -- (from +0x4C)
+local CAMERA_LIMIT_ORDER = {'pitch_min', 'pitch_max', 'yaw_min', 'yaw_max'}
 local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00\x20\x42' -- -15 25 -40 40
 -- (3.0.1 review) the gunner preset's own values at +0x04..+0x1F (as the Gunner camera option finds it): its second signature
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.1.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.1.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
-               applied = 0, errors = 0, guns = {}, frames = 0,
+               applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
 rawset(_G, 'ArmoredOverhaulMBTTurrets', state)
 
@@ -277,6 +280,50 @@ local function cache_save()
         if v then f:write(k, '=', string.format('%X', v), '\n') end
     end
     f:close()
+end
+
+-- (3.1.1 review) The game's own values, kept for the life of the game's process (in its environment block, which a
+-- reload of the game's Lua doesn't touch; it goes when the game closes). A copy of this addon loaded again in the same
+-- session (a mod manager redeploy with the game open) takes them from there instead of reading back what the first copy
+-- wrote: 3.1.0 took Very fast's 75 deg/s for the game's turn speed and wrote 225, x2 elevation became x4, and the Widest
+-- aim range became "the game's" (menu Off could no longer put -3..25 back). Each value is tagged with the game build.
+local keep_get, keep_set
+do
+    for _, decl in ipairs({'uint32_t GetEnvironmentVariableA(const char *, char *, uint32_t);',
+            'int SetEnvironmentVariableA(const char *, const char *);'}) do pcall(ffi.cdef, decl) end
+    local okg, get = pcall(function() return ffi.cast('uint32_t (*)(const char *, char *, uint32_t)', k32.GetEnvironmentVariableA) end)
+    local oks, set = pcall(function() return ffi.cast('int (*)(const char *, const char *)', k32.SetEnvironmentVariableA) end)
+    local ebuf = ffi.new('char[256]')
+    local PREFIX = 'ARMORED_OVERHAUL_TURRET_'
+    -- names: a list of field names; returns {name = number} or nil
+    keep_get = function(key, names)
+        if not (okg and get ~= nil) then return nil end
+        local n = get(PREFIX .. key, ebuf, 256)
+        if n == 0 or n >= 256 then return nil end
+        local tag, rest = ffi.string(ebuf, n):match('^([^|]+)|(.*)$')
+        if tag ~= build_tag() then return nil end
+        local out, i = {}, 0
+        for v in rest:gmatch('[^,]+') do
+            i = i + 1
+            local x = tonumber(v)
+            if not names[i] or not x then return nil end
+            out[names[i]] = x
+        end
+        return i == #names and out or nil
+    end
+    keep_set = function(key, names, values)
+        if not (oks and set ~= nil) then return end
+        local parts = {}
+        for i, k in ipairs(names) do parts[i] = string.format('%.9g', values[k]) end
+        set(PREFIX .. key, build_tag() .. '|' .. table.concat(parts, ','))
+    end
+end
+-- the game's own values: kept ones if this session has them, else these (and kept from now on)
+local function game_values(key, names, current)
+    local okk, k = pcall(keep_get, key, names)
+    if okk and k then return k, true end
+    pcall(keep_set, key, names, current)
+    return current, false
 end
 
 local function accessor_at(rva)
@@ -456,7 +503,7 @@ local tries = {}       -- item name -> failed writes
 -- (3.0 review) another mod writing the same values: an item this addon had set, found changed back 3 times within a
 -- minute, is left to the other mod until the turret table is rebuilt (3.0.1 review: the comment said "for the rest of
 -- the mission"; 2.1 rewrote it every 2 s for ever) and the log says so
-local FOUGHT, FIGHT_BACKS, FIGHT_WINDOW = 'another mod keeps changing it: left alone', 3, 3600
+local FOUGHT, FIGHT_BACKS, FIGHT_WINDOW = 'another mod keeps changing it: left alone', 3, 60     -- (3.1.1: seconds)
 local fight = {set = {}, backs = {}, off = {}}
 -- What the picked options ask for; everything else stays the game's own.
 local opts = {}
@@ -511,13 +558,15 @@ end
 
 -- Writes one item if it differs from what the settings ask for. Returns 1 when something was written.
 local function put(name, address, size, fields, current, want, reread)
-    if not differs(fields, current, want) then return 0, current end
+    -- (3.1.1 review) already what the options ask for (this copy's write, or an earlier copy's before a reload): noted as
+    -- this addon's, so the shutdown puts the game's own back over it
+    if not differs(fields, current, want) then fight.set[name] = current; return 0, current end
     if fight.off[name] then return 0, current, FOUGHT end
     if fight.set[name] and differs(fields, current, fight.set[name]) then   -- changed since this addon wrote it
         local b = fight.backs[name] or {}
         fight.backs[name] = b
-        b[#b + 1] = state.frames
-        while state.frames - b[1] > FIGHT_WINDOW do table.remove(b, 1) end
+        b[#b + 1] = state.clock
+        while state.clock - b[1] > FIGHT_WINDOW do table.remove(b, 1) end
         if #b >= FIGHT_BACKS then
             fight.off[name] = true; state.errors = state.errors + 1; state.last_error = name .. ': ' .. FOUGHT
             return 0, current, FOUGHT
@@ -561,7 +610,7 @@ local function apply()
         if not current then
             state.guns[g.name] = 'not found'; open = open + 1
         else
-            originals[g.name] = originals[g.name] or current
+            originals[g.name] = originals[g.name] or game_values(string.format('%08X%08X', g.hi, g.lo), FIELD_ORDER, current)
             local n, now, problem = put(g.name, rec, RECORD_SIZE, FIELD, current, wanted_for(g),
                 function() return sane(rec) end)
             changed = changed + n
@@ -577,16 +626,17 @@ local function apply()
         if not current then
             state.camera = 'preset no longer valid'; open = open + 1
         else
-            originals.camera = originals.camera or current
+            originals.camera = originals.camera or game_values('VIEW', CAMERA_LIMIT_ORDER, current)
             local n, now, problem = put('camera', camera + CAMERA_LIMITS_AT, 16,
-                {pitch_min = 0, pitch_max = 4, yaw_min = 8, yaw_max = 12}, current, camera_wanted(),
+                CAMERA_LIMIT_FIELDS, current, camera_wanted(),
                 function() return (camera_check(camera)) end)
             changed = changed + n
             if problem and problem ~= FOUGHT then open = open + 1 end
             -- (Test 28) the view's look speed, with the turret's speeds
             local spd, sn, sproblem = camera_speed(camera), 0, nil
             if spd then
-                originals.camera_speed = originals.camera_speed or {yaw = game_look(spd.yaw), pitch = game_look(spd.pitch)}
+                originals.camera_speed = originals.camera_speed
+                    or game_values('LOOK', {'yaw', 'pitch'}, {yaw = game_look(spd.yaw), pitch = game_look(spd.pitch)})
                 sn, spd, sproblem = put('camera speed', camera + CAMERA_SPEED_AT, 8, CAMERA_SPEED, spd, camera_speed_wanted(),
                     function() return camera_speed(camera) end)
                 changed = changed + sn
@@ -787,5 +837,44 @@ local function after(ok, ...)
     if not okT then state.errors = state.errors + 1; state.last_error = tostring(err); state.status = 'error: ' .. tostring(err); phase = 'off'; log() end
     return ...
 end
-update = function(...) return after(pcall(previous_update, ...)) end
+update = function(dt, ...)
+    -- (3.1.1 review) seconds of game time, for the fight-back window (3.1.0 counted frames: "a minute" was 15 s at 240 fps)
+    state.clock = state.clock + ((type(dt) == 'number' and dt > 0 and dt < 0.5) and dt or 1 / 60)
+    return after(pcall(previous_update, dt, ...))
+end
+-- (3.1.1 review) the game closing (or this Lua being rebuilt): the game's own turret and gunner view values are put back
+-- where they still hold what this addon wrote (another mod's values are left to it), as Power/Grip/Steering do. With the
+-- kept values above, a new copy never takes this one's as the game's even if this doesn't run.
+do
+    local previous_shutdown = shutdown
+    shutdown = function(...)
+        pcall(function()
+            if phase ~= 'ready' or not acc then return end
+            phase = 'closed'                                -- (nothing is written after this)
+            local b = table_base(acc)
+            for _, g in ipairs(GUNS) do
+                local o, w = originals[g.name], fight.set[g.name]
+                local rec = b and o and w and find_record(b, acc, g)
+                local current = rec and sane(rec)
+                if current and not differs(FIELD, current, w) and differs(FIELD, current, o) then
+                    local ok, how = write_floats(rec, RECORD_SIZE, FIELD, o)
+                    if not ok then state.errors = state.errors + 1; state.last_error = g.name .. ': putting the game\'s values back failed: ' .. tostring(how) end
+                end
+            end
+            if camera then
+                local current, o, w = camera_check(camera), originals.camera, fight.set.camera
+                if current and o and w and not differs(CAMERA_LIMIT_FIELDS, current, w) and differs(CAMERA_LIMIT_FIELDS, current, o) then
+                    write_floats(camera + CAMERA_LIMITS_AT, 16, CAMERA_LIMIT_FIELDS, o)
+                end
+                local spd, os_, ws = camera_speed(camera), originals.camera_speed, fight.set['camera speed']
+                if spd and os_ and ws and not differs(CAMERA_SPEED, spd, ws) and differs(CAMERA_SPEED, spd, os_) then
+                    write_floats(camera + CAMERA_SPEED_AT, 8, CAMERA_SPEED, os_)
+                end
+            end
+            state.status = 'stopped (game closing): the game\'s own values put back'
+            log()
+        end)
+        if type(previous_shutdown) == 'function' then return previous_shutdown(...) end
+    end
+end
 log()
