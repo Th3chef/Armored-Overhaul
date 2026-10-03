@@ -3,35 +3,32 @@ the hull's second gun mount (node b7e9b43d), which the MBT Turrets addon turns t
 The armour stays on the hull, so the game's own camo (hull slot a779745a) and damage looks (the hull's visibility
 masks) apply to it; the guns, missile pods and smoke launchers stay the game's own units on their own mounts.
 
-  build_mbt_hull.py TANK VANILLA_HULL_BASE MODDED_HULL_BASE MODDED_GUN_BASE VANILLA_GUN_BASE OUT_BASE
+  build_mbt_hull.py TANK VANILLA_HULL_BASE OUT_BASE
     TANK: bastion | maelstrom; *_BASE: <path>.main / <path>.gpu
-    The game's hull and gun units come out of the game's own archives (Filediver); the 3.0.1 ones out of the
-    Armored Overhaul 3.0.1 release's Turret Models patch. Then pack_hulls.py writes the patch.
-    MODDED_HULL_BASE: the 3.0.1 Turret Models hull, only for its deck plates (the flat faces at the roof line that
-    close the hull under the turret), copied onto the game's hull. MODDED_GUN_BASE: the 3.0.1 turret, for the plates
-    that close the turret's underside (copied onto the mount); VANILLA_GUN_BASE: to tell the gun's own faces apart.
+    VANILLA_HULL_BASE: the game's own hull unit, out of the game's own archives (Filediver): Bastion
+    0x16474112801385b6, Maelstrom 0xb0c9faf4af8903f9 (unit type e0a48d0be9a7453f). Then pack_hulls.py writes the patch.
+    (3.1.1) The 3.0.1 turret and gun inputs are gone: the deck and the turret floor have been made by the caps below
+    since Test 10, and those files were loaded but never used.
+    Byte for byte the release's hulls with shapely 2.1.2 / GEOS 3.13.1 and numpy 2.4.4 (see requirements.txt): the
+    deck triangles come from GEOS's constrained Delaunay, which other versions may lay out differently.
 
 Per skinned mesh (every visual and shadow LOD that has a skeleton map):
   - one skeleton-map slot whose bone carries only above-roof geometry (preferably a side case, l_box_0) is pointed at
     the second gun mount, with that node's inverse bind matrix (a translation in the mesh's space);
   - every vertex above the roof line is weighted 100% to that slot; triangles crossing the line are cut at it, the part
     above on the mount and the part below on the vertices' own bones (the original triangle is made degenerate);
-  - the 3.0.1 deck plates are added on the hull body bone; the mesh's bounds are grown for the turned turret.
+  - the cut is closed by a deck (on the hull body bone) and a turret floor (on the mount); the mesh's bounds are grown
+    for the turned turret.
 The smallest shadow LOD has no such slot and is left as the game has it (a turret shadow that doesn't turn, far away)."""
 import struct, sys, math, collections
 sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from unitlib import Unit
 
 TANKS = {
-    # roof line in the hull meshes' own space; the second gun mount's world position; the hull body bone ('boss');
-    # the 3.0.1 turret unit's offset into hull mesh space and which turret mesh each hull mesh's plates come from
-    'bastion': {'roof': 2.24, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162),
-                'turret_offset': (0.0, -1.959, 2.525), 'turret_mesh': {10: 12, 9: 11, 8: 10, 7: 9, 6: 8, 2: 3, 1: 2, 0: 1}},
-    'maelstrom': {'roof': 0.5625, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162),
-                  'turret_offset': (0.01594, -1.59714, 0.8475),
-                  'turret_mesh': {40: 12, 39: 11, 38: 10, 37: 9, 36: 8, 3: 3, 2: 2, 1: 1, 0: 0}},
+    # roof line in the hull meshes' own space; the second gun mount's world position; the hull body bone ('boss')
+    'bastion': {'roof': 2.24, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162)},
+    'maelstrom': {'roof': 0.5625, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162)},
 }
-PLATE_TOL = 0.005                          # 3.0.1's plates sit up to 2 mm under the roof line
 MOUNT_BONE, BOSS_BONE = 159, 46            # 0-based node indices in both hulls (b7e9b43d, 9b115563)
 PREFER = [99, 53, 98, 52, 96, 51]          # side cases l_box_0, r_box_0, l_box_1, r_box_1, l_box_2, r_box_2
 EPS = 1e-5
@@ -184,17 +181,9 @@ def add_cap(U, li, outline, z, up, slot_r, tpl, panel, new_v, new_t, base):
     return n
 
 
-def tri_key(ps): return tuple(sorted(tuple(round(p[i], 3) for i in range(3)) for p in ps))
-
-
-def build(tank, van_b, mod_b, tur_b, vgun_b, out_b):
+def build(tank, van_b, out_b):
     cfg = TANKS[tank]; roof = cfg['roof']
-    U, Mo, T, VG = load(van_b), load(mod_b), load(tur_b), load(vgun_b)
-    vgun_keys = set()
-    for gmi, GM in enumerate(VG.meshes):
-        if GM.layout < 0 or GM.mesh_type in (0, 256, 258): continue
-        for _, t in VG.mesh_tris(gmi):
-            vgun_keys.add(tri_key([VG.decode(GM.layout, VG.vertex(GM.layout, x))['pos'] for x in t]))
+    U = load(van_b)
     st = smap_table(U.main)
     report = []
     lod0 = max((k for k, MM in enumerate(U.meshes) if MM.layout >= 0 and MM.mesh_type not in (0, 256, 258)),
@@ -330,4 +319,8 @@ def build(tank, van_b, mod_b, tur_b, vgun_b, out_b):
 
 
 if __name__ == '__main__':
-    build(*sys.argv[1:7])
+    if len(sys.argv) != 4 or sys.argv[1] not in TANKS:
+        sys.exit('usage: build_mbt_hull.py bastion|maelstrom VANILLA_HULL_BASE OUT_BASE')
+    import shapely, numpy
+    print('shapely %s (GEOS %s), numpy %s' % (shapely.__version__, '.'.join(map(str, shapely.geos_version)), numpy.__version__))
+    build(*sys.argv[1:4])
