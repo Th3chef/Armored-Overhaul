@@ -3,3 +3,15 @@
 *.lua linguist-language=Lua
 *.lua.in linguist-language=Lua
 *.lua.inc linguist-language=Lua
+# (3.1.1) Text files keep LF line ends in every checkout (Git for Windows would otherwise give them CRLF, and the
+# release zip, built from them byte for byte, has LF). build.py reads CRLF copies back to LF too.
+*.lua text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.args text eol=lf
+*.diff text eol=lf
+*.txt text eol=lf
+*.png binary
+*.ttf binary

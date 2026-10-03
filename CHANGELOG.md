@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.1.1
+
+Bug fixes:
+- Reinstalling or updating the mod while the game is running no longer doubles up your settings, such as turret speed or the gunner camera distance.
+- MBT Turrets: the turret speed boost now works at high frame rates and no longer swings past where you're aiming.
+- Gunner Drive is more reliable: it no longer cuts out randomly, the controls can't get stuck after you get out, and smoke keeps working after game updates.
+- If a game update breaks Gunner Drive, only Gunner Drive turns off, not the whole mod.
+- The driver panel and Vehicle Indicator handle odd game readings and controller hiccups better.
+- Tank grip, power and steering are more reliable after game updates.
+- Small performance improvements.
+
 ## 3.1.0
 
 Tank MBT Turrets rebuilt: the turrets are now the tanks' own armor, cut at the roof line and turned with the gun, so camos and battle damage show on the whole turret (the Maelstrom's turret armor and missile pods stayed plain before), the Maelstrom's own missile pods and smoke launcher turn with it, the deck and the turret's underside are closed at every angle, and the Bastion's second gun and the Maelstrom's laser designator point where the main gun does. New MBT Turrets choice: *180* (90 degrees each side, the gunner view stops with the gun); *360* stays the default. Tank Suspension fixed: 3.0.1's stiff springs made the tanks bounce, get pushed around by bodies and sometimes launch and flip, and they rode lower than the game; the springs are now close to the game's, the tanks really ride 0.1 m higher, the game's own roll handling is back, and a lower center of gravity makes them hard to tip (*Balanced* as low as the game's, *Planted* lower). Tank Turret Traverse is faster (*Quick* x1.5, *Fast* x2, *Very fast* x3 = 75 degrees a second); with MBT Turrets all the way round the turret really reaches those speeds, past the game's own limit of about 46 degrees a second, and a change in the Mod Options Menu applies at once; the gunner view turns as fast as the turret (traverse and elevation). Vehicle Indicator: in the driver's seat of any vehicle it sits where it does beside the driver panel. FRV Stability retuned: more tire grip on every preset and a new *Stable*, now the first (default) choice. The option texts say which settings apply to tanks called in after a change.
