@@ -1,10 +1,10 @@
-"""Page image with the Arsenal option icons and their names, in the Arsenal order (options_icons.png), two rows (3.0)."""
+"""Page image with the Arsenal option icons and their names, in the Arsenal order (options_icons.png), two rows (3.2: 14 options)."""
 from PIL import Image, ImageDraw, ImageFont
 f = ImageFont.truetype('Oswald-VF.ttf', 30); f.set_variation_by_axes([600])
 names = [('tank_power', 'TANK POWER'), ('tank_grip', 'TANK GRIP'), ('tank_steering', 'TANK STEERING'),
          ('tank_suspension', 'TANK SUSPENSION'), ('mbt_turrets', 'TANK MBT TURRETS'), ('turret_traverse', 'TURRET TRAVERSE'),
          ('turret_elevation', 'TURRET ELEVATION'), ('turret_aim_range', 'TURRET AIM RANGE'), ('autoloader', 'TANK AUTOLOADER'),
-         ('gunner_drive', 'GUNNER DRIVE'), ('gunner_camera', 'TANK GUNNER CAMERA'), ('frv_stability', 'FRV STABILITY'),
+         ('gunner_drive', 'GUNNER DRIVE'), ('driver_panel', 'DRIVER PANEL'), ('gunner_camera', 'TANK GUNNER CAMERA'), ('frv_stability', 'FRV STABILITY'),
          ('turret_indicator', 'VEHICLE INDICATOR')]
 cols = 7; rows = (len(names) + cols - 1) // cols
 cw, ch = 296, 256 + 100
