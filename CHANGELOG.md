@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.2.0
+
+New:
+- **Scroll-wheel zoom for the gunner camera.** In the gunner seat, the mouse wheel moves the camera closer or further back. Your Gunner Camera choice is where it starts each time you sit down. From the closest point, keep scrolling to zoom in on the crosshair, up to 10x; a small "x2.4" next to the crosshair shows the zoom for a moment. Leaving the seat puts the view back to normal.
+- **Driver Panel is now its own option.** Turn it on or off in the mod manager or the in-game Mod Options Menu. It shows only while you're the one driving from the gunner seat, and hides when another player is in control of the tank.
+- **More key bindings** (Mod Bindings Menu): Gunner Drive's Shift Up, Shift Down and Handbrake, and the gunner camera's Zoom In and Zoom Out (on a controller too), along with Forward, Back, Steer Left, Steer Right, Horn and Smoke. Your normal keys still work.
+
+Fixes:
+- In someone else's tank, the smoke key no longer fires the wrong launcher or shows the wrong smoke count.
+
+Known issue:
+- Smoke from the gunner seat doesn't work in a tank another player called in yet: the smoke key does nothing there for now.
+
 ## 3.1.1
 
 Bug fixes:
