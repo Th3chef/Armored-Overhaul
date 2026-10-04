@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.1.1 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.2.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -112,7 +112,7 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.1.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.2.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -667,7 +667,7 @@ local next_check = 0
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'turret'}) do

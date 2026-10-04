@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.1.1 - Driver panel, part of the Gunner Drive option: while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.2.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
@@ -31,10 +31,10 @@ local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.1.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.2.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
-           speed = 'not measured yet', speed_check = 'none'}
+           speed = 'not measured yet', speed_check = 'none', options_menu = 'not installed (the defaults are used)'}
 rawset(_G, 'ArmoredOverhaulDriverPanel', S)
 -- (3.1.1 review) While the panel shows, the 'gear' line (selector, gear, rpm, speed, fuel) is made when it is read (the log,
 -- or a test), from the last values drawn: 3.1.0 made the text on every live redraw, up to 40 times a second at 240 fps.
@@ -50,7 +50,7 @@ local SR = rawget(_G, 'stingray')
 -- ---------------------------------------------------------------- log and settings
 -- The log is what a user attaches to a bug report: whether the engine offers what the option needs, where it
 -- draws, the settings, your seat and tank, and what went wrong. Tester builds add counters and details.
-local LOG_MAIN = {'version', 'status', 'api', 'gui', 'seat', 'gear', 'speed', 'font', 'input', 'errors', 'last_error'}
+local LOG_MAIN = {'version', 'status', 'api', 'gui', 'options_menu', 'seat', 'gear', 'speed', 'font', 'input', 'errors', 'last_error'}
 local LOG_TESTER = {'frames', 'drawn', 'panel', 'speed_check', 'tank', 'pick', 'finds', 'input_api'}
 local notes, test_notes = {}, {}
 local function note(s)
@@ -91,6 +91,58 @@ for k, v in pairs(SETTINGS) do settings[k] = v end
 -- true). The Indicator also docks only in a vehicle Gunner Drive drives (Tank Core's gd_flags).
 local PLACE = {x = settings.x, y = settings.y, size = settings.size, show = true}
 rawset(_G, 'ArmoredOverhaulDriverPanelPlace', PLACE)
+
+
+-- ---------------------------------------------------------------- Mod Options Menu (3.2.0)
+-- (3.2.0) The Driver Panel is its own option now (a commenter asked for a way to turn it off); with CowboyBingus's Mod
+-- Options Menu installed it can be turned off in game too (MODS, ARMORED OVERHAUL, right after Gunner Drive). Same
+-- hub as the other addons: every addon publishes its rows in _G.ArmoredOverhaulMenu and the first one to find the menu
+-- adds them all in the mod manager's option order (MENU_ORDER).
+local panel_on = true
+local menu_link
+do
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
+    local hub = rawget(_G, 'ArmoredOverhaulMenu')
+    if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
+    hub.groups.driver_panel = {status = S,
+        rows = function()
+            return {{'armored_overhaul.driver_panel', {type = 'toggle', label = 'Driver Panel', default = true,
+                description = 'While you drive from the gunner seat with Gunner Drive, a panel like the driver\'s own HUD shows the gear, rpm, speed, fuel and the Maelstrom\'s smoke rounds. It only shows while you are the one driving. Only you see it.'}, 'show'}}
+        end,
+        set = function(key, v) if key == 'show' then panel_on = (v == true or v == 1) end end}
+    local function add(M, g)
+        local e = hub.groups[g]
+        if not e or hub.done[g] then return end
+        hub.done[g] = true
+        local okr, rows = pcall(e.rows)
+        local st = e.status
+        st.menu_added = st.menu_added or 0
+        for _, r in ipairs(okr and rows or {}) do
+            local id, spec, key = r[1], r[2], r[3]
+            spec.mod = 'ARMORED OVERHAUL'
+            local ok, done, why = pcall(M.register_option, id, spec)
+            if ok and done then
+                st.menu_added = st.menu_added + 1
+                local okg, v = pcall(M.get, id)
+                if okg and v ~= nil then pcall(e.set, key, v) end
+                pcall(M.on_change, id, function(value) pcall(e.set, key, value) end)
+            else
+                st.menu_failed = id .. ': ' .. tostring(ok and why or done)
+            end
+        end
+        st.options_menu = st.menu_added .. ' setting(s) in the MODS tab' .. (st.menu_failed and ('; not added: ' .. st.menu_failed) or '')
+    end
+    local at = 0
+    menu_link = function(frame)
+        if frame < at then return end
+        at = frame + 60
+        if hub.done.driver_panel then at = math.huge; return end
+        local M = rawget(_G, 'ModOptionsMenu')
+        if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
+        for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
+        for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
+    end
+end
 
 -- ---------------------------------------------------------------- engine API (checked once; the option stays off
 -- and says why if this game build lacks something)
@@ -757,12 +809,7 @@ local function draw_panel(g, sw, sh, set, d, part)
     text(g, 'KMH', cx, y2 - 0.7 * u, small, th * 0.9, GREY, 'c')
     bar(g, rx1, rx2, y2, 0.28 * u, 0, th * 0.7, GREY)
     for i = 1, 3 do rect(g, rx1 + (rx2 - rx1) * i / 4 - th * 0.35, y2 - 0.08 * u, rx1 + (rx2 - rx1) * i / 4 + th * 0.35, y2, GREY) end
-    -- (1.3) another player's game runs this tank (they drove it last): say how to get it back. Game font only (the
-    -- built-in letters only cover the panel's own words)
-    if d.remote and ft.ok and ft.gui == g then
-        text(g, d.frv and 'ANOTHER PLAYER CONTROLS THIS FRV' or 'ANOTHER PLAYER CONTROLS THIS TANK', cx, cy + 2.75 * u, 0.5 * u, th, YELLOW, 'c')
-        text(g, 'Take the driver seat once to get it back', cx, cy + 2.1 * u, 0.42 * u, th, GREY, 'c')
-    end
+    -- (3.2.0) no 'another player controls this tank' line any more: the panel hides then (see tick)
     if d.smoke then
         local sx1, sx2, sy1, sy2 = cx + half + 0.9 * u, cx + half + 1.35 * u, y2, cy + 1.45 * u
         rect(g, sx1 - 1, sy1 - 1, sx2 + 1, sy2 + 1, SHADOW)
@@ -994,15 +1041,29 @@ end
 local function tick()
     S.frames = S.frames + 1
     wc = nil
+    menu_link(S.frames)
     local seat, cf, core_ok, idle = core_seat(true)
-    if not seat or seat.driving ~= true then
+    -- (3.2.0) shown only while you are the one driving: not when another player's game runs the vehicle (they drove it
+    -- last, so it doesn't answer you; 1.3-3.1.1 showed the panel with a warning), and not when turned off in the menu
+    local off = not panel_on
+    -- (the Vehicle Indicator docks beside the panel only while the panel can show: off in the menu, it sits on its own)
+    if off ~= (PLACE.menu_off or false) then
+        PLACE.menu_off = off
+        if off then PLACE.show = false elseif S.api == 'ok' or S.api == 'unchecked' then PLACE.show = true end
+    end
+    if off or not seat or seat.driving ~= true or seat.remote == true then
         TT.reset(); speed_reset()
-        hide_panel(seat and 'hidden (not driving from the gunner seat)' or 'hidden (not in a vehicle)')
+        hide_panel(off and 'hidden (turned off in the Mod Options Menu)' or (not seat and 'hidden (not in a vehicle)')
+            or (seat.driving ~= true and 'hidden (not driving from the gunner seat)') or 'hidden (another player\'s game runs this vehicle)')
+        if off then idle = 'off (turned off in the Mod Options Menu)' end
         S.seat = seat and seat_text(seat) or (core_ok and 'not in a vehicle' or 'unknown')
         -- (3.0.1 review) last_logged kept up to date (3.0: driving again wrote nothing, and the file kept the waiting
         -- text for up to 30 s); a panel that is off for good (the engine lacks something, drawing failed) keeps
         -- saying so (3.0: the waiting text replaced it)
-        if S.api == 'ok' or S.api == 'unchecked' then S.status = seat and 'waiting (you are not driving from the gunner seat)' or idle end
+        if S.api == 'ok' or S.api == 'unchecked' then
+            S.status = off and idle or (seat and (seat.driving == true and 'waiting (another player\'s game runs this vehicle: take the driver seat once to get it back)'
+                or 'waiting (you are not driving from the gunner seat)') or idle)
+        end
         if S.status ~= last_logged then last_logged = S.status; log() end
         return
     end

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.1.1 - Gunner camera option (Close): how far behind the turret the tank
+-- Armored Overhaul 3.2.0 - Gunner camera option (Close): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -10,7 +10,8 @@
 -- the camera ended up beside the turret when it turned): while you sit in a tank gunner seat the offset is turned
 -- with the turret every frame (the turret angle comes from the shared turret tracker; your seat from Tank Core), so
 -- the camera stays behind the turret. Height is not changed by the turning. (Tests: +0x24..+0x2C made no visible difference; +0x3C alone only raised the camera.) The turret
--- limits in the same preset (+0x4C..+0x58) belong to MBT Turrets and are not touched here. The view uses the new distance from the next time you take the gunner seat.
+-- limits in the same preset (+0x4C..+0x58) belong to MBT Turrets and are not touched here. (3.2.0) The mouse wheel moves the camera in and
+-- out from the pick while you sit in the gunner seat, and zooms in on the crosshair from the closest point (see the zoom block).
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 if rawget(_G, 'ArmoredOverhaulGunnerCamera') then return end
 local TESTER = false
@@ -36,7 +37,7 @@ local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
 local distance = PRESET          -- (3.0) metres back along the rise: the mod manager's pick, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.1.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.2.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -103,18 +104,18 @@ local function page_info(address, size)
     if r.state ~= 0x1000 or num(address) + size > num(r.base) + tonumber(r.size) then return nil end
     return r.protection, r.type
 end
-local function poke(address, values)
+local function poke(address, values, fields)
     local p = ffi.cast(F32P, address)
-    for k, off in pairs(FIELD) do if values[k] then p[off / 4] = values[k] end end
+    for k, off in pairs(fields or FIELD) do if values[k] then p[off / 4] = values[k] end end
 end
-local function write_floats(address, size, values)
+local function write_floats(address, size, values, fields)
     local prot, kind = page_info(address, size)
     if not prot then return false, 'memory not committed' end
     -- (3.0 review) 4 read/write; 8 write-copy (a module's data before its first write: writing makes the page
     -- this process's own copy, as any write by the game does)
     -- (3.1.1 review) the common case first, with no text made (3.1.0 formatted it on every turning write)
     local data = kind == 0x20000 or kind == 0x40000 or kind == 0x1000000
-    if data and (prot == 4 or prot == 8) then poke(address, values); return true, 'page writable' end
+    if data and (prot == 4 or prot == 8) then poke(address, values, fields); return true, 'page writable' end
     local how = string.format('page 0x%X/0x%X', prot, kind)
     if not data then return false, how end
     if prot ~= 2 then return false, how end
@@ -122,7 +123,7 @@ local function write_floats(address, size, values)
     if not opened then opened = VirtualProtect(address, size, 8, old_prot) ~= 0 end
     if not opened then return false, how .. ', open refused' end
     local restore = old_prot[0]
-    local ok = pcall(poke, address, values)
+    local ok = pcall(poke, address, values, fields)
     -- (3.0 review) the old protection put back, checked: a page left writable is said in the result
     local back = VirtualProtect(address, size, restore, old_prot) ~= 0
     if not back then state.errors = state.errors + 1; state.last_error = how .. ': opened for a write, its protection could not be put back' end
@@ -137,11 +138,15 @@ local function log()
         -- what a bug report needs: the game build, how the gunner preset was found, the preset picked, the distances
         f:write('Armored Overhaul - Gunner Camera\n', 'version: ', state.version, '\n', 'status: ', state.status, '\n',
             'game: ', state.game, '\n', 'found: ', state.how, '\n', 'preset: ', state.preset, '\n',
-            'gunner view: ', state.view, '\n', 'turning with the turret: ', state.turning, '\n',
+            'gunner view: ', state.view, '\n', 'turning with the turret: ', state.turning, '\n', 'scroll zoom: ', state.zoom, '\n',
+            state.zoom_seen and ('crosshair zoom check: ' .. state.zoom_seen .. '\n') or '',
+            'zoom keys: ', tostring(state.zoom_keys), '\n', 'zoom readout: ', tostring(state.readout), '\n',
             'options menu: ', state.options_menu, '\n', 'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
         if TESTER then
             f:write('-- tester details --\n', 'preset record: ', state.where, '\n', 'writes: ', state.applied, '\n',
-                'turn writes: ', state.turns, '\n', 'tank: ', state.tank, '\n', 'frames: ', state.frames, '\n')
+                'turn writes: ', state.turns, '\n', 'tank: ', state.tank, '\n', 'frames: ', state.frames, '\n',
+                'zoom api: ', tostring(state.zoom_api), '\n', 'zoom wheel: ', tostring(state.zoom_raw), '\n',
+                'zoom camera: ', tostring(state.zoom_camera), '\n', 'zoom field of view: ', tostring(state.zoom_fov), '\n')
         end
         f:close()
     end)
@@ -177,7 +182,7 @@ end
 -- (a mod manager redeploy with the game open) takes it from there: 3.1.0 read back what the first copy wrote as the game's
 -- own, so each redeploy moved the camera further (Far: another 2.5 m back), and one done in a turned turret's gunner seat
 -- kept the camera off to the side. Tagged with the game build.
-local keep_get, keep_set
+local keep_get, keep_set, fov_keep_get, fov_keep_set
 do
     for _, decl in ipairs({'uint32_t GetEnvironmentVariableA(const char *, char *, uint32_t);',
             'int SetEnvironmentVariableA(const char *, const char *);'}) do pcall(ffi.cdef, decl) end
@@ -197,6 +202,21 @@ do
     keep_set = function(v)
         if not (oks and set ~= nil) then return end
         set(KEY, string.format('%s|%.9g,%.9g,%.9g', build_tag(), v.side, v.back, v.up))
+    end
+    -- (3.2.0 Test 8) the gunner view's own field-of-view multipliers, the same way (see the zoom block)
+    local FOV_KEY = 'ARMORED_OVERHAUL_GUNNER_FOV'
+    fov_keep_get = function()
+        if not (okg and get ~= nil) then return nil end
+        local n = get(FOV_KEY, ebuf, 256)
+        if n == 0 or n >= 256 then return nil end
+        local tag, a, b, c = ffi.string(ebuf, n):match('^([^|]+)|([^,]+),([^,]+),([^,]+)$')
+        a, b, c = tonumber(a), tonumber(b), tonumber(c)
+        if tag ~= build_tag() or not (a and b and c) then return nil end
+        return {a = a, b = b, c = c}
+    end
+    fov_keep_set = function(v)
+        if not (oks and set ~= nil) then return end
+        set(FOV_KEY, string.format('%s|%.9g,%.9g,%.9g', build_tag(), v.a, v.b, v.c))
     end
 end
 
@@ -706,6 +726,406 @@ local function turning_text(found, tank, extra)
     state.turning = found and ('yes (' .. tank .. (extra and ', kept level' or ', not level: tilt unreadable') .. ')')
         or ('not yet: ' .. tostring(extra) .. ' (' .. tank .. ')')
 end
+-- ---------------------------------------------------------------- scroll-wheel zoom (3.2.0)
+-- (3.2.0) In the gunner seat the mouse wheel moves the camera in and out: the picked distance (Close .. Farthest)
+-- is where it starts each time you sit down, every notch moves it ZOOM.step metres along the same 10 degree rise
+-- (wheel up = closer), and it glides there (ZOOM.speed m/s) so it feels smooth. From the closest distance, more wheel
+-- up zooms the view itself in on the crosshair, and wheel down zooms back out before the camera moves back again.
+-- (Test 6: more zoom wanted) the crosshair zoom goes in 1.25x steps up to 10x (Test 5: 1.5,
+-- 2, 3, 4) and glides between steps like the distance does.
+-- (Test 8) The crosshair zoom narrows the gunner view preset's own field-of-view multipliers (+0x5C, +0x60, +0x64; 1.0 for
+-- the gunner view; the game's own scope view preset has 0.25, aim views 0.8-0.9, sprint views up to 1.4), the game's own
+-- value divided by the zoom; they are put back as you zoom out, leave the seat or the game closes, if they still hold
+-- what this addon wrote. (Tests 5-7 set the camera's field of view through Camera.set_vertical_fov: the game works its
+-- field of view out again every frame - setting x preset multiplier - so it never showed.) The first time you zoom in,
+-- the camera's field of view is read before and 0.6 s after: if it didn't narrow, the crosshair zoom is not used for
+-- the rest of the game and the wheel moves the camera only (Test 7: steps that don't show felt like a "buffer"
+-- before the camera moved back).
+local ZOOM = {step = 0.5, min = -0.5, max = 7, speed = 8, fovs = {}, glide = 12, search_every = 2}
+do local f = 1.25; while f < 10 do ZOOM.fovs[#ZOOM.fovs + 1] = f; f = f * 1.25 end; ZOOM.fovs[#ZOOM.fovs + 1] = 10 end
+local zoom = {seated = false, extra = 0, d = nil, t = nil, idx = nil, level = 0, f = 1, notches = 0}
+local FOVF = {a = 0x5C, b = 0x60, c = 0x64}
+-- orig: the game's own multipliers; ours: what was written last; works: nil (not checked yet), true, false (not shown)
+local fov = {orig = nil, ours = nil, kept = 0, reset = 0, works = nil, base = nil, check_at = nil}
+-- (Test 9) A crash can't be caught in Lua (Test 8 crashed the game at the first zoom in), so a small marker file says
+-- what was being tried: 'checking' (the camera check) or 'zooming' (the first field-of-view write of the game), and
+-- what got through. Found still 'checking' or 'zooming' at the next start, that step is left out for this version of the
+-- mod ('nocheck': the zoom without the check; 'off': no crosshair zoom, the wheel moves the camera only). With the check
+-- left out, the zoom's own markers keep saying so ('nocheckzooming', then 'nocheck').
+local function zmark(text)
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    if not root or root == '' or not (io and io.open) then return nil end
+    local path = root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-GunnerCamera.zoomcheck'
+    local f = io.open(path, text and 'w' or 'r')
+    if not f then return nil end
+    if text then f:write(text, ' ', state.version, '\n'); f:close(); return end
+    local t = f:read('*a'); f:close(); return t
+end
+do
+    local ok, last = pcall(zmark)
+    local word = ok and type(last) == 'string' and last:match('^(%a+) ' .. state.version:gsub('%p', '%%%0') .. '\n')
+    if word == 'checking' or word == 'nocheck' then
+        fov.no_check = true; pcall(zmark, 'nocheck')
+        state.zoom_seen = 'the camera check is left out: the game closed during it before'
+    elseif word == 'zooming' or word == 'nocheckzooming' or word == 'off' then
+        fov.works = false; pcall(zmark, 'off')
+        state.zoom_seen = 'crosshair zoom not used: the game closed as it zoomed in before'
+    end
+end
+state.zoom = 'not used yet'
+local function set_want(d)
+    want.side = original.side
+    want.back = original.back - BASE_BACK - d * math.cos(RISE)
+    want.up = original.up - BASE_DOWN + d * math.sin(RISE)
+end
+-- the wheel's notches this frame (wheel up positive); nil when the engine has no mouse wheel
+local function wheel()
+    local SR = rawget(_G, 'stingray')
+    local M = type(SR) == 'table' and SR.Mouse
+    if not M then return nil end
+    if zoom.idx == nil then
+        local ok, i = pcall(M.axis_index, 'wheel')
+        zoom.idx = (ok and type(i) == 'number') and i or false
+        if TESTER then state.zoom_api = zoom.idx and ('wheel axis ' .. zoom.idx) or 'no wheel axis' end
+    end
+    if not zoom.idx then return nil end
+    local ok, v = pcall(M.axis, zoom.idx)
+    if not ok or v == nil then return 0 end
+    local x, y, z = tt_comps(v)
+    local n = y or 0
+    if n == 0 and z and z ~= 0 then n = z end            -- (whichever component the engine puts the wheel in)
+    if TESTER and n ~= 0 and zoom.notches < 12 then
+        zoom.notches = zoom.notches + 1
+        state.zoom_raw = string.format('wheel %s %s %s', tostring(x), tostring(y), tostring(z))
+    end
+    if n > 0 then return math.max(1, math.floor(n + 0.5)) elseif n < 0 then return math.min(-1, math.ceil(n - 0.5)) end
+    return 0
+end
+-- The field of view of every camera on units within 30 m of the tank, read only ({{fov, note}, ...}); for the check
+-- that the crosshair zoom shows (twice a game at most) and the Tester log.
+local function camera_fovs()
+    local U, W, _, CAM = TT.api()
+    local hull = TT.found.unit
+    if not (U and W and CAM and U.num_cameras and U.camera and CAM.world_position and CAM.vertical_fov and W.units) then return nil, 'no camera API' end
+    local okw, world = pcall(rawget(_G, 'stingray').Application.main_world)
+    if not okw or world == nil or hull == nil then return nil, 'no world or tank' end
+    local okl, all = pcall(W.units, world)
+    local okh, hp = pcall(U.world_position, hull, 1)
+    if not okl or type(all) ~= 'table' or not okh then return nil, 'units unreadable' end
+    local out = {}
+    for _, u in ipairs(all) do
+        local okn, n = pcall(U.num_cameras, u)
+        if okn and type(n) == 'number' and n > 0 then
+            for i = 1, math.min(n, 4) do                  -- (Test 9: 1-based; Test 8 asked for camera 0 and the game crashed)
+                local okc, c = pcall(U.camera, u, i)
+                local okp, p = false, nil
+                if okc and c ~= nil then okp, p = pcall(CAM.world_position, c) end
+                if okp and p ~= nil then
+                    local dd = math.sqrt(tt_dist2(p, hp))
+                    local okf, fv = pcall(CAM.vertical_fov, c)
+                    if dd < 30 and okf and type(fv) == 'number' then
+                        out[#out + 1] = {u = u, i = i, fov = fv, note = string.format('%s%.1f m, camera %d, fov %.3f', u == hull and 'the tank: ' or '', dd, i, fv)}
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+local function fov_read()
+    local s = read(rec + FOVF.a, 12)
+    local a, b, c = f32(s, 0), f32(s, 4), f32(s, 8)
+    if not (a and b and c and a > 0.01 and a < 5 and b > 0.01 and b < 5 and c > 0.01 and c < 5) then return nil end
+    return {a = a, b = b, c = c}
+end
+local function fov_differs(x, y) return not (math.abs(x.a - y.a) < 1e-5 and math.abs(x.b - y.b) < 1e-5 and math.abs(x.c - y.c) < 1e-5) end
+-- the gunner view's field of view for zoom factor `f` (1 = the game's own), checked every frame while zoomed
+local function apply_fov(f)
+    if not fov.orig then
+        if f <= 1.0005 then return true end
+        local okk, kept = pcall(fov_keep_get)
+        if okk and kept then fov.orig = kept
+        else
+            fov.orig = fov_read()
+            if not fov.orig then return false, 'field of view unreadable' end
+            pcall(fov_keep_set, fov.orig)
+        end
+    end
+    local now = fov_read()
+    if not now then return false, 'field of view unreadable' end
+    local o = fov.orig
+    if f <= 1.0005 then                                     -- (the game's own back, if it still holds ours)
+        if fov.ours and not fov_differs(now, fov.ours) then write_floats(rec, FOVF.c + 4, o, FOVF) end
+        fov.ours = nil
+        return true
+    end
+    local want_f = {a = o.a / f, b = o.b / f, c = o.c / f}
+    if fov.ours then if fov_differs(now, fov.ours) then fov.reset = fov.reset + 1 else fov.kept = fov.kept + 1 end end
+    if fov_differs(now, want_f) then
+        if not fov.marked then fov.marked = 'zooming'; pcall(zmark, fov.no_check and 'nocheckzooming' or 'zooming') end   -- (cleared the next frame: see zoom_frame)
+        local ok, how = write_floats(rec, FOVF.c + 4, want_f, FOVF)
+        if not ok then return false, 'write failed: ' .. tostring(how) end
+    end
+    fov.ours = want_f
+    if TESTER then state.zoom_fov = string.format('preset x%.3f/%.3f/%.3f (game %.3f/%.3f/%.3f); kept %d frames, set back by the game %d',
+        want_f.a, want_f.b, want_f.c, o.a, o.b, o.c, fov.kept, fov.reset) end
+    return true
+end
+-- (Test 8) the first zoom in: the cameras' field of view before (base) and 0.6 s after; narrowed = the zoom shows
+local function fov_check(f)
+    if fov.works ~= nil or fov.no_check then return end
+    if not fov.base then
+        pcall(zmark, 'checking')
+        local cams, why = camera_fovs()
+        pcall(zmark, 'checked')
+        fov.base = cams or {}; fov.check_at = state.clock + 0.6
+        if TESTER then state.zoom_camera = cams and (#cams .. ' camera(s) within 30 m before: ' .. table.concat((function()
+            local t = {}; for k = 1, math.min(#cams, 6) do t[k] = cams[k].note end; return t end)(), '; ')) or tostring(why) end
+        return
+    end
+    if state.clock < fov.check_at or f < 1.15 then return end
+    pcall(zmark, 'checking')
+    local cams = camera_fovs() or {}
+    pcall(zmark, 'checked')
+    local before, after = nil, nil
+    for _, e in ipairs(cams) do
+        for _, b in ipairs(fov.base) do
+            if b.u == e.u and b.i == e.i and b.fov > 0 and e.fov < b.fov * 0.93 then before, after = b.fov, e.fov end
+        end
+    end
+    if #fov.base == 0 or #cams == 0 then
+        fov.works = true; state.zoom_seen = 'no camera found to check: the crosshair zoom is kept'
+    elseif before then
+        fov.works = true; state.zoom_seen = string.format('the camera\'s field of view went from %.3f to %.3f: the crosshair zoom shows', before, after)
+    else
+        fov.works = false; state.zoom_seen = string.format('the camera\'s field of view stayed %.3f: the crosshair zoom is not used, the wheel moves the camera only', cams[1].fov)
+    end
+end
+-- ---------------------------------------------------------------- zoom keys and readout (3.2.0)
+-- (3.2.0) With CowboyBingus's Mod Bindings Menu installed, "Gunner Camera: Zoom In" and "Gunner Camera: Zoom Out" are in
+-- the game's controls (tab MODS, section ARMORED OVERHAUL; keyboard or controller): a press is one wheel notch, held
+-- it repeats (after 0.35 s, every 0.1 s). The menu is looked for once a second until found; is_down is asked only in
+-- the gunner seat. (Its API: _G.ModBindingsMenu {api = 1, register_binding(id, label, slot, options), is_down(id), ready()}.)
+local ZB = {api = nil, at = 0, prefix = 'armored_overhaul.gunner_camera.', keys = {}, dirs = {zoom_in = 1, zoom_out = -1},
+            held = {}, next = {}}
+state.zoom_keys = 'Mod Bindings Menu not installed (the mouse wheel zooms)'
+local function zb_link()
+    if ZB.api or state.frames < ZB.at then return end
+    ZB.at = state.frames + 60
+    local B = rawget(_G, 'ModBindingsMenu')
+    if type(B) ~= 'table' or B.api ~= 1 or type(B.register_binding) ~= 'function' or type(B.is_down) ~= 'function' then return end
+    local failed
+    for _, k in ipairs({{'zoom_in', 'Gunner Camera: Zoom In'}, {'zoom_out', 'Gunner Camera: Zoom Out'}}) do
+        local ok, done, why = pcall(B.register_binding, ZB.prefix .. k[1], k[2], nil, {category = 'ARMORED OVERHAUL'})
+        if ok and done then ZB.keys[#ZB.keys + 1] = k[1] else failed = k[1] .. ': ' .. tostring(ok and why or done) end
+    end
+    if #ZB.keys == 0 then state.zoom_keys = 'Mod Bindings Menu found, no binding added yet (tried again once a second): ' .. tostring(failed); return end
+    ZB.api = B
+    state.zoom_keys = #ZB.keys .. ' zoom binding(s) in the controls, tab MODS' .. (failed and ('; not added: ' .. failed) or '')
+end
+-- the bound zoom keys' notches this frame (zoom in positive), 0 without the menu or while it isn't ready
+local function zb_notches()
+    local B = ZB.api
+    if not B then return 0 end
+    local okr, ready = true, true
+    if type(B.ready) == 'function' then okr, ready = pcall(B.ready) end
+    if not (okr and ready) then return 0 end
+    local n = 0
+    for _, k in ipairs(ZB.keys) do
+        local ok, d = pcall(B.is_down, ZB.prefix .. k)
+        if ok and d == true then
+            if not ZB.held[k] then
+                ZB.held[k], ZB.next[k], n = true, state.clock + 0.35, n + ZB.dirs[k]
+                if not ZB.used then ZB.used = true; state.zoom_keys = state.zoom_keys .. '; used' end
+            elseif state.clock >= ZB.next[k] then ZB.next[k], n = state.clock + 0.1, n + ZB.dirs[k] end
+        else ZB.held[k] = nil end
+    end
+    return n
+end
+-- (3.2.0) The crosshair zoom shown as "x2.4" just below and right of the crosshair, in the game's HUD font, whenever it
+-- changes; it fades out after RO.hold s. Drawn the way the Driver Panel draws (HD2 HUD+'s method): a screen GUI in the
+-- game's overlay world (the one in Application.worlds() that isn't the main world), the font, material and atlas Tank
+-- Core publishes (ArmoredOverhaulUIFont), ids and colors made fresh every frame they are used (they only live for one
+-- frame), the atlas bound to the material every frame shown. Only the font is used (no readout without it). A marker
+-- file (ArmoredOverhaul-GunnerCamera.fontcheck) says 'trying' until it has shown 120 frames or the game closes normally;
+-- still 'trying' at the next start (the game closed while it showed): no readout that start, tried again the next.
+local RO = {gui = nil, world = nil, check_at = 0, texts = nil, shown = nil, at = -1e9, hold = 1.2, fade = 0.4,
+            mark = nil, frames = 0, w = 1920, h = 1080, slot = '88bac99b00000000', cap = 0.72}
+state.readout = 'not shown yet'
+local function ro_mark(text)
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    if not root or root == '' or not (io and io.open) then return nil end
+    local f = io.open(root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-GunnerCamera.fontcheck', text and 'w' or 'r')
+    if not f then return nil end
+    if text then f:write(text, ' ', state.version, '\n'); f:close(); return end
+    local t = f:read('*a'); f:close(); return t
+end
+do
+    local ok, last = pcall(ro_mark)
+    if ok and type(last) == 'string' and last:find('^trying') then
+        RO.off = 'left out this start: the game closed while it showed last time (tried again next start)'
+        state.readout = RO.off; pcall(ro_mark, 'skipped')
+    end
+end
+-- (3.2.0 review) the GUI's world still in Application.worlds(), checked every frame the readout touches the GUI (as
+-- the Driver Panel does): a world gone (a mission loaded or left) takes its GUI with it, so it is forgotten, never
+-- touched (Test 11 only checked once a second, so for up to a second a gone GUI could be drawn into)
+local function ro_alive(SR)
+    if not RO.gui then return false end
+    if RO.alive_frame == state.frames then return true end
+    local okw, worlds = pcall(SR.Application.worlds)
+    if not okw or type(worlds) ~= 'table' then return false end             -- (unreadable: not touched this frame)
+    for i = 1, #worlds do if worlds[i] == RO.world then RO.alive_frame = state.frames; return true end end
+    RO.gui, RO.world, RO.texts, RO.shown = nil, nil, nil, nil
+    return false
+end
+local function ro_clear()
+    local SR = rawget(_G, 'stingray')
+    if RO.texts and SR and SR.Gui and ro_alive(SR) then for _, t in ipairs(RO.texts) do pcall(SR.Gui.destroy_text, RO.gui, t) end end
+    RO.texts, RO.shown = nil, nil
+end
+-- the overlay world's screen GUI, checked once a second (a GUI whose world is gone is forgotten, never touched)
+local function ro_gui(SR)
+    if RO.gui and state.clock < RO.check_at then return RO.gui end
+    RO.check_at = state.clock + 1
+    local A, W, G = SR.Application, SR.World, SR.Gui
+    for _, n in ipairs({'back_buffer_size', 'resolution'}) do
+        local f = (n == 'resolution' and G and G.resolution) or (A and A[n])
+        if f then
+            local ok, w, h = pcall(f)
+            if ok and type(w) == 'number' and type(h) == 'number' and w > 100 and h > 100 then RO.w, RO.h = w, h; break end
+        end
+    end
+    local okm, main = pcall(A.main_world)
+    local okw, worlds = pcall(A.worlds)
+    if not okw or type(worlds) ~= 'table' then return nil end
+    local target, live = nil, false
+    for i = 1, #worlds do
+        local x = worlds[i]
+        if x ~= nil and x ~= main and not target then target = x end
+        if RO.world ~= nil and x == RO.world then live = true end
+    end
+    if RO.gui and live then return RO.gui end
+    RO.gui, RO.world, RO.texts, RO.shown = nil, nil, nil, nil
+    if not target or not W.create_screen_gui then return nil end
+    local ok, g = pcall(W.create_screen_gui, target, 'scale', 1, 1)
+    if not ok or g == nil then state.readout = 'no screen GUI: ' .. tostring(g); return nil end
+    RO.gui, RO.world = g, target
+    return g
+end
+-- every frame: drawn while the zoom changed within hold + fade seconds and you sit in the gunner seat
+local function readout(seated)
+    local age = state.clock - RO.at
+    if RO.off or not seated or age > RO.hold + RO.fade then
+        if RO.texts then ro_clear() end
+        return
+    end
+    local SR = rawget(_G, 'stingray')
+    local pub = rawget(_G, 'ArmoredOverhaulUIFont')
+    if type(SR) ~= 'table' or type(pub) ~= 'table' or not (pub.font and pub.material and pub.atlas) then state.readout = 'waiting for the game\'s HUD font (Tank Core)'; return end
+    local G, ID, M, A, C, V3 = SR.Gui, SR.IdString64, SR.Material, SR.Application, SR.Color, SR.Vector3
+    if not (G and G.text and G.update_text and G.destroy_text and G.material and ID and ID.from_hex and M and M.set_texture and A and A.can_get and C and V3) then
+        RO.off = 'off: this game version lacks a text function'; state.readout = RO.off; return
+    end
+    local g = ro_gui(SR)
+    if not g or not ro_alive(SR) then return end
+    local f, m, a, slot = ID.from_hex(pub.font), ID.from_hex(pub.material), ID.from_hex(pub.atlas), ID.from_hex(RO.slot)
+    if not RO.mark then
+        for _, r in ipairs({{'font', f}, {'material', m}, {'texture', a}}) do
+            local okc, loaded = pcall(A.can_get, r[1], r[2])
+            if not okc or loaded ~= true then state.readout = 'waiting: the HUD ' .. r[1] .. ' is not loaded'; return end
+        end
+        RO.mark = 'trying'; pcall(ro_mark, 'trying')
+    end
+    local mh = G.material(g, m)
+    if mh ~= nil then M.set_texture(mh, slot, a) end
+    local str = zoom.level > 0 and string.format(ZOOM.fovs[zoom.level] < 9.95 and 'x%.1f' or 'x%.0f', ZOOM.fovs[zoom.level]) or 'x1'
+    local k = age <= RO.hold and 1 or math.max(0, 1 - (age - RO.hold) / RO.fade)
+    if RO.texts then
+        RO.frames = RO.frames + 1
+        if RO.mark == 'trying' and RO.frames >= 120 then RO.mark = 'ok'; pcall(ro_mark, 'ok') end
+    end
+    if RO.shown == str and k == 1 and RO.texts then return end
+    local size = RO.h * 0.02 / RO.cap
+    local x, y = RO.w * 0.5 + RO.h * 0.035, RO.h * 0.5 - RO.h * 0.05
+    local sh = math.max(1, RO.h * 0.0015)
+    local col, shade = C(math.floor(235 * k + 0.5), 215, 220, 224), C(math.floor(110 * k + 0.5), 0, 0, 0)
+    if RO.texts then
+        G.update_text(g, RO.texts[1], str, f, size, m, V3(x + sh, y - sh, 3), shade)
+        G.update_text(g, RO.texts[2], str, f, size, m, V3(x, y, 4), col)
+    else
+        local t1 = G.text(g, str, f, size, m, V3(x + sh, y - sh, 3), shade)
+        local t2 = G.text(g, str, f, size, m, V3(x, y, 4), col)
+        RO.texts = {t1, t2}
+    end
+    RO.shown = str
+    state.readout = 'shown in the game\'s HUD font'
+end
+
+-- every frame in a tank gunner seat (seated true) or out of it
+local function zoom_frame(seated)
+    if not seated or not distance or not original then
+        if zoom.seated then
+            zoom.seated = false
+            if fov.ours then pcall(apply_fov, 1) end
+            zoom.level, zoom.f = 0, 1
+            if original and distance then set_want(distance) end
+        end
+        if RO.texts then pcall(readout, false) end
+        return
+    end
+    if not zoom.seated then                                 -- (sat down: the picked distance again)
+        zoom.seated, zoom.extra, zoom.d, zoom.t, zoom.level, zoom.f = true, 0, distance, state.clock, 0, 1
+    end
+    local n = (wheel() or 0) + zb_notches()
+    local level_was = zoom.level
+    local lo, hi = ZOOM.min - distance, ZOOM.max - distance
+    while n > 0 do                                          -- wheel up: closer, then the crosshair zoom
+        if zoom.extra > lo + 1e-6 then zoom.extra = math.max(lo, zoom.extra - ZOOM.step)
+        elseif zoom.level < #ZOOM.fovs and fov.works ~= false then zoom.level = zoom.level + 1 end
+        n = n - 1
+    end
+    while n < 0 do                                          -- wheel down: the crosshair zoom out first, then back
+        if zoom.level > 0 then zoom.level = zoom.level - 1
+        else zoom.extra = math.min(hi, zoom.extra + ZOOM.step) end
+        n = n + 1
+    end
+    local goal = distance + zoom.extra
+    local dt = math.max(0, state.clock - (zoom.t or state.clock)); zoom.t = state.clock
+    if zoom.d ~= goal then
+        local step = ZOOM.speed * dt
+        zoom.d = math.abs(goal - zoom.d) <= step and goal or zoom.d + (goal > zoom.d and step or -step)
+        set_want(zoom.d)
+    end
+    -- the crosshair zoom glides to its step (in log space, so every step takes the same time)
+    local goalf = zoom.level > 0 and ZOOM.fovs[zoom.level] or 1
+    if zoom.f ~= goalf then
+        local lf, lg = math.log(zoom.f), math.log(goalf)
+        lf = lf + (lg - lf) * math.min(1, dt * ZOOM.glide)
+        zoom.f = math.abs(lf - lg) < 0.002 and goalf or math.exp(lf)
+    end
+    if fov.marked == 'zooming' then fov.marked = 'zoomed'; pcall(zmark, fov.no_check and 'nocheck' or 'zoomed') end   -- (the write before this frame went through)
+    if zoom.f > 1.0005 and fov.works == nil then pcall(fov_check, zoom.f) end
+    if zoom.f > 1.0005 or fov.ours then
+        local ok, done, why = pcall(apply_fov, zoom.f)
+        if not ok or not done then fov.works = false; state.zoom_seen = 'crosshair zoom: ' .. tostring(ok and why or done) end
+    end
+    if fov.works == false and zoom.level > 0 then
+        zoom.level, zoom.f = 0, 1; pcall(apply_fov, 1)
+    end
+    if zoom.level ~= level_was then RO.at = state.clock end     -- (the readout shows the new zoom)
+    local okr, rerr = pcall(readout, true)
+    if not okr then RO.off = 'off after an error: ' .. tostring(rerr); state.readout = RO.off; pcall(ro_clear) end
+    -- (3.2.0 review) the log's zoom line made only when what it says changes (Test 11: every frame in the seat)
+    local zkey = zoom.level * 1000 + math.floor((zoom.d - distance) * 10 + 0.5) + (fov.works == false and 0.5 or 0)
+    if zkey ~= zoom.key then
+        zoom.key = zkey
+        state.zoom = (zoom.level > 0 and string.format('crosshair zoom x%.1f', goalf)
+            or string.format('camera %.1f m further than the pick', zoom.d - distance))
+            .. (fov.works == false and ' (crosshair zoom not used: see the check below)' or '')
+    end
+end
+
 local function follow_turret()
     local seat, core = rawget(_G, 'ArmoredOverhaulSeat'), rawget(_G, 'ArmoredOverhaulGunnerDrive')
     local a, hold = 0, false
@@ -714,6 +1134,7 @@ local function follow_turret()
         if cf ~= seat_watch.frames then seat_watch.frames, seat_watch.seen = cf, state.frames end
         local core_ok = core.phase ~= 'off' and state.frames - (seat_watch.seen or state.frames) <= CORE_STALL
         local seated = core_ok and seat.role == 2 and seat.kind and TT.TANKS[seat.kind] and cf - (seat.frame or -1e9) <= SEAT_FRESH
+        pcall(zoom_frame, seated and not blocked and distance ~= nil)
         if seated and (blocked or not distance) then
             -- (3.0.1 review) nothing to turn (left alone, or Off in the menu): the turret is not tracked (3.0.1 tracked it
             -- every frame first); Off writes the game's own view, straight behind, once below
@@ -761,6 +1182,7 @@ local function follow_turret()
             state.turning = 'straight behind (not in a tank gunner seat)'
         end
     else
+        pcall(zoom_frame, false)
         state.turning = 'no: Tank Core is not running (it comes with this option)'; turning_was[1] = nil; seat_watch.kind = nil
     end
     if blocked or hold or state.frames < (retry_at or 0) then return end
@@ -788,7 +1210,7 @@ end
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'camera'}) do
@@ -842,13 +1264,16 @@ for i, d in ipairs(MENU_PRESETS) do if d == PRESET then MENU_PICK = i end end
 -- next time you sit in the gunner seat.
 menu_rows.camera = {
     {'armored_overhaul.camera.' .. PRESET_NAME:lower(), {type = 'choice', label = 'Tank Gunner Camera',
-        choices = {'Off', 'Close (1 m behind)', 'Far (3.5 m behind)', 'Farther (5.4 m behind)', 'Farthest (7.4 m behind)'}, default = MENU_PICK, description = 'Puts the Bastion and Maelstrom gunner camera lower and further back so you see more around the tank. It stays behind the turret as it turns.'}, 'distance'},
+        choices = {'Off', 'Close (1 m behind)', 'Far (3.5 m behind)', 'Farther (5.4 m behind)', 'Farthest (7.4 m behind)'}, default = MENU_PICK, description = 'Puts the Bastion and Maelstrom gunner camera lower and further back so you see more around the tank. It stays behind the turret as it turns. The pick is where the camera starts: the mouse wheel (or the Mod Bindings Menu\'s Zoom In / Zoom Out keys) moves it closer or further back, and from the closest point zooms in on the crosshair.'}, 'distance'},
 }
 menu_set = function(key, v)
     if key ~= 'distance' or MENU_PRESETS[v] == nil then return end
     distance = MENU_PRESETS[v] or nil
     state.preset = v == MENU_PICK and string.format('%s (picked in the mod manager)', PRESET_NAME)
         or (distance and ({'Close (1 m behind)', 'Far (3.5 m behind)', 'Farther (5.4 m behind)', 'Farthest (7.4 m behind)'})[v - 1] .. ' (Mod Options Menu)' or 'off: the game\'s own view (Mod Options Menu)')
+    zoom.seated = false                                  -- (3.2.0) the new distance is the zoom's new start
+    if fov.ours then pcall(apply_fov, 1) end
+    zoom.level, zoom.f = 0, 1
     if original then
         want.back = distance and (original.back - BASE_BACK - distance * math.cos(RISE)) or original.back
         want.up = distance and (original.up - BASE_DOWN + distance * math.sin(RISE)) or original.up
@@ -869,6 +1294,7 @@ local shown
 local function tick()
     state.frames = state.frames + 1
     menu_link(state.frames)
+    pcall(zb_link)
     if phase == 'ready' and original and not state.turn_failed then
         local okF, err = pcall(follow_turret)
         if not okF then
@@ -926,7 +1352,7 @@ local function tick()
         if not okA then state.errors = state.errors + 1; state.last_error = tostring(changed); state.status = 'error: ' .. tostring(changed)
         else state.status = 'active' end
         -- (3.0.1 review) the options menu and the preset too: a menu linked later is in the log
-        local summary = state.status .. state.view .. state.errors .. state.turning .. state.options_menu .. state.preset
+        local summary = state.status .. state.view .. state.errors .. state.turning .. state.options_menu .. state.preset .. tostring(state.zoom) .. tostring(state.zoom_keys) .. tostring(state.readout)
         if summary ~= shown then shown = summary; log() end
         next_check = state.frames + ((okA and settled) and SETTLED_EVERY or CHECK_EVERY)
     end
@@ -952,6 +1378,8 @@ do
         pcall(function()
             if phase ~= 'ready' or not (rec and original and confirmed) then return end
             phase = 'closed'                                -- (nothing is written after this)
+            if fov.ours then pcall(apply_fov, 1) end        -- (3.2.0: the gunner view's field of view, if zoomed)
+            if RO.mark == 'trying' then pcall(ro_mark, 'ok') end   -- (closed normally: the readout didn't crash it)
             local now = check(rec, true)
             if now and not differs(now, written) and differs(now, original) then
                 local ok, how = write_floats(rec, FIELD.up + 4, original)
