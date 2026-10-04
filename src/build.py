@@ -1,7 +1,7 @@
-"""Armored Overhaul 3.1 - builds the Arsenal / HD2 Mod Manager zip from this folder.
+"""Armored Overhaul 3.2 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-  python tools/unpack_release.py Armored-Overhaul-3.1.1.zip     (once: the game-derived parts, see below)
-  python build.py [--check Armored-Overhaul-3.1.1.zip]
+  python tools/unpack_release.py Armored-Overhaul-3.2.0.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.2.0.zip]
 
 - lua/<folder>.lua: each option folder's Lua addon, as shipped (DERIVED folders are made from another folder's file). Its first line names the addon
   ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
@@ -43,7 +43,7 @@ IMAGES = ['tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_str
           'turret_traverse', 'sub/traverse_quick', 'sub/traverse_fast', 'sub/traverse_very_fast', 'turret_elevation',
           'sub/elevation_quick', 'sub/elevation_fast', 'sub/elevation_very_fast', 'turret_aim_range', 'sub/aim_range_wide',
           'sub/aim_range_wider', 'sub/aim_range_widest', 'autoloader', 'gunner_drive', 'sub/gunner_drive_tanks',
-          'sub/gunner_drive_both', 'gunner_camera', 'sub/camera_close', 'sub/camera_far', 'sub/camera_farther',
+          'sub/gunner_drive_both', 'driver_panel', 'gunner_camera', 'sub/camera_close', 'sub/camera_far', 'sub/camera_farther',
           'sub/camera_farthest', 'frv_gunner_drive', 'frv_stability', 'sub/frv_mild', 'sub/frv_stable', 'sub/frv_planted',
           'turret_indicator']
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
