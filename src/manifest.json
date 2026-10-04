@@ -1,7 +1,7 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.1.1",
+  "Name": "Armored Overhaul 3.2.0",
   "IconPath": "thumbnail.png",
   "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank power, grip, steering and suspension; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; and a vehicle indicator. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader.",
   "Options": [
@@ -105,7 +105,7 @@
       "SubOptions": [
         {
           "Name": "Balanced",
-          "Description": "Half a metre of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game.",
+          "Description": "Half a meter of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game.",
           "Include": [
             "Suspension Balanced"
           ],
@@ -261,7 +261,7 @@
     },
     {
       "Name": "Gunner Drive",
-      "Description": "Drive from the gunner seat when the driver seat is empty: your movement keys drive, the gun works as normal, and a driver panel shows gear, rpm, speed and fuel. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal, and getting out while it rolls brakes it to a stop. With the Mod Bindings Menu you can set your own keys (controls, tab MODS). Pick which vehicles.",
+      "Description": "Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake and the gun works as normal. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal, and getting out while it rolls brakes it to a stop. With the Mod Bindings Menu you can set your own keys for all of these (controls, tab MODS). Pick which vehicles.",
       "Image": "options/gunner_drive.png",
       "SubOptions": [
         {
@@ -270,8 +270,7 @@
           "Include": [
             "Tank Core",
             "Gunner Drive",
-            "FRV Gunner Drive",
-            "Driver Panel"
+            "FRV Gunner Drive"
           ],
           "Image": "options/sub/gunner_drive_both.png"
         },
@@ -280,8 +279,7 @@
           "Description": "The Bastion and Maelstrom, from the gunner seat.",
           "Include": [
             "Tank Core",
-            "Gunner Drive",
-            "Driver Panel"
+            "Gunner Drive"
           ],
           "Image": "options/sub/gunner_drive_tanks.png"
         },
@@ -290,16 +288,24 @@
           "Description": "The M-102 FRV, from its gunner seat.",
           "Include": [
             "Tank Core",
-            "FRV Gunner Drive",
-            "Driver Panel"
+            "FRV Gunner Drive"
           ],
           "Image": "options/frv_gunner_drive.png"
         }
       ]
     },
     {
+      "Name": "Driver Panel",
+      "Description": "Needs Gunner Drive. While you drive from the gunner seat, a panel like the driver's own HUD shows the gear, rpm, speed, fuel and the Maelstrom's smoke rounds. It only shows while you are the one driving: never when a teammate sits in the driver seat or another player's game runs the vehicle. Only you see it. With the Mod Options Menu you can turn it off in game.",
+      "Image": "options/driver_panel.png",
+      "Include": [
+        "Tank Core",
+        "Driver Panel"
+      ]
+    },
+    {
       "Name": "Tank Gunner Camera",
-      "Description": "Puts the Bastion and Maelstrom gunner camera lower and further back so you see more around the tank. It stays behind the turret as it turns.",
+      "Description": "Puts the Bastion and Maelstrom gunner camera lower and further back so you see more around the tank. It stays behind the turret as it turns. The pick is where the camera starts: scroll the mouse wheel to move it closer or further back, and from the closest point scroll on to zoom in on the crosshair (shown as x2.4 and so on). With the Mod Bindings Menu you can also set Zoom In / Zoom Out keys, for a controller too.",
       "Image": "options/gunner_camera.png",
       "SubOptions": [
         {
