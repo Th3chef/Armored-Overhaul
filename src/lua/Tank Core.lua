@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.1.1 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.2.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -214,7 +214,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.1.1', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.2.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -346,11 +346,14 @@ local function hist(what)
     history[#history + 1] = string.format('f%d %s', S.frames, what)
 end
 -- (tester) the last Mouse 3 smoke steps, one line each
-local smoke_trace = {}
-local function strace(what)
+-- (3.1.1 Test 2) look = true: the launcher look-ups and driver-seat checks, kept apart in smoke_trace.look (in 3.1.1
+-- the presses pushed the look-up out of the 24 smoke steps)
+local smoke_trace = {look = {}}
+local function strace(what, look)
     if not TESTER then return end
-    if #smoke_trace >= 24 then table.remove(smoke_trace, 1) end
-    smoke_trace[#smoke_trace + 1] = string.format('f%d %s', S.frames, what)
+    local t, cap = look and smoke_trace.look or smoke_trace, look and 60 or 24
+    if #t >= cap then table.remove(t, 1) end
+    t[#t + 1] = string.format('f%d %s', S.frames, what)
 end
 -- (tester) the last autoloader steps: the magazine running dry, each reload start, the magazine filling again
 local auto_trace = {}
@@ -381,7 +384,7 @@ local logged = {}
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'autoloader', 'gunner_drive'}) do
@@ -444,7 +447,7 @@ menu_rows.gunner_drive = function()
     local names = {}
     for i, c in ipairs(GD) do names[i] = c.name end
     return {{'armored_overhaul.gunner_drive.' .. (tanks and frv and 'both' or (tanks and 'tanks' or 'frv')), {type = 'choice',
-        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive and a driver panel shows gear, rpm, speed and fuel. F sounds the horn; Mouse 3 pops the Maelstrom\'s smoke. Controller: the left stick drives, its click is the horn, the right stick click pops smoke. Set your own keys with the Mod Bindings Menu. A teammate who takes the wheel drives. Pick which vehicles.'}, 'gunner_drive'}}
+        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake. F sounds the horn; Mouse 3 pops the Maelstrom\'s smoke. Controller: the left stick drives, its click is the horn, the right stick click pops smoke. Set your own keys with the Mod Bindings Menu. A teammate who takes the wheel drives. Pick which vehicles.'}, 'gunner_drive'}}
 end
 menu_set = function(key, v)
     if key == 'autoloader' then menu_opts.autoloader = v == true or v == 1
@@ -466,6 +469,10 @@ local function write_log(force)
         if TESTER then
             lines[#lines + 1] = '-- tester details --'
             for _, k in ipairs(LOG_TESTER) do lines[#lines + 1] = k .. ': ' .. tostring(S[k]) end
+            if #smoke_trace.look > 0 then
+                lines[#lines + 1] = '-- smoke look-ups (last ' .. #smoke_trace.look .. ') --'
+                for _, l in ipairs(smoke_trace.look) do lines[#lines + 1] = l end
+            end
             if #smoke_trace > 0 then
                 lines[#lines + 1] = '-- smoke steps (last ' .. #smoke_trace .. ') --'
                 for _, l in ipairs(smoke_trace) do lines[#lines + 1] = l end
@@ -1023,16 +1030,24 @@ end
 -- ------------------------------------------------------------------------------------------ key bindings (3.0.1)
 -- With CowboyBingus's Mod Bindings Menu installed, Gunner Drive's controls get their own lines in the game's key and
 -- controller binding pages (tab MODS, section ARMORED OVERHAUL), each named "Gunner Drive: ...": Forward, Back,
--- Steer Left, Steer Right, Horn and Smoke (Maelstrom; only with the tanks' Gunner Drive installed). They start with
--- no key; a key or button set there works as well as the built-in ones (the movement keys, F, Mouse 3, the stick),
+-- Steer Left, Steer Right, Shift Up, Shift Down, Handbrake (3.2.0), Horn and Smoke (Maelstrom; only with the tanks'
+-- Gunner Drive installed). They start with no key; a key or button set there works as well as the built-in ones (the
+-- movement keys, shift / CTRL, Space, F, Mouse 3, the stick),
 -- which always stay. (Its API, from the menu's own source: _G.ModBindingsMenu {api = 1, version = 3,
 -- register_binding(id, label, slot, options), is_down(id), ready()}; a binding without a slot gets a free one and
 -- keeps it in later sessions.) The menu may load after this addon: it is looked for once a second until found, and
 -- only once the Gunner Drive option is known to be installed. is_down is asked only while you drive.
+-- (3.2.0) every Gunner Drive key bindable: Shift Up, Shift Down and Handbrake
+-- too: held into the driver record's buttons as the game's own keys put them there (Space = +0x2D, the gear keys
+-- +0x2E / +0x2F; see INPUT.buttons). Which of the two gear bytes shifts up is checked against the gear selector the
+-- first time a bound gear key moves it, and swapped if it went the other way (log: key bindings).
 local binds = {list = {{'forward', 'Gunner Drive: Forward'}, {'back', 'Gunner Drive: Back'},
                        {'left', 'Gunner Drive: Steer Left'}, {'right', 'Gunner Drive: Steer Right'},
+                       {'gear_up', 'Gunner Drive: Shift Up'}, {'gear_down', 'Gunner Drive: Shift Down'},
+                       {'handbrake', 'Gunner Drive: Handbrake'},
                        {'horn', 'Gunner Drive: Horn'}, {'smoke', 'Gunner Drive: Smoke (Maelstrom)'}},
-               api = nil, at = 0, keys = {}, ids = {}, down = {}, used = {}}
+               api = nil, at = 0, keys = {}, ids = {}, down = {}, used = {},
+               gear = {up = 0x2F, down = 0x2E, handbrake = 0x2D, sel = nil, from = nil, dir = nil, check_at = nil, held = false, learned = false}}
 S.bindings, S.bindings_used = 'Mod Bindings Menu not installed (the built-in keys work)', 'none yet'
 function binds.link(frame)
     if binds.api or frame < binds.at then return end
@@ -1086,6 +1101,33 @@ function binds.poll()
         if TESTER and v ~= (down[k] or false) then itrace('binding ' .. k .. (v and ' down' or ' up')) end
         down[k] = v
     end
+end
+-- (3.2.0) the bound Handbrake / Shift Up / Shift Down, held into the driver record (after the game's own buttons are
+-- copied in); a bound gear key's first press notes the selector, checked half a second later (see binds.learn)
+function binds.buttons(record)
+    local d, g = binds.down, binds.gear
+    if d.handbrake then record[g.handbrake] = 1 end
+    local dir = d.gear_up and 'up' or (d.gear_down and 'down') or nil
+    if dir and not g.held and not g.learned and not g.check_at and g.sel
+        and record[0x2E] == 0 and record[0x2F] == 0 then         -- (not while the game's own gear keys are held)
+        g.from, g.dir, g.check_at = g.sel, dir, S.time + 0.5
+    end
+    g.held = dir ~= nil
+    if d.gear_up then record[g.up] = 1 end
+    if d.gear_down then record[g.down] = 1 end
+end
+-- (with the instruments, every 4 frames) the gear selector now: 0 R, 1 N, 2 D, 3 first, 4 second
+function binds.learn(sel)
+    local g = binds.gear
+    g.sel = sel
+    if not g.check_at or S.time < g.check_at then return end
+    g.check_at = nil
+    if not (sel and g.from) or sel == g.from then return end     -- (didn't move: top or bottom gear; asked again next press)
+    g.learned = true
+    if (sel > g.from) ~= (g.dir == 'up') then g.up, g.down = g.down, g.up end
+    local note = string.format('bound Shift Up = record +0x%X (checked: the gear went %s)', g.up, sel > g.from and 'up' or 'down')
+    S.bindings = S.bindings .. '; ' .. note
+    hist(note)
 end
 -- the bound driving keys as a stick: x (right +), y (forward +), or nil when none is held. (3.0.1 review) A diagonal
 -- (Forward + Steer Left) stays full forward and full steering, as W + A give it: scaling it to length 1 made bound keys
@@ -1176,6 +1218,7 @@ local function feed(me, record)
     if TESTER and S.frames % 5 == 0 then input_note('gunner seat, from the game', f) end
     local sx, sy = pads.stick()
     binds.poll()
+    binds.buttons(record)
     local bx, by = binds.axes()                  -- (3.0.1) the Gunner Drive keys from the Mod Bindings Menu: as a stick
     if bx then
         if not sx then sx, sy = bx, by
@@ -1300,20 +1343,26 @@ local function find_smoke(vehicle, gun)
     if TESTER then
         local kb = map_key(ph, 0x20, gp - 1)
         if kb then strace(string.format('  (not used) one place before your gun: %08x, ammo %s, rounds %s', kb, tostring(map_get(ah, 0x20, kb)),
-            tostring(smoke_rounds(kb)))) end
+            tostring(smoke_rounds(kb))), true) end
     end
     for _, c in ipairs(cands) do
         if c ~= gun and not tried[c] then
             tried[c] = true
             local cp, ca = map_get(ph, 0x20, c), map_get(ah, 0x20, c)
             if TESTER then strace(string.format('  candidate %08x: pair %s, ammo %s, main gun %s, rounds %s', c, tostring(cp), tostring(ca),
-                tostring(map_get(gh, 0x28, c) ~= nil), tostring(smoke_rounds(c)))) end
+                tostring(map_get(gh, 0x28, c) ~= nil), tostring(smoke_rounds(c))), true) end
             -- (2.0 Test 3: the tables reorder during a mission - the launcher stayed tank + 3 but was no longer next
             -- to the gun in the ammo table - so tank + 3 counts on its own; any other weapon must sit right after the
             -- gun in both tables)
             -- (3.0.1: in a test match the launcher was tank id - 3, right after the gun in the gun-and-smoke
             -- table but two places later in the ammo table, so none was found; the ammo table's order no longer counts)
-            if cp and ca and not map_get(gh, 0x28, c) and (c == vehicle + 3 or cp == gp + 1) then
+            -- (3.1.1 Test 3) in a game you join, the gun-and-smoke table holds every player's weapons (180 in a test log) and
+            -- the one right after your gun was another tank's (another player its operator, 2-37 rounds); one tank's
+            -- weapons get ids close together (gun 0x64c, smoke 0x64e), so a launcher far from both your gun's and your
+            -- tank's id is not taken
+            local near = c == vehicle + 3 or math.abs(c - gun) <= 8 or math.abs(c - vehicle) <= 8
+            if TESTER and not near and cp == gp + 1 then strace(string.format('  %08x: right after your gun but far from it and your tank: not this tank\'s', c), true) end
+            if cp and ca and near and not map_get(gh, 0x28, c) and (c == vehicle + 3 or cp == gp + 1) then
                 if found and found ~= c then
                     if found ~= vehicle + 3 and c == vehicle + 3 then found = c end            -- (tank + 3 wins)
                 else
@@ -1337,6 +1386,54 @@ local function smoke_detail(entity, w, slot)
     return string.format('slot %d = %s, trigger bytes %s, state %s, operator %s, rounds %s', slot,
         sw and string.format('%08x', sw) or '?', tb and string.format('%02x%02x%02x%02x %02x%02x%02x%02x', tb:byte(1, 8)) or '?',
         st and string.format('%08x', st) or '?', ov and string.format('%08x', ov) or '?', tostring(smoke_rounds(w)))
+end
+-- (tester, 3.1.1 Test 2) every weapon in the gun-and-smoke table, in table order: id, its place in the gun-and-smoke and
+-- ammo tables, rounds, operator (0 = nobody), and whether it is a main gun. In a game you join, the weapon right after
+-- your gun was another tank's (rounds 4 then 2, its operator someone else), so this shows how the table is laid out there.
+smoke.tables = function(gun, pick)
+    if not TESTER then return end
+    local ph, ah, gh = mgr_hdr((FEAT.smoke or NOSMOKE).pair, 0x40), mgr_hdr((FEAT.smoke or NOSMOKE).ammo, 0x50), mgr_hdr((FEAT.smoke or NOSMOKE).guns, 0x40)
+    if not ph or not ah or not gh then strace('  tables: unreadable', true); return end
+    local entries, cap, empty = str_ptr(ph, 0x20), le32(ph, 0x28), le32(ph, 0x2C)
+    local es = entries and cap and cap >= 1 and cap <= 0x4000 and fetch_str(entries, cap * 8)
+    if not es then strace('  tables: gun-and-smoke map unreadable', true); return end
+    local list = {}
+    for i = 0, cap - 1 do
+        local k = le32(es, i * 8)
+        if k ~= empty then list[#list + 1] = {k = k, p = le32(es, i * 8 + 4)} end
+    end
+    table.sort(list, function(a, b) return a.p < b.p end)
+    local parts = {}
+    for i, e in ipairs(list) do
+        if i > 40 then strace('  table: ... ' .. (#list - 40) .. ' more', true); break end
+        local op = operator_at(e.k)
+        local ov = op and fetch_u32(op)
+        parts[#parts + 1] = string.format('%s%08x p%d a%s r%s op%s%s', e.k == gun and '[gun] ' or (e.k == pick and '[pick] ' or ''), e.k, e.p,
+            tostring(map_get(ah, 0x20, e.k)), tostring(smoke_rounds(e.k)), ov and string.format('%08x', ov) or '-',
+            map_get(gh, 0x28, e.k) and ' main' or '')
+        if #parts == 4 then strace('  table: ' .. table.concat(parts, ' | '), true); parts = {} end
+    end
+    if #parts > 0 then strace('  table: ' .. table.concat(parts, ' | '), true) end
+end
+-- (tester, 3.1.1 Test 2) in a Maelstrom's driver seat the game puts that tank's own smoke launcher in your trigger slot 0:
+-- logged once per tank, a second after you sit down, with the tables, to compare with what the gunner-seat look-up picks
+smoke.driver_seen = {}
+smoke.driver_note = function(mine, me)
+    if not TESTER or not FEAT.smoke or not me or not me.entity then return end
+    local d = smoke.driver_seen[mine.vehicle]
+    if d == true then return end
+    if not d then smoke.driver_seen[mine.vehicle] = S.frames + 60; return end
+    if S.frames < d then return end
+    smoke.driver_seen[mine.vehicle] = true
+    local rec = my_trigger(me.entity)
+    local r = rec and fetch_str(rec, 0x1D0)
+    local slots = {}
+    for i = 0, 4 do slots[#slots + 1] = r and string.format('%08x', le32(r, i * 0x50)) or '?' end
+    local w = r and le32(r, 0)
+    strace(string.format('driver seat: vehicle %08x, you %08x, your slots %s; slot 0 (the smoke launcher): %s',
+        mine.vehicle, me.entity, table.concat(slots, ' '), w and w ~= 0 and smoke_detail(me.entity, w, 0) or 'empty'), true)
+    pcall(smoke.tables, nil, w)
+    write_log(true)
 end
 -- The smoke key: Mouse 3, or the right stick click on a controller (3.0; 1.2.2-2.1.0 Test 18: the left stick click,
 -- now the horn; Tests 19-20: the right bumper, the game's mark button). Controllers: see pads.
@@ -1453,8 +1550,9 @@ smoke_frame = function(me, paused)
             strace(string.format('look-up: vehicle %08x, you %08x, your slots %s; gun %s (pair %s, ammo %s); smoke %s (pair %s, ammo %s): %s',
                 drive.vehicle, me.entity, table.concat(slots, ' '), gun and string.format('%08x', gun) or '-', tostring(ix(ph, gun)),
                 tostring(ix(ah, gun)), smoke.id and string.format('%08x', smoke.id) or '-', tostring(ix(ph, smoke.id)),
-                tostring(ix(ah, smoke.id)), tostring(why)))
-            if smoke.id then strace('  before any press: ' .. smoke_detail(me.entity, smoke.id, 2)) end
+                tostring(ix(ah, smoke.id)), tostring(why)), true)
+            if smoke.id then strace('  before any press: ' .. smoke_detail(me.entity, smoke.id, 2), true) end
+            pcall(smoke.tables, gun, smoke.id)
             write_log(true)
         end
         -- (3.0.1 review) the bound Smoke key named too, when one is registered
@@ -1733,6 +1831,7 @@ local function drive_frame()
         if read_instruments(index, hdr, SEAT_PUB) then
             if not drive.sel_check or S.frames >= drive.sel_check then drive.sel_at, drive.sel_check = selector_at(drive.vehicle), S.frames + 60 end   -- (3.0 review: a miss waits too)
             SEAT_PUB.selector = (drive.sel_at and fetch(drive.sel_at, 4) and mem_u32(0) <= 4) and mem_u32(0) or nil
+            binds.learn(SEAT_PUB.selector)
             -- does the tank answer? throttle held (not in neutral) for 3 s with no revs and no speed = no
             -- (1.3) the tank answers your throttle: it is yours (another player's earlier drive no longer matters)
             local pushing = last.forward and max(last.forward, last.reverse) > 0.5 and SEAT_PUB.selector ~= 1
@@ -2128,6 +2227,7 @@ local function poll()
         S.seat = string.format('%s, %s (row %d)', DRIVEN[mine.kind] or FRV_KINDS[mine.kind] or string.format('vehicle kind 0x%X', mine.kind), role, mine.index)
         S.vehicle = string.format('0x%08X', mine.vehicle)
     end
+    if TESTER and DRIVER_ROLES[mine.role] and mine.kind == SMK.kind then pcall(smoke.driver_note, mine, seats.me) end   -- (3.1.1 Test 2)
     if TESTER and DRIVER_ROLES[mine.role] and DRIVEN[mine.kind] then          -- (tester, 3.0) see input_note
         local okr, rec = pcall(driver_record, mine.vehicle)
         if okr and rec then pcall(input_note, 'driver seat (the game)', ffi.cast(F32P, rec)) end
