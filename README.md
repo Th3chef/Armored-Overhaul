@@ -117,6 +117,12 @@ python build.py --check Armored-Overhaul-3.1.1.zip
 
 `--check` compares the zip it makes with the release zip, file by file (every file is the same, byte for byte). `src_physics/` holds the scripts that make the suspension and FRV presets from the game's physics files, `src_models/` the scripts that rebuild the two tank hulls for the turning turrets, and `src/art/` how the pictures are made.
 
+## Support
+
+All my mods are free and always will be. Every release is rigorously tested in real missions, highly optimized and kept working through game updates. If you'd like to help me keep that up and build new mods, you can support me on [Patreon](https://www.patreon.com/c/Chefboiardee).
+
+Thank you for diving with me!
+
 ## Credits
 - **CowboyBingus** - Bingus Shared Loader and the Mod Options Menu.
 - **Filediver** and **HD2SDK** (Blender add-on) - the tools used to read the game's models and build the turrets.
