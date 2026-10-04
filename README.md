@@ -6,23 +6,24 @@
 
 Armored Overhaul makes the Bastion and Maelstrom feel like real main battle tanks and keeps the FRVs on their wheels. Every part is its own option, so you pick what you want in your mod manager, and with the Mod Options Menu you can change them in game too.
 
-![What's in 3.1](media/features_1920x1080.png)
+![What's in 3.2](media/features_1920x1080.png)
 
 ## Features
 
 - **Tank Power:** more engine pulling power, so the tanks get off the line, up slopes and through rough ground quicker. Pick *Strong* (1.25 times the game's), *Stronger* (1.5 times) or *Strongest* (twice). Top speed stays the game's own.
 - **Tank Grip:** more track grip, so the tanks hold their line on slopes and in turns instead of sliding. Pick *Moderate* (1.25 times the game's), *Strong* (1.5 times) or *Maximum* (twice).
 - **Tank Steering:** quicker steering response: the tanks start and stop turning sooner. Pick *Responsive* (1.25 times the game's), *Quick* (1.5 times) or *Sharp* (twice).
-- **Tank Suspension:** longer road wheel travel, so the wheels drop into dips and the tracks stay on the ground, with firmer damping that settles the hull quickly after rocks and bumps. The tanks ride 0.1 m higher than the game's for more ground clearance, and a lower center of gravity makes them hard to tip. Pick *Balanced* (half a metre of travel; the center of gravity as high off the ground as the game's) or *Planted* (a little less travel, slightly firmer springs, more damping and the lowest center of gravity: the calmest ride).
+- **Tank Suspension:** longer road wheel travel, so the wheels drop into dips and the tracks stay on the ground, with firmer damping that settles the hull quickly after rocks and bumps. The tanks ride 0.1 m higher than the game's for more ground clearance, and a lower center of gravity makes them hard to tip. Pick *Balanced* (half a meter of travel; the center of gravity as high off the ground as the game's) or *Planted* (a little less travel, slightly firmer springs, more damping and the lowest center of gravity: the calmest ride).
 - **Tank MBT Turrets:** the gun turns all the way round, or 90 degrees either side, and the whole top of the tank turns with it like a real main battle tank turret. The turret is the tank's own armor, cut at the roof line and turned with the gun, so it wears your camo and shows battle damage like the rest of the tank, and the gunner view turns with it. On the Maelstrom the game's own missile pods and smoke launcher turn with the turret, and the Bastion's second gun and the Maelstrom's laser designator point where the main gun does. Pick *360 (all the way round)* or *180 (90 each side)*; with 180 the gunner view stops where the gun does.
 - **Tank Turret Traverse:** how fast the turret turns side to side, and the gunner view with it. Pick *Quick* (1.5 times the game's 25 degrees a second), *Fast* (twice) or *Very fast* (three times, 75 degrees a second). With MBT Turrets all the way round the turret really reaches these speeds (past the game's own limit of about 46 degrees a second) and a change in the Mod Options Menu applies at once. Works with or without MBT Turrets.
 - **Tank Turret Elevation:** how fast the gun moves up and down, and the gunner view with it. Pick *Quick* (1.25 times the game's 35 degrees a second), *Fast* (1.5 times) or *Very fast* (twice).
 - **Tank Turret Aim Range:** how far down and up the gun aims, and the gunner view follows. Pick *Wide* (6 degrees below level to 30 above), *Wider* (10 below to 35 above) or *Widest* (15 below to 45 above). The game's own is 3 below to 25 above.
 - **Tank Autoloader:** the Bastion's and Maelstrom's main gun reloads by itself when it runs dry, in the game's normal reload time (perks count). You can still reload by hand.
-- **Gunner Drive:** drive from the gunner seat when nobody is in the driver seat, in the tanks, the M-102 FRV or both. You stay the gunner: the gun, its HUD and camera work as normal while your movement keys drive, and the engine starts the game's own way when you set off. When a teammate gets in the driver seat, they take over, and if you get out while the vehicle rolls it brakes to a stop (so you aren't thrown by the moving tank). While you drive, a driver panel like the game's own driver HUD shows the gear selector, the gear, an rpm bar, your speed and a fuel bar, in the game's own HUD font. **F** sounds the horn, and in the Maelstrom **Mouse 3** pops the smoke screen (the panel shows the smoke rounds left). On a controller the **left stick** drives (push it forward to drive forward, back to reverse, left and right to steer, even on the spot), its **click** sounds the horn and the **right stick click** pops smoke. With CowboyBingus's **Mod Bindings Menu** you can set your own keys for driving, the horn and the smoke (controls, tab MODS, section ARMORED OVERHAUL); the built-in keys keep working.
-- **Tank Gunner Camera:** the gunner camera sits lower and further behind the turret than the game's, rising only a little as it goes back, so you see more of the tank and around it, and it stays behind the turret as the turret turns. Going uphill the view stays level; pointing downhill it follows the slope, so you can see the ground ahead. Pick *Close* (about 1 m behind), *Far* (3.5 m), *Farther* (5.4 m) or *Farthest* (7.4 m).
+- **Gunner Drive:** drive from the gunner seat when nobody is in the driver seat, in the tanks, the M-102 FRV or both. You stay the gunner: the gun, its HUD and camera work as normal while your movement keys drive, and the engine starts the game's own way when you set off. When a teammate gets in the driver seat, they take over, and if you get out while the vehicle rolls it brakes to a stop (so you aren't thrown by the moving tank). **Shift** and **CTRL** change gear and **Space** is the handbrake, as in the driver seat. **F** sounds the horn, and in the Maelstrom **Mouse 3** pops the smoke screen. On a controller the **left stick** drives (push it forward to drive forward, back to reverse, left and right to steer, even on the spot), its **click** sounds the horn and the **right stick click** pops smoke. With CowboyBingus's **Mod Bindings Menu** you can set your own keys for all of these: Forward, Back, Steer Left, Steer Right, Shift Up, Shift Down, Handbrake, Horn and Smoke (controls, tab MODS, section ARMORED OVERHAUL); the built-in keys keep working.
+- **Driver Panel:** while you drive from the gunner seat with Gunner Drive, a panel like the game's own driver HUD shows the gear selector, the gear, an rpm bar, your speed, a fuel bar and the Maelstrom's smoke rounds left, in the game's own HUD font. It only shows while you are the one driving (not while another player's game controls the vehicle), and it can be turned off in game with the Mod Options Menu. Only you see it.
+- **Tank Gunner Camera:** the gunner camera sits lower and further behind the turret than the game's, rising only a little as it goes back, so you see more of the tank and around it, and it stays behind the turret as the turret turns. Going uphill the view stays level; pointing downhill it follows the slope, so you can see the ground ahead. Pick *Close* (about 1 m behind), *Far* (3.5 m), *Farther* (5.4 m) or *Farthest* (7.4 m): that is where the camera starts each time you sit down. In the gunner seat the **mouse wheel** moves it closer or further back, and from the closest point zooms in on the crosshair, up to 10x (a small "x2.4" next to the crosshair shows the zoom for a moment). With the Mod Bindings Menu you can also set Zoom In / Zoom Out keys, on a controller too. Getting out puts the view back.
 - **FRV Stability:** the M-102 FRV, M-103 Supply FRV and M-104 incendiary FRV stay on their wheels over rough ground, jumps and hard turns: a firmer front, firmer damping, a lower center of mass, more tire grip and weight, and a little more ground clearance. Pick *Stable* (the default), *Mild* or *Planted*. Engine and steering stay the game's own.
-- **Vehicle Indicator:** a small outline of your vehicle on screen shows which way the gun points compared to the hull, like a real tank's display, in any seat of the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV. The Helldivers skull is the turret and always points up, and the hull turns around it. The outline's color is the vehicle's health: blue, then green, yellow, orange and red as it takes damage. On the FRVs each tire shows its own health and goes clear when it pops. With Gunner Drive it sits just left of the driver panel, and in the driver's seat of any vehicle it sits in that same place. Only you see it.
+- **Vehicle Indicator:** a small outline of your vehicle on screen shows which way the gun points compared to the hull, like a real tank's display, in any seat of the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV. The Helldivers skull is the turret and always points up, and the hull turns around it. The outline's color is the vehicle's health: blue, then green, yellow, orange and red as it takes damage. On the FRVs each tire shows its own health and goes clear when it pops. With the Driver Panel it sits just left of the panel, and in the driver's seat of any vehicle it sits in that same place. Only you see it.
 
 ![The option icons](media/options_icons.png)
 
@@ -38,7 +39,8 @@ Each option and each of its choices has its own icon in the mod manager, in this
 - **Tank Turret Elevation** - *Quick*, *Fast* or *Very fast*.
 - **Tank Turret Aim Range** - *Wide*, *Wider* or *Widest*.
 - **Tank Autoloader** - the main gun reloads by itself.
-- **Gunner Drive** - *Tanks and FRV*, *Tanks* or *FRV*, with the driver panel.
+- **Gunner Drive** - *Tanks and FRV*, *Tanks* or *FRV*.
+- **Driver Panel** - the gear, rpm, speed and fuel while you drive from the gunner seat.
 - **Tank Gunner Camera** - *Close*, *Far*, *Farther* or *Farthest*.
 - **FRV Stability** - *Stable*, *Mild* or *Planted*.
 - **Vehicle Indicator** - the gun direction and health display.
@@ -51,7 +53,7 @@ With CowboyBingus's **Mod Options Menu** installed, the options you installed al
 ## Requirements
 - [Bingus Shared Loader](https://www.nexusmods.com/helldivers2/mods/16292) v15 or newer, last in the load order. Every option except Tank Suspension and FRV Stability needs it.
 - Optional: CowboyBingus's Mod Options Menu, to change the options in game.
-- Optional: CowboyBingus's Mod Bindings Menu, to set your own Gunner Drive keys.
+- Optional: CowboyBingus's Mod Bindings Menu, to set your own Gunner Drive and gunner zoom keys.
 
 ## Download
 
@@ -60,10 +62,10 @@ Get the latest zip from the [Releases page](../../releases) (the Armored-Overhau
 ## Install / update
 
 1. Install Bingus Shared Loader v15 or newer.
-2. Add Armored-Overhaul-3.1.1.zip in Arsenal or the HD2 Mod Manager and check the options you want.
-3. Deploy, then restart the game.
+2. Add Armored-Overhaul-3.2.0.zip in Arsenal or the HD2 Mod Manager and check the options you want.
+3. Purge & Deploy, then restart the game.
 
-Updating from 3.1.0: install it over 3.1.0, then check your options are still as you had them (your mod manager may set them back to the first choice when it imports the update).
+Updating from 3.1: install it over 3.1.1 (or 3.1.0) and **tick the new Driver Panel option** to keep the driver panel (it was part of Gunner Drive), then check your other options are still as you had them (your mod manager may set them back to the first choice when it imports the update). Purge & Deploy.
 
 Updating from 3.0: install it over 3.0.1 (or 3.0.0), then look over your options (your mod manager may set them back to the first choice when it imports the update). Tank Turret Traverse's speeds changed, so pick it again, and FRV Stability now lists *Stable* first. From 3.0.0, Tank Suspension's *Firm* and *Heavy* are now *Balanced* and *Planted*: pick one again.
 
@@ -84,7 +86,8 @@ Remove it in your mod manager and deploy. Nothing is left behind in the game; it
 - Only you see the turning turrets and the Vehicle Indicator; other players see the normal tanks.
 - The turret armor's hit areas stay with the hull: with the turret turned, a shot on the turret can damage the hull panel underneath instead.
 - The M-104 incendiary FRV isn't in the game right now, so Gunner Drive and the Vehicle Indicator don't cover it yet (FRV Stability does).
-- Gunner Drive only works while nobody is in the driver seat. In multiplayer, the player who drove a vehicle last keeps control of it after getting out, so Gunner Drive can't move it; the driver panel then says so. Take the driver seat once, then go back to the gunner seat, and it's yours again.
+- Gunner Drive only works while nobody is in the driver seat. In multiplayer, the player who drove a vehicle last keeps control of it after getting out, so Gunner Drive can't move it (the driver panel stays hidden then). Take the driver seat once, then go back to the gunner seat, and it's yours again.
+- In a tank another player called in, the gunner-seat smoke key does nothing for now (it no longer fires the wrong launcher or shows the wrong count).
 - After a game update, the script options find what they need again by themselves. If an update changes the vehicles' own models or physics, Tank MBT Turrets, Tank Suspension and FRV Stability need an update from me, and I check this after every game patch.
 
 ## How it works
@@ -94,8 +97,8 @@ Remove it in your mod manager and deploy. Nothing is left behind in the game; it
 - **Tank MBT Turrets, Traverse, Elevation and Aim Range:** one shared Lua addon changes the guns' turn limits, turn speeds and aim range in the game's own turret settings; MBT Turrets uses the game's own tank hulls with everything above the roof line tied to the turret's mount, and turns that mount with the gun every frame (a closed deck and turret floor fill the cut).
 - **Tank Autoloader:** when the main gun's magazine runs dry, it asks the game to start the reload, the same way the reload key does.
 - **Gunner Drive:** a Lua addon copies your movement keys (or your left stick) into the vehicle's driver controls while the driver seat is empty, the same way the game does for a real driver, and starts the engine with the game's own engine switch. The horn and the smoke key use the game's own horn and the Maelstrom's own smoke launcher.
-- **Driver panel:** part of Gunner Drive. It reads the gear, rpm and fuel from the vehicle, measures your speed from how far it moves, and writes them with the game's own HUD font.
-- **Tank Gunner Camera:** a Lua addon changes the camera offset in the game's own gunner camera settings, and turns it with the turret while you sit in the gunner seat.
+- **Driver Panel:** It reads the gear, rpm and fuel from the vehicle, measures your speed from how far it moves, and writes them with the game's own HUD font.
+- **Tank Gunner Camera:** a Lua addon changes the camera offset in the game's own gunner camera settings, and turns it with the turret while you sit in the gunner seat. The crosshair zoom narrows the gunner camera's own field of view setting, the way the game's scope views do.
 - **Vehicle Indicator:** a Lua addon reads the turret's angle and the vehicle's health (and the FRV's tires) the way the game's own driver HUD does, and draws the outline with the game's own on-screen drawing. The skull is a copy of the game's own Helldivers skull icon.
 
 Everything is written from scratch and built from the game's own files. No DLLs are added and no game code is patched.
@@ -111,8 +114,8 @@ The Tank MBT Turrets models, the Tank Suspension and FRV Stability presets and t
 
 ```
 cd src
-python tools/unpack_release.py Armored-Overhaul-3.1.1.zip
-python build.py --check Armored-Overhaul-3.1.1.zip
+python tools/unpack_release.py Armored-Overhaul-3.2.0.zip
+python build.py --check Armored-Overhaul-3.2.0.zip
 ```
 
 `--check` compares the zip it makes with the release zip, file by file (every file is the same, byte for byte). `src_physics/` holds the scripts that make the suspension and FRV presets from the game's physics files, `src_models/` the scripts that rebuild the two tank hulls for the turning turrets, and `src/art/` how the pictures are made.
@@ -124,7 +127,7 @@ All my mods are free and always will be. Every release is rigorously tested in r
 Thank you for diving with me!
 
 ## Credits
-- **CowboyBingus** - Bingus Shared Loader and the Mod Options Menu.
+- **CowboyBingus** - Bingus Shared Loader, the Mod Options Menu and the Mod Bindings Menu.
 - **Filediver** and **HD2SDK** (Blender add-on) - the tools used to read the game's models and build the turrets.
 - **HD2 HUD+** - showed how to draw on screen and use the game's own HUD font from a Lua addon.
 
