@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.3.0
+
+New:
+- **Vehicle Loadout (new option).** Pick more than one tank, exosuit or FRV in your stratagem loadout: a Bastion and a Maelstrom, or two exosuits, in the same mission. Each keeps its own cooldown and uses. Works when you host and when you join; turn it off in the Mod Options Menu to get the game's limit back at once.
+- **Tank Turret Position** (Mod Options Menu, with Tank MBT Turrets). *Centered* moves the turret to the middle of the hull like a real main battle tank, so the gun reaches past the front deck and clips less when aimed low. The deck is plated where the turret used to sit. *Original*, the game's place, stays the default.
+- **Your keys replace the built-in ones.** A Gunner Drive control you set a key for in the Mod Bindings Menu no longer answers its built-in key, so the two can't fight. The controller's left stick still drives.
+
+Fixes:
+- On a controller, the triggers in the gunner seat fire the guns and no longer move the tank.
+- Bingus Shared Loader v19 support: the Mod Options Menu and Mod Bindings Menu are linked as soon as the game starts, and the logs go to the loader's own log folder.
+- Small performance improvements.
+
+Known issues:
+- Smoke from the gunner seat doesn't work in a tank another player called in yet.
+- Tank Turret Position *Centered* moves the turret model and the gun; the tank's hit areas stay where the game has them.
+- With a key set for Forward in the Mod Bindings Menu, holding W in the gunner seat may still nudge the tank a little. Please report it with your logs if you see it.
+
 ## 3.2.0
 
 New:
