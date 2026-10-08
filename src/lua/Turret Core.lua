@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.2.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.3.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -112,12 +112,22 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.2.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.3.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
 rawset(_G, 'ArmoredOverhaulMBTTurrets', state)
 
+-- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
+-- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
+if not rawget(_G, 'ArmoredOverhaulLogsDir') then rawset(_G, 'ArmoredOverhaulLogsDir', function()
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    local d = type(L) == 'table' and L.log_directory
+    if type(d) == 'function' then local ok, v = pcall(d); d = ok and v or nil end
+    if type(d) == 'string' and d ~= '' then return (d:gsub('[\\/]+$', '')) end
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs') or nil
+end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local ok_ffi, ffi = pcall(require, 'ffi')
@@ -252,8 +262,8 @@ local game, image_size, timestamp
 local CACHE_HEADER = 'armored overhaul mbt turrets 1'
 local found_rvas = {}          -- accessor / camera: offsets in game.dll found by the search this session
 local function cache_path()
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
-    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-MBTTurrets.cache') or nil
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
+    return root and root ~= '' and (root .. '\\ArmoredOverhaul-MBTTurrets.cache') or nil
 end
 local function build_tag() return string.format('%08X-%X', timestamp, image_size) end
 local function cache_load()
@@ -667,7 +677,7 @@ local next_check = 0
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'turret'}) do
@@ -699,8 +709,8 @@ do
     end
     local at = 0
     menu_link = function(frame)
-        if frame < at then return end
-        at = frame + 60
+        if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
+        at = (frame == true and 0 or frame) + 60
         local mine = true
         for _, g in ipairs({'turret'}) do if not hub.done[g] then mine = false end end
         if mine then at = math.huge; return end
@@ -710,6 +720,13 @@ do
         for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
         for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
+end
+
+-- (3.3.0) Bingus Shared Loader v19: the menus are linked as soon as every addon has loaded (after_startup); the
+-- once-a-second look stays for older loaders and for a menu that turns up later
+do
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
@@ -732,6 +749,14 @@ menu_rows.turret = function()
     -- (3.1.0) no MBT Turrets switch here: the turret models load with the game and can't be taken off in game, so
     -- switching MBT off here left the moved turret top swinging only the gun's 20 degrees. MBT Turrets is picked in the
     -- mod manager only, where leaving it off loads the game's own tank models.
+    -- (3.3.0 Test 4) where the MBT turret sits (MBT Turrets moves it; see its header): changes at once
+    if o.mbt == true then
+        -- (Test 5) two choices, Original and Centered. (Test 8) The default is the game's position: Original by default (the id carries it, so Test 5-7's saved Centered
+        -- doesn't carry over)
+        rows[#rows + 1] = {'armored_overhaul.turret.position.original', {type = 'choice', label = 'Tank Turret Position',
+            choices = {'Original', 'Centered'}, default = 1,
+            description = 'MBT Turrets: where the Bastion and Maelstrom turret sits. Original is the game\'s place. Centered puts it in the middle of the hull like a main battle tank: the gun reaches past the front deck, so it clips less when aimed low. Changes at once. The tank\'s hit areas stay the game\'s own.'}, 'shift'}
+    end
     if type(o.traverse) == 'number' then
         rows[#rows + 1] = {'armored_overhaul.turret.traverse.' .. tag(o.traverse), {type = 'choice', label = 'Tank Turret Traverse',
             choices = {'Off', 'Quick (x1.5)', 'Fast (x2)', 'Very fast (x3)'}, default = pick_of(TRAVERSE_SPEEDS, o.traverse),
@@ -750,7 +775,13 @@ menu_rows.turret = function()
     end
     return rows
 end
+local SHIFTS = {0, 1.5}                        -- (3.3.0 Test 4/5) Tank Turret Position, m forward: Original, Centered
 menu_set = function(key, v)
+    if key == 'shift' then
+        local o = rawget(_G, 'ArmoredOverhaulTurretOptions')
+        if type(o) == 'table' and SHIFTS[v] then o.mbt_shift = SHIFTS[v] end
+        return
+    end
     if key == 'range' then menu_opts.range = RANGES[v - 1] or false
     elseif key == 'traverse' then menu_opts.traverse = TRAVERSE_SPEEDS[v - 1] or false
     elseif key == 'elevation' then menu_opts.elevation = SPEEDS[v - 1] or false end

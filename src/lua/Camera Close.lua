@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.2.0 - Gunner camera option (Close): how far behind the turret the tank
+-- Armored Overhaul 3.3.0 - Gunner camera option (Close): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -37,13 +37,23 @@ local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
 local distance = PRESET          -- (3.0) metres back along the rise: the mod manager's pick, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.2.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.3.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
                options_menu = 'not installed (the distance picked in the mod manager is used)'}
 rawset(_G, 'ArmoredOverhaulGunnerCamera', state)
 
+-- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
+-- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
+if not rawget(_G, 'ArmoredOverhaulLogsDir') then rawset(_G, 'ArmoredOverhaulLogsDir', function()
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    local d = type(L) == 'table' and L.log_directory
+    if type(d) == 'function' then local ok, v = pcall(d); d = ok and v or nil end
+    if type(d) == 'string' and d ~= '' then return (d:gsub('[\\/]+$', '')) end
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs') or nil
+end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local ok_ffi, ffi = pcall(require, 'ffi')
@@ -157,8 +167,8 @@ local game, image_size, timestamp
 local function build_tag() return string.format('%08X-%X', timestamp, image_size) end
 local CACHE_HEADER = 'armored overhaul gunner camera 1'
 local function cache_path()
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
-    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-GunnerCamera.cache') or nil
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
+    return root and root ~= '' and (root .. '\\ArmoredOverhaul-GunnerCamera.cache') or nil
 end
 local function cache_load()
     local path = cache_path()
@@ -753,9 +763,9 @@ local fov = {orig = nil, ours = nil, kept = 0, reset = 0, works = nil, base = ni
 -- mod ('nocheck': the zoom without the check; 'off': no crosshair zoom, the wheel moves the camera only). With the check
 -- left out, the zoom's own markers keep saying so ('nocheckzooming', then 'nocheck').
 local function zmark(text)
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
     if not root or root == '' or not (io and io.open) then return nil end
-    local path = root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-GunnerCamera.zoomcheck'
+    local path = root .. '\\ArmoredOverhaul-GunnerCamera.zoomcheck'
     local f = io.open(path, text and 'w' or 'r')
     if not f then return nil end
     if text then f:write(text, ' ', state.version, '\n'); f:close(); return end
@@ -923,6 +933,10 @@ local function zb_link()
     ZB.api = B
     state.zoom_keys = #ZB.keys .. ' zoom binding(s) in the controls, tab MODS' .. (failed and ('; not added: ' .. failed) or '')
 end
+do  -- (3.3.0) v19: the zoom keys registered as soon as every addon has loaded
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() ZB.at = 0; pcall(zb_link) end) end
+end
 -- the bound zoom keys' notches this frame (zoom in positive), 0 without the menu or while it isn't ready
 local function zb_notches()
     local B = ZB.api
@@ -953,9 +967,9 @@ local RO = {gui = nil, world = nil, check_at = 0, texts = nil, shown = nil, at =
             mark = nil, frames = 0, w = 1920, h = 1080, slot = '88bac99b00000000', cap = 0.72}
 state.readout = 'not shown yet'
 local function ro_mark(text)
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
     if not root or root == '' or not (io and io.open) then return nil end
-    local f = io.open(root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-GunnerCamera.fontcheck', text and 'w' or 'r')
+    local f = io.open(root .. '\\ArmoredOverhaul-GunnerCamera.fontcheck', text and 'w' or 'r')
     if not f then return nil end
     if text then f:write(text, ' ', state.version, '\n'); f:close(); return end
     local t = f:read('*a'); f:close(); return t
@@ -1210,7 +1224,7 @@ end
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'camera'}) do
@@ -1242,8 +1256,8 @@ do
     end
     local at = 0
     menu_link = function(frame)
-        if frame < at then return end
-        at = frame + 60
+        if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
+        at = (frame == true and 0 or frame) + 60
         local mine = true
         for _, g in ipairs({'camera'}) do if not hub.done[g] then mine = false end end
         if mine then at = math.huge; return end
@@ -1253,6 +1267,13 @@ do
         for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
         for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
+end
+
+-- (3.3.0) Bingus Shared Loader v19: the menus are linked as soon as every addon has loaded (after_startup); the
+-- once-a-second look stays for older loaders and for a menu that turns up later
+do
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.

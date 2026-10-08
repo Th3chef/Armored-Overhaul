@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.2.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.3.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -214,7 +214,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.2.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.3.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -222,10 +222,26 @@ local S = {version = '3.2.0', status = 'starting', phase = 'start', locate = 'pe
            options_menu = 'not installed (everything installed is on)', brakes = 'not needed yet'}
 rawset(_G, 'ArmoredOverhaulGunnerDrive', S)
 
+-- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
+-- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
+if not rawget(_G, 'ArmoredOverhaulLogsDir') then rawset(_G, 'ArmoredOverhaulLogsDir', function()
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    local d = type(L) == 'table' and L.log_directory
+    if type(d) == 'function' then local ok, v = pcall(d); d = ok and v or nil end
+    if type(d) == 'string' and d ~= '' then return (d:gsub('[\\/]+$', '')) end
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs') or nil
+end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then
-    print('[Armored Overhaul] Tank Core needs Bingus Shared Loader v15 or newer'); return
+    print('[Armored Overhaul] Tank Core needs Bingus Shared Loader v15 or newer (v19 recommended)'); return
 end
+-- (3.3.0) v19 adds after_startup (the menus linked once every addon has loaded) and the shared logs folder; older
+-- loaders still work, the menus are then found by the once-a-second look
+-- (Test 5) the loader's own revision name (loader-v19) when it gives one: its version number field says 17 on v19
+S.loader = 'Bingus Shared Loader ' .. (function() for _, k in ipairs({'revision', 'release', 'build', 'name'}) do local okv, v = pcall(function() return loader[k] end); if okv and type(v) == 'string' and v:find('%d') then return v end end; return 'version ' .. tostring(loader.version) end)() .. ((type(loader.capabilities) == 'table'
+    and type(loader.after_startup) == 'function') and ' (start-up callbacks and shared logs folder in use)'
+    or ': Armored Overhaul needs v19 or newer for start-up callbacks; menus are looked for once a second instead')
 local have_ffi, ffi = pcall(require, 'ffi')
 if not have_ffi or not ffi.abi('win') or not ffi.abi('64bit') then return end
 
@@ -332,13 +348,13 @@ end
 -- ------------------------------------------------------------------------------------------ log
 -- The log is what a user attaches to a bug report: what the addon found in this game build, where you sat and
 -- what it did, and the last error. Tester builds add the counters and per-frame details used during development.
-local LOG_MAIN = {'version', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
-    'response', 'overwritten', 'control', 'engine', 'smoke', 'horn', 'controller', 'bindings', 'bindings_used', 'health', 'kinds', 'autoloader', 'reloads', 'brakes', 'errors', 'last_error'}
-local LABELS = {locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
+local LOG_MAIN = {'version', 'loader', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
+    'response', 'overwritten', 'control', 'engine', 'smoke', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'kinds', 'autoloader', 'reloads', 'brakes', 'errors', 'last_error'}
+local LABELS = {loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
                 engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3, right stick click or a bound key, gunner seat)',
                 sessions = 'times driven from the gunner seat', drive_frames = 'frames driven',
                 response = 'tank answers the throttle', health = 'vehicle health (Vehicle Indicator color)',
-                autoloader = 'autoloader (gunner seat)', horn = 'horn (F, left stick click or a bound key, gunner seat)', controller = 'controller (gunner seat)', bindings = 'key bindings (Mod Bindings Menu)', bindings_used = 'bound keys used (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', brakes = 'braked to a stop as you got out (Gunner Drive)', control = 'who runs the tank (multiplayer)', overwritten = 'driving input replaced by the game (frames)'}
+                autoloader = 'autoloader (gunner seat)', horn = 'horn (F, left stick click or a bound key, gunner seat)', controller = 'controller (gunner seat)', bindings = 'key bindings (Mod Bindings Menu)', bindings_off = 'built-in keys turned off (a key is set for them in the Mod Bindings Menu)', bindings_used = 'bound keys used (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', brakes = 'braked to a stop as you got out (Gunner Drive)', control = 'who runs the tank (multiplayer)', overwritten = 'driving input replaced by the game (frames)'}
 -- The last few drive starts and stops (1.2: players report Gunner Drive stops working after someone else drove)
 local history = {}
 local function hist(what)
@@ -384,7 +400,7 @@ local logged = {}
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'autoloader', 'gunner_drive'}) do
@@ -416,8 +432,8 @@ do
     end
     local at = 0
     menu_link = function(frame)
-        if frame < at then return end
-        at = frame + 60
+        if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
+        at = (frame == true and 0 or frame) + 60
         local mine = true
         for _, g in ipairs({'autoloader', 'gunner_drive'}) do if not hub.done[g] then mine = false end end
         if mine then at = math.huge; return end
@@ -427,6 +443,13 @@ do
         for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
         for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
+end
+
+-- (3.3.0) Bingus Shared Loader v19: the menus are linked as soon as every addon has loaded (after_startup); the
+-- once-a-second look stays for older loaders and for a menu that turns up later
+do
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
@@ -447,7 +470,7 @@ menu_rows.gunner_drive = function()
     local names = {}
     for i, c in ipairs(GD) do names[i] = c.name end
     return {{'armored_overhaul.gunner_drive.' .. (tanks and frv and 'both' or (tanks and 'tanks' or 'frv')), {type = 'choice',
-        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake. F sounds the horn; Mouse 3 pops the Maelstrom\'s smoke. Controller: the left stick drives, its click is the horn, the right stick click pops smoke. Set your own keys with the Mod Bindings Menu. A teammate who takes the wheel drives. Pick which vehicles.'}, 'gunner_drive'}}
+        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake. F sounds the horn; Mouse 3 pops the Maelstrom\'s smoke. Controller: the left stick drives, its click is the horn, the right stick click pops smoke. Keys set in the Mod Bindings Menu replace these. A teammate who takes the wheel drives. Pick which vehicles.'}, 'gunner_drive'}}
 end
 menu_set = function(key, v)
     if key == 'autoloader' then menu_opts.autoloader = v == true or v == 1
@@ -598,8 +621,8 @@ local function resolve_extras(rvas)
 end
 
 local function cache_file()
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
-    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-GunnerDrive.cache') or nil
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
+    return root and root ~= '' and (root .. '\\ArmoredOverhaul-GunnerDrive.cache') or nil
 end
 local function cache_load(tag)
     local path = cache_file()
@@ -962,6 +985,7 @@ do
         d = {button = fld(pad, 'button'), active = fld(pad, 'active'), axis = fld(pad, 'axis')}
         local bi, ai = fld(pad, 'button_index'), fld(pad, 'axis_index')
         d.horn, d.smoke, d.left = first(bi, pads.horn), first(bi, pads.smoke), first(ai, {'left'})
+        d.lt, d.rt = first(bi, {'left_trigger', 'lt', 'l2'}), first(bi, {'right_trigger', 'rt', 'r2'})   -- (3.3.0)
         if TESTER and not pads.listed then                   -- (tester) the controller's button names, once
             pads.listed = true
             local nb, bn = fld(pad, 'num_buttons'), fld(pad, 'button_name')
@@ -1002,6 +1026,24 @@ do
             if i and d.button then
                 local ok, v = pcall(d.button, i)
                 if ok and type(v) == 'number' and v > 0.5 then return true end
+            end
+        end
+        return false
+    end
+    -- (3.3.0, a user: in the gunner seat RT/LT fire the guns, but the game also feeds them into the driving throttle and
+    -- brake that Gunner Drive copies, so firing moved the tank) a connected controller's trigger held: the game's own
+    -- forward/reverse are not copied that frame (the left stick and bound keys still drive). Tester log 3.2.0: buttons
+    -- 10 = left_trigger, 11 = right_trigger.
+    function pads.trigger()
+        if not focused() then return false end
+        for _, d in ipairs(connected()) do
+            if d.button then
+                for _, i in ipairs({d.lt or -1, d.rt or -1}) do
+                    if i >= 0 then
+                        local ok, v = pcall(d.button, i)
+                        if ok and type(v) == 'number' and v > 0.05 then return true end
+                    end
+                end
             end
         end
         return false
@@ -1049,6 +1091,19 @@ local binds = {list = {{'forward', 'Gunner Drive: Forward'}, {'back', 'Gunner Dr
                api = nil, at = 0, keys = {}, ids = {}, down = {}, used = {},
                gear = {up = 0x2F, down = 0x2E, handbrake = 0x2D, sel = nil, from = nil, dir = nil, check_at = nil, held = false, learned = false}}
 S.bindings, S.bindings_used = 'Mod Bindings Menu not installed (the built-in keys work)', 'none yet'
+S.bindings_off = 'none'
+-- (3.3.0: the built-in driving keys turn off once they are rebound) A Gunner Drive control with a key or button
+-- set in the Mod Bindings Menu no longer answers its built-in key: Forward / Back the game's throttle and brake (W / S,
+-- a controller's triggers), Steer Left / Right A / D, Shift Up / Down and Handbrake shift / CTRL / Space, Horn F and the
+-- left stick click, Smoke Mouse 3 and the right stick click. The controller's left stick still drives. Whether a control
+-- has a key set: the menu's own record of where it put the binding (ModBindingsMenu.assignments in the logs folder:
+-- id, native group, action) and the game's live binding table for that action (the menu's source: input owner at
+-- game.dll+0x347CF18, a 256-entry map at +686800 of 328-byte records {u32 code = group * 65536 + action, u32 count,
+-- mappings}; the menu leaves its actions with no mapping until the player sets one). Checked every 2 s while you drive,
+-- only while the menu says it is ready (its own game build check); anything unreadable counts as no key set (the
+-- built-in keys stay).
+binds.bound, binds.bucket, binds.check_at, binds.slots_at = {}, {}, 0, 0
+binds.mbm = {owner = 0x347CF18, map = 686800, records = 256, size = 328}
 function binds.link(frame)
     if binds.api or frame < binds.at then return end
     binds.at = frame + 60
@@ -1078,6 +1133,10 @@ function binds.link(frame)
     S.bindings = #binds.keys .. ' Gunner Drive binding(s) in the controls, tab MODS' .. (failed and ('; not added: ' .. failed) or '')
     hist('Mod Bindings Menu found: ' .. S.bindings)
 end
+do  -- (3.3.0) v19: the Mod Bindings Menu linked as soon as every addon has loaded
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() binds.at = 0; pcall(binds.link, S.frames) end) end
+end
 -- once per driving frame: which bound keys are held (none while the menu isn't ready, e.g. an unsupported game build)
 -- (3.0.1 review) and none while the game's window is in the background, like a controller (see pads)
 function binds.poll()
@@ -1102,10 +1161,82 @@ function binds.poll()
         down[k] = v
     end
 end
+-- (3.3.0) the menu's record of each binding's native action (group, action), from its assignments file
+function binds.read_slots()
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
+    if not root or root == '' or not (io and io.open) then return nil end
+    local f = io.open(root .. '\\ModBindingsMenu.assignments', 'r')
+    if not f then return nil end
+    local text = f:read('*a'); f:close()
+    local out = {}
+    for line in text:gmatch('[^\r\n]+') do
+        local id, g, a = line:match('^(%S+)%s+(%d+)%s+(%d+)')
+        if id then out[id] = tonumber(g) * 65536 + tonumber(a) end
+    end
+    return out
+end
+-- how many keys/buttons are set for binding k in the game's live binding table (nil: not known). Each control's
+-- record is remembered; (3.3.0 review) the whole 84 KB table is read at most once per check, for every control at once
+-- (Test 13 read it once per control whose record wasn't found: up to 9 times every 2 s).
+function binds.count(k)
+    local code = binds.slots and binds.slots['armored_overhaul.gunner_drive.' .. k]
+    if not code or not game then return nil end
+    local b = binds.bucket[k]
+    if b and fetch(b, 8) and mem_u32(0) == code then return mem_u32(4) end
+    binds.bucket[k] = nil
+    if binds.scanned == binds.check_at then return nil end      -- (the table was read in this check already)
+    binds.scanned = binds.check_at
+    local M = binds.mbm
+    local owner = fetch_ptr(game + M.owner)
+    if not owner or not fetch(owner + M.map, 12) then return nil end
+    local list, cap = mem_ptr(0), mem_u32(8)
+    if not list or cap ~= M.records or not fetch(list, M.records * M.size) then return nil end
+    local want = {}
+    for _, kk in ipairs(binds.keys) do
+        local c = binds.slots['armored_overhaul.gunner_drive.' .. kk]
+        if c and not binds.bucket[kk] then want[c] = kk end
+    end
+    local n = nil
+    for i = 0, M.records - 1 do
+        local kk = want[mem_u32(i * M.size)]
+        if kk then
+            binds.bucket[kk] = list + i * M.size
+            if kk == k then n = mem_u32(i * M.size + 4) end
+        end
+    end
+    return n
+end
+-- every 2 s while driving: which controls have a key set (their built-in keys are then off)
+function binds.check()
+    if not binds.api or S.time < binds.check_at then return end
+    binds.check_at = S.time + 2
+    local B = binds.api
+    local okr, ready = true, true
+    if type(B.ready) == 'function' then okr, ready = pcall(B.ready) end
+    if okr and ready and (not binds.slots or S.time >= binds.slots_at) then
+        local oks, sl = pcall(binds.read_slots)
+        binds.slots, binds.slots_at = oks and sl or nil, S.time + 30
+    end
+    local off, changed = {}, false
+    for _, k in ipairs(binds.keys) do
+        local c = nil
+        if okr and ready then local okc, n = pcall(binds.count, k); c = okc and n or nil end
+        local on = c ~= nil and c > 0 and c <= 16 or nil
+        if binds.bound[k] ~= on then binds.bound[k] = on; changed = true end
+        if on then off[#off + 1] = k end
+    end
+    if changed then
+        S.bindings_off = #off > 0 and table.concat(off, ', ') or 'none'
+        hist('built-in keys off for: ' .. S.bindings_off)
+    end
+end
 -- (3.2.0) the bound Handbrake / Shift Up / Shift Down, held into the driver record (after the game's own buttons are
 -- copied in); a bound gear key's first press notes the selector, checked half a second later (see binds.learn)
 function binds.buttons(record)
-    local d, g = binds.down, binds.gear
+    local d, g, bd = binds.down, binds.gear, binds.bound
+    if bd.handbrake then record[g.handbrake] = 0 end          -- (3.3.0) a key is set for it: the built-in one is off
+    if bd.gear_up then record[g.up] = 0 end
+    if bd.gear_down then record[g.down] = 0 end
     if d.handbrake then record[g.handbrake] = 1 end
     local dir = d.gear_up and 'up' or (d.gear_down and 'down') or nil
     if dir and not g.held and not g.learned and not g.check_at and g.sel
@@ -1206,6 +1337,14 @@ local function feed(me, record)
     local size = INPUT.action_size
     if not fetch(me.actions_at, size * 7) then return false, 'input unreadable' end
     local forward, reverse = MEMF[FWD_I], MEMF[REV_I]
+    binds.check()
+    local bd = binds.bound
+    if bd.forward then forward = 0 end                                      -- (3.3.0) rebound: the built-in key is off
+    if bd.back then reverse = 0 end
+    if (forward > 0 or reverse > 0) and pads.trigger() then                  -- (3.3.0: the triggers fire, they don't drive)
+        forward, reverse = 0, 0
+        if not pads.trigger_noted then pads.trigger_noted = true; hist('controller trigger held: its throttle/brake not copied (the triggers fire the guns)') end
+    end
     for i = 1, #BUTTON_FIELDS do button_values[i] = mem[BUTTON_ACTIONS[i] * size] end
     S.reads = S.reads + 1
     if ReadProcessMemory(self_process, me.look_at, look, 24, nil) == 0 then return false, 'look unreadable' end
@@ -1213,6 +1352,7 @@ local function feed(me, record)
     -- +0x18 forward (W), +0x1C reverse (S), +0x20 look A x, +0x2C driver flag, buttons
     f[0], f[1], f[2], f[3], f[4], f[5] = LF[3], LF[4], LF[5], LF[0], LF[1], LF[2]
     f[6], f[7], f[8] = forward, reverse, LF[3]
+    if (bd.left and f[0] < 0) or (bd.right and f[0] > 0) then f[0], f[8] = 0, 0 end   -- (3.3.0) A / D off when rebound
     record[0x2C] = 1
     for i = 1, #BUTTON_FIELDS do record[BUTTON_FIELDS[i]] = button_values[i] end
     if TESTER and S.frames % 5 == 0 then input_note('gunner seat, from the game', f) end
@@ -1233,7 +1373,7 @@ local function feed(me, record)
         local dz, y = pads.dead_y, 0
         if sy > dz then y = (sy - dz) / (1 - dz) elseif sy < -dz then y = (sy + dz) / (1 - dz) end
         if y > 0 then f[6] = max(f[6], y) elseif y < 0 then f[7] = max(f[7], -y) end
-        local kx = LF[3]
+        local kx = f[0]                         -- (3.3.0: after the rebound A / D are taken out)
         if math.abs(sx) >= math.abs(kx) then f[0], f[8] = sx, sx end
         -- (3.0: the stick didn't turn a stopped tank on the spot, A/D do) with no driving key held, the whole look
         -- vector as a driver's stick gives it (x the steering, y the push, no z); with W/S/A/D held the keys' own y
@@ -1457,6 +1597,7 @@ end
 pressed = function(d) if not d.idx then return false end local ok, v = pcall(d.button, d.idx); return ok and type(v) == 'number' and v > 0.5 end
 local function smoke_key()
     if binds.down.smoke then return true end      -- (3.0.1) the key set in the Mod Bindings Menu
+    if binds.bound.smoke then return false end    -- (3.3.0) a key is set: Mouse 3 and the right stick click are off
     local SR = rawget(_G, 'stingray')
     if type(SR) ~= 'table' then return false end
     if keys.mouse == nil then local m = field(SR, 'Mouse'); keys.mouse = m and button_of(m, {'middle'}) or false end
@@ -1654,6 +1795,7 @@ local function horn_set(vehicle, on)
 end
 local function horn_key()
     if binds.down.horn then return true end      -- (3.0.1) the key set in the Mod Bindings Menu
+    if binds.bound.horn then return false end    -- (3.3.0) a key is set: F and the left stick click are off
     local SR = rawget(_G, 'stingray')
     if type(SR) ~= 'table' then return false end
     if horn.key == nil then local kb = field(SR, 'Keyboard'); horn.key = kb and button_of(kb, {'f'}) or false end

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_handling
--- Armored Overhaul 3.2.0 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.3.0 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'grip' option, Moderate). Written from scratch.
 --
 -- How it works: the tanks drive on the engine's Havok vehicle kit. When a tank is set up, the game scales its Havok
@@ -8,7 +8,8 @@
 --   +0x164 wheel radius (0.9)          +0x168 wheel friction multiplier (0.7)          -> Tank grip
 --   +0x16C steering rate (2.25): how fast the steering input may change per second      -> Tank steering
 --   +0x15C engine torque scale (0.4): the engine's pulling power                        -> Tank power (1.3)
--- (+0x158 RPM scale sets the engine's speed; it stays the game's own.)
+-- (+0x158 RPM scale sets the engine's speed; it stays the game's own. (3.3.0) A Tank Top Speed option was tried and
+-- dropped: the rpm scale didn't raise the top speed, and +0x160 (transmission scale) is never applied by the game.)
 -- This addon finds that table through its generated accessor (hash % slot count, linear probe), looks the two tanks
 -- up by entity hash and scales its fields. Tanks called in afterwards use the new values.
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
@@ -58,12 +59,22 @@ local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.2.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.3.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0, clock = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
 rawset(_G, P.global, state)
 
+-- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
+-- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
+if not rawget(_G, 'ArmoredOverhaulLogsDir') then rawset(_G, 'ArmoredOverhaulLogsDir', function()
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    local d = type(L) == 'table' and L.log_directory
+    if type(d) == 'function' then local ok, v = pcall(d); d = ok and v or nil end
+    if type(d) == 'string' and d ~= '' then return (d:gsub('[\\/]+$', '')) end
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs') or nil
+end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local ok_ffi, ffi = pcall(require, 'ffi')
@@ -204,8 +215,8 @@ local game, image_size, timestamp
 -- launches of the same build skip it. The saved place is checked again before it is used.
 local CACHE_HEADER = 'armored overhaul ' .. P.file:lower() .. ' 1'
 local function cache_path()
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
-    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-' .. P.file .. '.cache') or nil
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
+    return root and root ~= '' and (root .. '\\ArmoredOverhaul-' .. P.file .. '.cache') or nil
 end
 local function build_tag() return string.format('%08X-%X', timestamp, image_size) end
 -- (3.1.1 review) Each tank's game values, kept for the life of the game's process (its environment block, which a reload of
@@ -495,7 +506,7 @@ local next_check = 0
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'grip'}) do
@@ -527,8 +538,8 @@ do
     end
     local at = 0
     menu_link = function(frame)
-        if frame < at then return end
-        at = frame + 60
+        if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
+        at = (frame == true and 0 or frame) + 60
         local mine = true
         for _, g in ipairs({'grip'}) do if not hub.done[g] then mine = false end end
         if mine then at = math.huge; return end
@@ -538,6 +549,13 @@ do
         for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
         for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
+end
+
+-- (3.3.0) Bingus Shared Loader v19: the menus are linked as soon as every addon has loaded (after_startup); the
+-- once-a-second look stays for older loaders and for a menu that turns up later
+do
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
