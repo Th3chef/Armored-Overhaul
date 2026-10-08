@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.2.0 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.3.0 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
@@ -22,17 +22,34 @@
 -- seat probe) is carried round with the turret too: the helldiver in it stayed put on the hull, so with the turret turned
 -- 180 deg the helmet showed through the gun slot. Optional: if the seat node isn't where the game had it, the turret
 -- still turns, without it.
+-- (3.3.0 Test 4) Turret Position (the turret moved towards the middle like a real main battle tank, so it
+-- clips less with the wider aim ranges): the turret (its mount, the gun's mount, and everything carried round with it)
+-- sits SHIFT metres further forward than the game's casemate (the hull's front is +y). The game's turret top spans
+-- y -4.74..0.6 on hulls 9 m long (-4.85..4.13) whose deck stays at the roof line up to y 3.4, so up to 2.5 m forward
+-- the turret floor stays over the deck; 1.5 m puts it at the hull's middle. (Test 8) Default: the game's place. Set in the Mod Options Menu (Turret Core's
+-- rows), read here every half second; o.mbt_shift is in metres.
 local o = rawget(_G, 'ArmoredOverhaulTurretOptions')
 if type(o) ~= 'table' then o = {}; rawset(_G, 'ArmoredOverhaulTurretOptions', o) end
 o.mbt = true
+if type(o.mbt_shift) ~= 'number' then o.mbt_shift = 0 end     -- (Test 8) Turret Position: the game's place by default
 
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 if rawget(_G, 'ArmoredOverhaulTurretTurner') then return end
+-- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
+-- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
+if not rawget(_G, 'ArmoredOverhaulLogsDir') then rawset(_G, 'ArmoredOverhaulLogsDir', function()
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    local d = type(L) == 'table' and L.log_directory
+    if type(d) == 'function' then local ok, v = pcall(d); d = ok and v or nil end
+    if type(d) == 'string' and d ~= '' then return (d:gsub('[\\/]+$', '')) end
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs') or nil
+end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.2.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.3.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
 S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)
@@ -53,6 +70,13 @@ local HULLS = {
               {k = 220, x = 1.422, y = -4.511, z = 1.804}, {k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true}}},
 }
 local GUN_MOUNT = {k = 158, x = 0, y = -1.959, z = 1.363}  -- where the main gun sits (to find it)
+local SHIFT_MAX = 2.5                                      -- (3.3.0 Test 4) m forward at most (see the header)
+local function shift_now()
+    local v = rawget(_G, 'ArmoredOverhaulTurretOptions')
+    v = type(v) == 'table' and v.mbt_shift
+    if type(v) ~= 'number' or v ~= v then return 0 end
+    return math.max(0, math.min(SHIFT_MAX, v))
+end
 -- (3.1.1 review) in seconds (3.1.0 counted frames: the 2 s wait before a new hull's gun is looked for - Test 9's crash
 -- margin - was 0.5 s at 240 fps, and the Bastion's whole-world search ran 4 times a second while a gun was missing)
 local HULL_EVERY, GUN_EVERY, GUN_WAIT = 0.5, 1, 2           -- s between looking for hulls / for a missing gun;
@@ -68,6 +92,7 @@ local function log()
         f:write('Armored Overhaul - turret models (Tank MBT Turrets)\n', 'version: ', S.version, '\n', 'status: ', S.status, '\n',
             'api: ', S.api, '\n', 'tanks out: ', S.tanks, ' (turrets turning: ', S.turned, ', gun not found: ', S.no_gun,
             ', hull not as expected: ', S.bad_nodes, ')\n', 'gunner seats turned with the turret: ', S.turned - S.no_seat, (S.no_seat > 0 and (' (' .. S.no_seat .. ' seat node(s) not found: those gunners stay put)') or ''), '\n', 'errors: ', S.errors, '\n', 'last error: ', S.last_error, '\n')
+        f:write(string.format('turret position: %.2f m forward of the game\'s (Mod Options Menu: Tank Turret Position)\n', S.shift or 0))
         if S.search_note then f:write('note: ', S.search_note, '\n') end
         if S.recovered then f:write('turrets found already turned when this started (the game\'s Lua reloaded): ', S.recovered, ', put right\n') end
         if help_seen.times > 0 then
@@ -109,9 +134,9 @@ end
 -- (Test 9) a marker around the whole-world gun search (the Bastion's): if the game closed during one, the next start
 -- skips it once (the Bastion's turret then stays put) and says so; the start after tries again
 local function marker(write)
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
     if not root or root == '' or not io or not io.open then return nil end
-    local path = root .. '\\CowboyBingus\\Helldivers2\\Logs\\ArmoredOverhaul-TurretModels.searchcheck'
+    local path = root .. '\\ArmoredOverhaul-TurretModels.searchcheck'
     if write then local f = io.open(path, 'w'); if f then f:write(write); f:close() end; return end
     local f = io.open(path, 'r'); if not f then return nil end
     local t = f:read('*a'); f:close(); return t
@@ -161,18 +186,20 @@ local function node_at(u, base, want)
     local ok, p = pcall(U.local_position, u, i)
     if not ok or p == nil then return nil end
     local x, y, z = xyz(p)
-    if not x or math.abs(x - want.x) > 0.01 or math.abs(y - want.y) > 0.01 or math.abs(z - want.z) > 0.01 then return nil end
+    -- (3.3.0 Test 4) y may be the rest place moved forward by up to SHIFT_MAX (an earlier copy's Turret Position)
+    if not x or math.abs(x - want.x) > 0.01 or y < want.y - 0.01 or y > want.y + SHIFT_MAX + 0.01 or math.abs(z - want.z) > 0.01 then return nil end
     local q = quat(select(2, pcall(U.local_rotation, u, i)))
     if not q then return nil end
-    return {i = i, x = x, y = y, z = z, q = q}
+    return {i = i, x = want.x, y = want.y, z = want.z, q = q, moved = y - want.y}
 end
 
 -- (3.1.1 review) A carried node already turned round the axis (the game's Lua rebuilt with the game open while a
 -- turret was turned: this copy finds the last copy's pose): its turn angle, or nil if it isn't the wanted node turned.
-local function turned_by(u, i, want)
+local function turned_by(u, i, want, moved)
     local ok, p = pcall(U.local_position, u, i)
     local x, y, z = xyz(ok and p)
     if not x or math.abs(z - want.z) > 0.01 then return nil end
+    y = y - (moved or 0)                  -- (3.3.0 Test 4) less the Turret Position move found on the turret's own mount
     local wx, wy, nx, ny = want.x - AXIS_X, want.y - AXIS_Y, x - AXIS_X, y - AXIS_Y
     local r = math.sqrt(wx * wx + wy * wy)
     if r < 0.2 or math.abs(math.sqrt(nx * nx + ny * ny) - r) > 0.01 then return nil end
@@ -200,7 +227,7 @@ local function setup(u, h)
     for _, c in ipairs(h.carry) do
         local n = node_at(u, base, c)
         if not n then
-            local a = turned_by(u, base + c.k, c)
+            local a = turned_by(u, base + c.k, c, e.turn and e.turn.moved)
             if a and (a0 == nil or math.abs(math.atan2(math.sin(a - a0), math.cos(a - a0))) < 0.01) then
                 a0 = a0 or a
                 local q = quat(select(2, pcall(U.local_rotation, u, base + c.k)))
@@ -346,16 +373,23 @@ local function help(u, e, a, t)
     end
 end
 
-local function turn(u, e, a)
+local function turn(u, e, a, d)
     -- (3.1.0 review) the turret hasn't moved since the last write (within 0.006 deg): nothing to write
-    if e.ta and math.abs(a - e.ta) < 1e-4 then return end
+    if e.ta and math.abs(a - e.ta) < 1e-4 and e.sd == d then return end
     local yaw = Q(V3(0, 0, 1), a)
     local t = e.turn
     local ok = pcall(U.set_local_rotation, u, t.i, Q.multiply(yaw, Q.from_elements(t.q[1], t.q[2], t.q[3], t.q[4])))
+    -- (3.3.0 Test 4) Turret Position: the turret's mount and the gun's mount moved forward d (written when it changes)
+    if e.sd ~= d then
+        local m = e.mount
+        local okp = pcall(U.set_local_position, u, t.i, V3(t.x, t.y + d, t.z)) and pcall(U.set_local_position, u, m.i, V3(m.x, m.y + d, m.z))
+        ok = okp and ok
+        e.sd = okp and d or nil
+    end
     local c, s = math.cos(a), math.sin(a)
     for _, n in ipairs(e.carry) do
         local dx, dy = n.x - AXIS_X, n.y - AXIS_Y
-        ok = pcall(U.set_local_position, u, n.i, V3(AXIS_X + dx * c - dy * s, AXIS_Y + dx * s + dy * c, n.z)) and ok
+        ok = pcall(U.set_local_position, u, n.i, V3(AXIS_X + dx * c - dy * s, AXIS_Y + d + dx * s + dy * c, n.z)) and ok
         ok = pcall(U.set_local_rotation, u, n.i, Q.multiply(yaw, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))) and ok
     end
     e.ta = ok and a or nil                -- (3.1.1 review: only a pose that was written is skipped next time)
@@ -364,11 +398,13 @@ end
 local function rest(u, e)
     pcall(U.set_local_rotation, u, e.turn.i, Q.from_elements(e.turn.q[1], e.turn.q[2], e.turn.q[3], e.turn.q[4]))
     pcall(U.set_local_rotation, u, e.mount.i, Q.from_elements(e.mount.q[1], e.mount.q[2], e.mount.q[3], e.mount.q[4]))
+    pcall(U.set_local_position, u, e.turn.i, V3(e.turn.x, e.turn.y, e.turn.z))        -- (3.3.0 Test 4)
+    pcall(U.set_local_position, u, e.mount.i, V3(e.mount.x, e.mount.y, e.mount.z))
     for _, n in ipairs(e.carry) do
         pcall(U.set_local_position, u, n.i, V3(n.x, n.y, n.z))
         pcall(U.set_local_rotation, u, n.i, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))
     end
-    e.ta, e.ms = nil, nil
+    e.ta, e.ms, e.sd = nil, nil, nil
 end
 
 local list, next_list, shown = {}, 0, -1
@@ -388,10 +424,12 @@ local function tick()
         -- (3.1.1 review) units no longer out are forgotten; the rest are written again once (e.ta / e.ms cleared), so a pose
         -- the game itself put back (a turret parked since) is set right within half a second
         for u, e in pairs(hulls) do
-            if not listed[u] then hulls[u] = nil else e.ta, e.ms = nil, nil end
+            if not listed[u] then hulls[u] = nil else e.ta, e.ms, e.sd = nil, nil, nil end
         end
     end
     local tanks, turned, no_gun, bad, no_seat = 0, 0, 0, 0, 0
+    local d = shift_now()
+    if d ~= S.shift then S.shift = d; S.seen_changed = true end
     local t_now = nil
     for _, it in ipairs(list) do
         local u = it.u
@@ -415,7 +453,7 @@ local function tick()
                 end
                 local a, hy
                 if e.gun then a, hy = heading(u, e) end
-                if a then turn(u, e, a); turned = turned + 1; if e.no_seat then no_seat = no_seat + 1 end else no_gun = no_gun + 1 end
+                if a then turn(u, e, a, d); turned = turned + 1; if e.no_seat then no_seat = no_seat + 1 end else no_gun = no_gun + 1 end
                 if TESTER then S.angle[u], S.gun[u] = a, e.gun end
                 if a then t_now = t_now or now_s(); rates(e, a, it.h, t_now, hy); help(u, e, a, t_now) else e.last_t, e.hl_t = nil, nil; if (e.m or 0) ~= 0 then e.m, e.mr = 0, 0; set_mount(u, e, 0) end end
             end

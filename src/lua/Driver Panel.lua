@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.2.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.3.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
@@ -31,10 +31,10 @@ local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.2.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.3.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
-           speed = 'not measured yet', speed_check = 'none', options_menu = 'not installed (the defaults are used)'}
+           speed = 'not measured yet', fastest = 'not measured yet', speed_check = 'none', handling_check = 'not driven yet', options_menu = 'not installed (the defaults are used)'}
 rawset(_G, 'ArmoredOverhaulDriverPanel', S)
 -- (3.1.1 review) While the panel shows, the 'gear' line (selector, gear, rpm, speed, fuel) is made when it is read (the log,
 -- or a test), from the last values drawn: 3.1.0 made the text on every live redraw, up to 40 times a second at 240 fps.
@@ -43,6 +43,16 @@ setmetatable(S, {__index = function(_, k)
     if k == 'gear' and gear_text then local ok, s = pcall(gear_text); return ok and s or '?' end
 end})
 
+-- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
+-- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
+if not rawget(_G, 'ArmoredOverhaulLogsDir') then rawset(_G, 'ArmoredOverhaulLogsDir', function()
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    local d = type(L) == 'table' and L.log_directory
+    if type(d) == 'function' then local ok, v = pcall(d); d = ok and v or nil end
+    if type(d) == 'string' and d ~= '' then return (d:gsub('[\\/]+$', '')) end
+    local root = os.getenv and os.getenv('LOCALAPPDATA')
+    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs') or nil
+end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local SR = rawget(_G, 'stingray')
@@ -51,7 +61,7 @@ local SR = rawget(_G, 'stingray')
 -- The log is what a user attaches to a bug report: whether the engine offers what the option needs, where it
 -- draws, the settings, your seat and tank, and what went wrong. Tester builds add counters and details.
 local LOG_MAIN = {'version', 'status', 'api', 'gui', 'options_menu', 'seat', 'gear', 'speed', 'font', 'input', 'errors', 'last_error'}
-local LOG_TESTER = {'frames', 'drawn', 'panel', 'speed_check', 'tank', 'pick', 'finds', 'input_api'}
+local LOG_TESTER = {'fastest', 'handling_check', 'frames', 'drawn', 'panel', 'speed_check', 'tank', 'pick', 'finds', 'input_api'}
 local notes, test_notes = {}, {}
 local function note(s)
     for _, n in ipairs(notes) do if n == s then return end end
@@ -81,8 +91,8 @@ local function log()
 end
 
 local function logs_path(name)
-    local root = os.getenv and os.getenv('LOCALAPPDATA')
-    return root and root ~= '' and (root .. '\\CowboyBingus\\Helldivers2\\Logs\\' .. name) or nil
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
+    return root and root ~= '' and (root .. '\\' .. name) or nil
 end
 local settings = {sig = 0}             -- the values in use; sig changes with every change (the panel is redrawn)
 for k, v in pairs(SETTINGS) do settings[k] = v end
@@ -101,7 +111,7 @@ rawset(_G, 'ArmoredOverhaulDriverPanelPlace', PLACE)
 local panel_on = true
 local menu_link
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator'}
+    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     hub.groups.driver_panel = {status = S,
@@ -134,14 +144,21 @@ do
     end
     local at = 0
     menu_link = function(frame)
-        if frame < at then return end
-        at = frame + 60
+        if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
+        at = (frame == true and 0 or frame) + 60
         if hub.done.driver_panel then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
         for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
         for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
     end
+end
+
+-- (3.3.0) Bingus Shared Loader v19: the menus are linked as soon as every addon has loaded (after_startup); the
+-- once-a-second look stays for older loaders and for a menu that turns up later
+do
+    local L = rawget(_G, 'CowboyBingusModLoader')
+    if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
 
 -- ---------------------------------------------------------------- engine API (checked once; the option stays off
@@ -945,7 +962,7 @@ end
 -- and smoothed. 1.2.0-1.2.1 showed the game's own speed figure times 3.6, taking it for metres a second, and a user saw
 -- 112 km/h. Without the hull or a clock the game's figure is shown as it is (tester builds log both, to compare).
 local SPEED_EVERY = 0.1          -- (3.1.1 review) seconds (3.1.0: 6 frames, 25 ms at 240 fps)
-local spd = {hull = nil, x = nil, y = nil, z = nil, t = nil, kmh = nil, next = 0, src = nil, check_at = 0}
+local spd = {hull = nil, x = nil, y = nil, z = nil, t = nil, kmh = nil, next = 0, src = nil, check_at = 0, top = {}}
 local clock = {t = 0, n = 0}          -- the update's frame times, added up (if the engine has no game clock)
 local function game_time()
     if A.time_since_launch then
@@ -961,6 +978,94 @@ local function speed_reset() spd.hull, spd.kmh, spd.t, spd.next = nil, nil, nil,
 local function panel_time()
     if clock.n > 0 then return clock.t end
     return S.frames / 60
+end
+-- (Test 9) Handling check (tester builds): checks that the tank settings (power, grip, steering) really change
+-- something. Per tank you drive (vehicle id, the last 6): the Mod Options Menu's handling
+-- multipliers when the tank was first driven (a tank keeps the values it was called in with, so change them before
+-- calling in), the highest rpm, and (Test 12) standard runs on flat ground (hull pitch under 4 deg): the top speed with
+-- its rpm, gear and rpm per km/h (about 105 in top gear), 0-30 km/h from a stop going straight (best, and how many), and
+-- the steady turn on the spot (held 1.5 s); plus the fastest turn anywhere.
+local HC = {list = {}, order = {}, next_text = 0}
+local function hc_mult(g)
+    local st = rawget(_G, g)
+    local p = type(st) == 'table' and st.preset ~= nil and tostring(st.preset) or nil
+    if not p then return 'not installed' end
+    if p:find('^off') then return 'off' end
+    local m = p:match('([%d%.]+) times')
+    return m and ('x' .. m) or '?'
+end
+local function handling_check(seat, hull, kmh, t)
+    local vid = tonumber(seat.vehicle) or 0
+    local r = HC.list[vid]
+    if not r then
+        if #HC.order >= 6 then HC.list[table.remove(HC.order, 1)] = nil end
+        r = {name = (tostring(TT.tank or '?')):match('^(%a+)') or '?', top = 0, flat = 0, max_rpm = 0, yaw = 0, pivot = 0, runs = 0,
+             set = string.format('menu when first driven: power %s, grip %s, steering %s', hc_mult('ArmoredOverhaulPower'),
+                hc_mult('ArmoredOverhaulHandling'), hc_mult('ArmoredOverhaulSteering'))}
+        HC.list[vid] = r; HC.order[#HC.order + 1] = vid
+    end
+    -- (Test 12) the hull's slope and turn rate first: the standard runs only count on flat ground (one sample each in
+    -- round 1 of the isolation test could not tell a setting from the ground it was driven on)
+    local pitch, rate
+    if hull ~= nil and U.world_rotation and Q.forward then
+        local okr, q = pcall(U.world_rotation, hull, 1)
+        local x, y, z
+        if okr and q ~= nil then x, y, z = comps(Q.forward(q)) end
+        if x then
+            if z then pitch = math.abs(math.deg(math.asin(math.max(-1, math.min(1, z))))) end
+            local h = math.atan2(y, x)
+            if r.h and r.ht and t > r.ht and t - r.ht < 0.5 then
+                rate = math.abs(math.deg((h - r.h + math.pi) % (2 * math.pi) - math.pi) / (t - r.ht))
+                r.yr = r.yr and r.yr * 0.5 + rate * 0.5 or rate                       -- (smoothed over two samples)
+                if r.yr > r.yaw and r.yr < 400 then r.yaw = r.yr end
+            end
+            r.h, r.ht = h, t
+        end
+    end
+    local flat = pitch ~= nil and pitch < 4
+    local rpm, gear = tonumber(seat.rpm), tonumber(seat.gear)
+    if rpm and rpm >= 0 and rpm < 100000 and rpm > r.max_rpm then r.max_rpm = rpm end
+    if kmh > r.top + 0.5 then r.top = kmh end
+    if flat and kmh > r.flat + 0.5 then r.flat, r.top_rpm, r.top_gear = kmh, rpm, gear end
+    -- 0-30 km/h: from a stop, straight (turning under 15 deg/s) on flat ground the whole way; else counted as rough
+    if kmh < 2 then r.t0, r.rough = t, not flat
+    elseif r.t0 then
+        if not flat or (r.yr and r.yr > 15) then r.rough = true end
+        if kmh >= 30 then
+            local a = t - r.t0
+            if r.rough then if not r.acc_any or a < r.acc_any then r.acc_any = a end
+            else
+                r.runs = r.runs + 1
+                if not r.acc or a < r.acc then r.acc = a end
+            end
+            r.t0 = nil
+        end
+    end
+    -- turn on the spot: under 4 km/h, turning over 10 deg/s for 1.5 s or more; the rate is the last second's average
+    if kmh < 4 and r.yr and r.yr > 10 and r.yr < 400 then
+        if not r.pv then r.pv = {} end
+        local pv = r.pv
+        pv[#pv + 1] = t; pv[#pv + 1] = r.yr
+        if t - pv[1] >= 1.5 then
+            local sum, n = 0, 0
+            for i = 1, #pv, 2 do if pv[i] >= t - 1 then sum, n = sum + pv[i + 1], n + 1 end end
+            if n > 0 and sum / n > r.pivot then r.pivot = sum / n end
+            if #pv > 120 then local k = {}; for i = #pv - 59, #pv do k[#k + 1] = pv[i] end; r.pv = k end
+        end
+    else r.pv = nil end
+    if t < HC.next_text then return end
+    HC.next_text = t + 1
+    local b = {}
+    for _, id in ipairs(HC.order) do
+        local e = HC.list[id]
+        b[#b + 1] = string.format('%s 0x%X (%s): flat top %.0f km/h at %s rpm in gear %s (%s rpm per km/h), any top %.0f km/h, highest %.0f rpm, ' ..
+            '0-30 km/h straight on flat %s (%d runs; other ground %s), turn on the spot %s, fastest turn %.0f deg/s',
+            e.name, id, e.set, e.flat, e.top_rpm and string.format('%.0f', e.top_rpm) or '?', e.top_gear and tostring(e.top_gear + 1) or '?',
+            (e.top_rpm and e.flat > 10) and string.format('%.0f', e.top_rpm / e.flat) or '?', e.top,
+            e.max_rpm, e.acc and string.format('%.1f s', e.acc) or 'not yet', e.runs, e.acc_any and string.format('%.1f s', e.acc_any) or '-',
+            e.pivot > 0 and string.format('%.0f deg/s', e.pivot) or 'not yet', e.yaw)
+    end
+    S.handling_check = table.concat(b, ' | ')
 end
 local function measure_speed(world, seat, key, now)
     if now < spd.next then return spd.kmh end
@@ -988,9 +1093,19 @@ local function measure_speed(world, seat, key, now)
         local v = sqrt((x - spd.x) ^ 2 + (y - spd.y) ^ 2 + (z - spd.z) ^ 2) / dt * 3.6
         if dt < 1 and v < 250 then                       -- (else the tank was moved, or the game paused: skipped)
             spd.kmh = spd.kmh and spd.kmh * 0.4 + v * 0.6 or v
+            -- (3.3.0) the fastest smoothed speed this session, per tank (review: Tester log only; it was for checking the
+            -- dropped Tank Top Speed)
+            local who = TESTER and ((TT.tank or ''):match('^(%a+)') or '?')
+            if who and spd.kmh > (spd.top[who] or 0) + 0.5 then
+                spd.top[who] = spd.kmh
+                local t = {}
+                for k, x in pairs(spd.top) do t[#t + 1] = string.format('%s %.0f km/h', k, x) end
+                table.sort(t); S.fastest = table.concat(t, ', ')
+            end
         end
     end
     spd.hull, spd.x, spd.y, spd.z, spd.t = hull, x, y, z, t
+    if TESTER and spd.kmh then pcall(handling_check, seat, hull, spd.kmh, t) end      -- (Test 9)
     -- (tester builds) the game's own figure next to the measured speed, while moving
     if TESTER and spd.kmh and spd.kmh > 5 and S.frames >= spd.check_at and tonumber(seat.speed) then
         spd.check_at = S.frames + 60
