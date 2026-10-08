@@ -1,4 +1,4 @@
-"""Armored Overhaul 3.2 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
+"""Armored Overhaul 3.3 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
 gallery photo, the Nexus header and the 2:1 GitHub social picture.
   python3 art3_compose.py [square] [wide] [header] [social]   (needs R/sq.png, R/mask_sq.png, R/mist_sq_0001.png, the same for wd and hd)
 Outputs: thumbnail_1254.png, thumbnail_512.png (Arsenal), gallery_1920x1080.png, clean_square.png (no text, for icons)."""
@@ -10,15 +10,15 @@ ART = '.'
 R = '../final'
 FONT = ART + '/Oswald-VF.ttf'
 YELLOW = (255, 196, 0)
-VERSION = '3.2'
+VERSION = '3.3'
 TAG1, TAG2 = 'DRIVE  \u2022  FIGHT  \u2022  RELOAD', 'COMMAND YOUR ARMOR'
 VEHICLES = 'TD-220 BASTION  \u2022  TD-110 MAELSTROM  \u2022  M-102 FRV'
 FEATURES_SQUARE = ['TANK POWER  •  GRIP  •  STEERING  •  SUSPENSION',
                    '360° MBT TURRETS  •  TRAVERSE  •  ELEVATION  •  AIM RANGE',
                    'AUTOLOADER  •  GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA',
-                   'FRV STABILITY  •  VEHICLE INDICATOR  •  MOD OPTIONS MENU']   # (3.0) Arsenal option order, then the menu
+                   'FRV STABILITY  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT  •  MOD OPTIONS MENU']   # (3.0) Arsenal option order, then the menu
 FEATURES = ['TANK POWER  •  GRIP  •  STEERING  •  SUSPENSION  •  360° MBT TURRETS  •  TRAVERSE  •  ELEVATION  •  AIM RANGE',
-            'AUTOLOADER  •  GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA  •  FRV STABILITY  •  VEHICLE INDICATOR  •  MOD OPTIONS MENU']
+            'AUTOLOADER  •  GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA  •  FRV STABILITY  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT  •  MOD OPTIONS MENU']
 
 
 def font(size, weight):
@@ -240,7 +240,7 @@ def header():
     ff = font(19, 500)
     for i, line in enumerate(['POWER  \u2022  GRIP  \u2022  STEERING  \u2022  SUSPENSION  \u2022  360\u00b0 MBT TURRETS',
                               'TRAVERSE  \u2022  ELEVATION  \u2022  AIM RANGE  \u2022  AUTOLOADER  \u2022  GUNNER DRIVE  \u2022  DRIVER PANEL',
-                              'GUNNER CAMERA  \u2022  FRV STABILITY  \u2022  VEHICLE INDICATOR  \u2022  MOD OPTIONS MENU']):
+                              'GUNNER CAMERA  \u2022  FRV STABILITY  \u2022  VEHICLE INDICATOR  \u2022  VEHICLE LOADOUT  \u2022  MOD OPTIONS MENU']):
         text(d, (68, base + 26 + cap(fs) + 32 + i * 28), line, ff, (215, 215, 215), anchor='ls')
     d.rectangle([46, 40, 150, 92], fill=YELLOW)
     text(d, (98, 66), VERSION, font(46, 700), (14, 14, 16), anchor='mm')
