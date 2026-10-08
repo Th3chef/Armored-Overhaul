@@ -1,6 +1,6 @@
-# Armored Overhaul 3.2 art
+# Armored Overhaul 3.3 art
 
-The thumbnail, gallery photo, header, social picture and the "What's in 3.2" and option pictures in `media/`.
+The thumbnail, gallery photo, header, social picture and the "What's in 3.3" and option pictures in `media/`.
 
 1. **Game models.** Build [Filediver](https://github.com/xypwn/filediver) (the commit in `filediver_commit.txt`) with
    `filediver_art.diff` applied: game data and materials that aren't in the extracted packages are skipped instead of
