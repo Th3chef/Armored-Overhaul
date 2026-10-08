@@ -20,7 +20,7 @@ Per skinned mesh (every visual and shadow LOD that has a skeleton map):
   - the cut is closed by a deck (on the hull body bone) and a turret floor (on the mount); the mesh's bounds are grown
     for the turned turret.
 The smallest shadow LOD has no such slot and is left as the game has it (a turret shadow that doesn't turn, far away)."""
-import struct, sys, math, collections
+import struct, sys, math, collections, os
 sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from unitlib import Unit
 
@@ -117,6 +117,30 @@ def find_panel(U, mi, roof):
             'ref_area': abs(area(ref))}
 
 
+def deck_look(U, mi, roof):
+    """(3.3.0 Test 5) How the game's own deck plating is textured, for the caps: uv1 (the camo pattern's mapping) is a
+    flat projection of x/y on the up-facing deck, uv2 (where the material's wear/color table is read) and the vertex color
+    are the same all over it. Fitted from the mesh's own up-facing vertices within 20 cm under the roof line. Before,
+    the caps copied one turret-wall vertex's uv1/uv2/color everywhere: one flat camo color and a wall's shading, which
+    showed once the turret was moved off it (it didn't look right with the turret centered)."""
+    import numpy as np
+    M = U.meshes[mi]; li = M.layout
+    up = []
+    for G in M.groups:
+        for k in set(U.indices(li, G.io, G.ni)):
+            d = U.decode(li, U.vertex(li, G.vo + k))
+            if roof - 0.2 < d['pos'][2] <= roof + EPS and oct_normal(d['normal'])[2] > 0.99: up.append(d)
+    if len(up) < 50: return None
+    out = {'n': len(up), 'err': 0.0}                 # (lower LODs may lack some of these: only what the layout has)
+    if 'uv1' in up[0]:
+        A = np.array([[d['pos'][0], d['pos'][1], 1] for d in up])
+        out['uv1'] = np.linalg.lstsq(A, np.array([d['uv1'] for d in up]), rcond=None)[0]
+        out['err'] = float(np.percentile(np.abs(A @ out['uv1'] - np.array([d['uv1'] for d in up])), 90))
+    if 'uv2' in up[0]: out['uv2'] = tuple(float(x) for x in np.median(np.array([d['uv2'] for d in up]), 0))
+    if 'color' in up[0]: out['color'] = collections.Counter(d['color'] for d in up).most_common(1)[0][0]
+    return out
+
+
 def cap_outline(V, G0, idx_all, roof):
     """the hull's outline where it crosses the roof line, filled (gaps up to 30 cm in the walls bridged)"""
     from shapely.geometry import LineString, Polygon
@@ -143,7 +167,7 @@ def cap_outline(V, G0, idx_all, roof):
     return best
 
 
-def add_cap(U, li, outline, z, up, slot_r, tpl, panel, new_v, new_t, base):
+def add_cap(U, li, outline, z, up, slot_r, tpl, panel, new_v, new_t, base, look=None, plain=False):
     """Fill `outline` at height z, tiled with the deck panel's texture; up: facing up (else down). Appends to
     new_v / new_t (group-relative indices from base). Returns the triangle count."""
     import shapely
@@ -151,6 +175,10 @@ def add_cap(U, li, outline, z, up, slot_r, tpl, panel, new_v, new_t, base):
     import numpy as np
     x0, y0, x1, y1 = panel['rect']; w, h = x1 - x0, y1 - y0
     bx0, by0, bx1, by1 = outline.bounds
+    if plain:          # (Test 6) one piece, the panel's middle color all over (few vertices: under the copied deck)
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        outline = outline.simplify(0.003, preserve_topology=True)       # (3 mm: hidden under the walls)
+        x0, y0, w, h = bx0 - 1, by0 - 1, bx1 - bx0 + 2, by1 - by0 + 2
     want = panel['up_sign'] if up else -panel['up_sign']
     n = 0; cache = {}
     for i in range(math.floor((bx0 - x0) / w), math.ceil((bx1 - x0) / w) + 1):
@@ -170,15 +198,141 @@ def add_cap(U, li, outline, z, up, slot_r, tpl, panel, new_v, new_t, base):
                     for (x, y) in c:
                         key = (round(x, 5), round(y, 5), i, j)
                         if key not in cache:
-                            uv = np.array([x - i * w, y - j * h, 1]) @ panel['map']
+                            uv = np.array([cx, cy, 1]) @ panel['map'] if plain else np.array([x - i * w, y - j * h, 1]) @ panel['map']
                             nv = dict(tpl)
                             nv['pos'] = (x, y, z); nv['uv0'] = (float(uv[0]), float(uv[1]))
                             nv['normal'] = panel['up_raw'] if up else panel['down_raw']
+                            if look:                     # (3.3.0 Test 5) the deck's own camo mapping and shading
+                                if 'uv1' in look and 'uv1' in nv: nv['uv1'] = tuple(float(q) for q in np.array([x, y, 1]) @ look['uv1'])
+                                for k in ('uv2', 'color'):
+                                    if k in look and k in nv: nv[k] = look[k]
                             nv['bidx'] = bytes([slot_r, 0, 0, 0]); nv['bw'] = struct.pack('<I', 0xC00003FF)
                             cache[key] = base + len(new_v); new_v.append(U.encode(li, nv))
                         ids.append(cache[key])
                     new_t.append(tuple(ids)); n += 1
     return n
+
+
+DECK_STRIP = 2.4          # (Test 6) m of the hull's own front deck copied per band
+DECK_UNDER = 0.004        # (Test 6) the tiled panel fill sits this much under the copied deck (shows only in its gaps)
+
+
+def deck_source(U, mi, outline, roof):
+    """(Test 6) The up-facing deck triangles (group 0) of mesh `mi` in the strip just in front of the cut."""
+    M = U.meshes[mi]; li = M.layout; G0 = M.groups[0]
+    idx_all = U.indices(li, G0.io, G0.ni)
+    s0 = outline.bounds[3] + 0.35
+    dec = {}
+    def V(k):
+        if k not in dec: dec[k] = U.decode(li, U.vertex(li, G0.vo + k))
+        return dec[k]
+    src = []
+    for t in range(0, len(idx_all) - 2, 3):
+        tri = idx_all[t:t + 3]
+        if tri[0] == tri[1] or tri[1] == tri[2] or tri[0] == tri[2]: continue
+        ds = [V(k) for k in tri]
+        P = [d['pos'] for d in ds]
+        if max(p[2] for p in P) > roof + EPS or min(p[2] for p in P) < roof - 0.25: continue
+        if max(p[1] for p in P) < s0 or min(p[1] for p in P) > s0 + DECK_STRIP: continue
+        (ax, ay, az), (bx, by, bz), (cx, cy, cz) = P
+        nz = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay)
+        ux, uy, uz, vx, vy, vz = bx - ax, by - ay, bz - az, cx - ax, cy - ay, cz - az
+        n = ((uy * vz - uz * vy) ** 2 + (uz * vx - ux * vz) ** 2 + nz ** 2) ** 0.5
+        if n < 1e-9 or nz / n < 0.9: continue           # up-facing only (plates, not the walls of their details)
+        # (Test 7) the hull material shows geometry by uv0's whole-number tile: 0 always, odd tiles = intact panels, the
+        # even tile above each = its damaged copy in the same place (hidden until that panel is hit), 13-18 the roof
+        # boxes. Test 6 copied both shells of every panel on top of each other (they flickered) and,
+        # highest first, could keep a hidden damaged shell over the intact one. Only always-drawn and intact pieces are
+        # copied, moved to tile 0 (the textures use the fraction), so the copy is always drawn and never doubled.
+        tiles = {(math.floor(d['uv0'][0]), math.floor(1 - d['uv0'][1])) for d in ds}
+        if len(tiles) != 1: continue
+        tu, tv = tiles.pop()
+        if tv != 0 or not (tu == 0 or (tu % 2 == 1 and not 13 <= tu <= 18)): continue
+        src.append((ds, tu, tv))
+    return src
+
+
+def add_deck_copy(U, li, src, outline, z, up_sign, slot_r, tpl, look, new_v, new_t, base, roof):
+    """(Test 6) Covers `outline` with the hull's own deck plating: the up-facing deck triangles of the strip just in front
+    of the cut (DECK_STRIP long, within 25 cm under the roof line, group 0's material) are copied back over the cut in
+    bands, flattened to z, clipped to the outline. Every attribute is interpolated from the source triangle (uv0 plate
+    art, uv2, color, normal) except uv1, the camo pattern's flat projection, which is worked out at the new place so the
+    pattern runs on. Test 5: the texture didn't match the hull (the tiled 2 m2 panel showed grilles and
+    seams the hull's deck doesn't have). Returns (triangles, area covered)."""
+    import shapely
+    import numpy as np
+    from shapely.geometry import Polygon, box
+    from shapely.ops import unary_union
+    bx0, by0, bx1, by1 = outline.bounds
+    s0 = by1 + 0.35                                      # the source strip: [s0, s0 + DECK_STRIP]
+    if not src: return 0, None
+    # (Test 7) highest first, and each piece minus what is already covered: no two copied pieces overlap once flattened
+    # (Test 6 copied stacked plates on top of each other: they fought for the same depth and flickered, seen in a screenshot)
+    src = sorted(src, key=lambda e: -max(d['pos'][2] for d in e[0]))
+    from shapely.strtree import STRtree
+    n_tris = 0; covered = []; cache = {}
+    keys = [k for k in ('uv0', 'uv2') if k in tpl]
+    j = 0
+    while by1 - j * DECK_STRIP > by0 - 1e-6:
+        top = by1 - j * DECK_STRIP
+        band = outline.intersection(box(bx0 - 1, top - DECK_STRIP, bx1 + 1, top))
+        shift = s0 + DECK_STRIP - top                    # target y + shift = source y
+        j += 1
+        if band.is_empty: continue
+        taken = []                                       # this band's accepted pieces (checked through a grid)
+        grid = {}
+        def cells(g):
+            x0, y0, x1, y1 = g.bounds
+            return [(i, k) for i in range(int(math.floor(x0 / 0.25)), int(math.floor(x1 / 0.25)) + 1)
+                    for k in range(int(math.floor(y0 / 0.25)), int(math.floor(y1 / 0.25)) + 1)]
+        for sid, (ds, tu, tv) in enumerate(src):
+            P = [d['pos'] for d in ds]
+            tp = Polygon([(p[0], p[1] - shift) for p in P])
+            if not tp.is_valid or tp.area < 1e-8: continue
+            piece = band.intersection(tp)
+            if piece.is_empty or piece.area < 1e-8: continue
+            near = {id(g): g for c in cells(piece) for g in grid.get(c, ())}
+            for g in near.values():
+                if piece.intersects(g): piece = piece.difference(g)
+                if piece.is_empty: break
+            if piece.is_empty or piece.area < 1e-6: continue
+            piece = shapely.set_precision(piece, 1e-6)
+            if piece.is_empty: continue
+            for c in cells(piece): grid.setdefault(c, []).append(piece)
+            (ax, ay, _), (bx, by, _), (cx, cy, _) = P
+            det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+            def bary(x, y):
+                y = y + shift
+                l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / det
+                l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / det
+                return l1, l2, 1 - l1 - l2
+            for poly in getattr(piece, 'geoms', [piece]):
+                if poly.geom_type != 'Polygon' or poly.area < 1e-8: continue
+                covered.append(poly)
+                for tri in shapely.constrained_delaunay_triangles(poly).geoms:
+                    if not poly.buffer(1e-6).contains(tri.centroid): continue
+                    c = list(tri.exterior.coords)[:3]
+                    sgn = (c[1][0] - c[0][0]) * (c[2][1] - c[0][1]) - (c[2][0] - c[0][0]) * (c[1][1] - c[0][1])
+                    if abs(sgn) < 1e-10: continue
+                    if (sgn > 0) != (up_sign > 0): c = [c[0], c[2], c[1]]
+                    ids = []
+                    for (x, y) in c:
+                        key = (sid, j, round(x, 5), round(y, 5))   # (shared by the triangles of one clipped piece)
+                        if key in cache: ids.append(cache[key]); continue
+                        w = bary(x, y)
+                        nv = dict(tpl)
+                        nv['pos'] = (x, y, z)
+                        for k in keys:
+                            if k not in ds[0]: continue          # (a source LOD without it: the template's)
+                            nv[k] = tuple(sum(w[i] * ds[i][k][q] for i in range(3)) for q in range(len(ds[0][k])))
+                            if k == 'uv0': nv[k] = (nv[k][0] - tu, nv[k][1] + tv)       # (Test 7) to tile 0
+                        if 'color' in tpl and 'color' in ds[0]: nv['color'] = ds[max(range(3), key=lambda i: w[i])]['color']
+                        nv['normal'] = ds[max(range(3), key=lambda i: w[i])]['normal']
+                        if look and 'uv1' in look and 'uv1' in nv: nv['uv1'] = tuple(float(q) for q in np.array([x, y, 1]) @ look['uv1'])
+                        nv['bidx'] = bytes([slot_r, 0, 0, 0]); nv['bw'] = struct.pack('<I', 0xC00003FF)
+                        cache[key] = base + len(new_v); ids.append(cache[key]); new_v.append(U.encode(li, nv))
+                    new_t.append(tuple(ids)); n_tris += 1
+    return n_tris, unary_union(covered) if covered else None
 
 
 def build(tank, van_b, out_b):
@@ -189,6 +343,8 @@ def build(tank, van_b, out_b):
     lod0 = max((k for k, MM in enumerate(U.meshes) if MM.layout >= 0 and MM.mesh_type not in (0, 256, 258)),
                key=lambda k: sum(g.ni for g in U.meshes[k].groups))
     panel = find_panel(U, lod0, roof)
+    look0 = deck_look(U, lod0, roof)
+    report.append(f'deck look (LOD0): uv1 fitted on {look0["n"]} deck vertices (90% within {look0["err"]:.4f}), uv2 {tuple(round(x, 4) for x in look0["uv2"])}, color {look0["color"].hex()}')
     report.append(f'deck panel: rect {[round(x, 3) for x in panel["rect"]]} at z {panel["z"]:.3f} ({panel["area"]:.2f} m2), up winding {panel["up_sign"]}')
     for mi, M in enumerate(U.meshes):
         if M.layout < 0 or M.mesh_type in (0, 256, 258): continue
@@ -301,8 +457,47 @@ def build(tank, van_b, out_b):
         tpl = V(next(iter(above_verts)))
         boss_r = rl.index(boss_slot)
         outline = cap_outline(V, G0, idx_all, roof)
-        deck_tris = add_cap(U, li, outline, roof - CAP_GAP, True, boss_r, tpl, panel, new_v, new_t, G0.nv)
-        floor_tris = add_cap(U, li, outline, roof + CAP_GAP, False, r, tpl, panel, new_v, new_t, G0.nv)
+        look = deck_look(U, mi, roof) or look0          # (3.3.0 Test 5) this LOD's own deck look (else LOD0's)
+        # (Test 7) the game's own flat surfaces just under the roof line inside the cut (where the casemate stood on the
+        # hull) would lie a few mm under the new deck and flicker against it: they are hidden by it anyway, so dropped
+        from shapely.geometry import Point
+        inner = outline.buffer(-0.01); ib = bytearray(U.ibuf[li]); dropped = 0
+        for t in range(0, len(idx_all) - 2, 3):
+            tri = idx_all[t:t + 3]
+            if tri[0] == tri[1] or tri[1] == tri[2] or tri[0] == tri[2]: continue
+            P = [V(G0.vo + k)['pos'] for k in tri]
+            if os.environ.get('NODROP'): break
+            if max(p[2] for p in P) > roof + EPS or min(p[2] for p in P) < roof - 0.015: continue
+            if not inner.contains(Point(sum(p[0] for p in P) / 3, sum(p[1] for p in P) / 3)): continue
+            for k in range(3): put_index(G0.io + t + k, tri[0])
+            dropped += 1
+        U.ibuf[li] = bytes(ib)
+        report.append(f'mesh {mi}: {dropped} flat hull triangles under the new deck dropped')
+        report.append(f'mesh {mi}: deck look from {"its own " + str(look["n"]) + " deck vertices" if look is not look0 else "LOD0"}: {sorted(k for k in look if k in ("uv1", "uv2", "color"))}')
+        floor_tris = add_cap(U, li, outline, roof + CAP_GAP, False, r, tpl, panel, new_v, new_t, G0.nv, look, plain=True)
+        # (Test 6) the hull's own deck plating copied over the cut, first; then (Test 7) a plain fill only where the copy
+        # left gaps (2 mm over the copy's edges, 4 mm under it), so nothing else lies under the copy to flicker against.
+        # A LOD with 16-bit indices that has no room for its own deck as the source uses the next coarser LOD's
+        # (same mesh space and texture layout: only its plate art and uv2 are taken).
+        nv0, nt0 = len(new_v), len(new_t)
+        cands = [mi] + sorted((k for k, MM in enumerate(U.meshes) if MM.layout >= 0 and MM.mesh_type == M.mesh_type
+                               and sum(g.nv for g in MM.groups) < sum(g.nv for g in M.groups)),
+                              key=lambda k: -sum(g.nv for g in U.meshes[k].groups))
+        done = None
+        for src_mi in cands:
+            copy_tris, copy_geom = add_deck_copy(U, li, deck_source(U, src_mi, outline, roof), outline, roof - CAP_GAP,
+                                                 panel['up_sign'], boss_r, tpl, look, new_v, new_t, G0.nv, roof)
+            gaps = outline if copy_geom is None else outline.difference(copy_geom.buffer(-0.002))
+            deck_tris = add_cap(U, li, gaps, roof - CAP_GAP - DECK_UNDER, True, boss_r, tpl, panel, new_v, new_t, G0.nv, look, plain=True) if not gaps.is_empty else 0
+            if L.isz == 2 and G0.nv + len(new_v) > 65535:
+                report.append(f'mesh {mi}: hull deck copy from mesh {src_mi} needs {len(new_v) - nv0} vertices, {65535 - G0.nv - nv0} left (16-bit indices)')
+                del new_v[nv0:]; del new_t[nt0:]
+                continue
+            done = src_mi; copy_area = copy_geom.area if copy_geom is not None else 0.0; break
+        if done is None:
+            deck_tris = add_cap(U, li, outline, roof - CAP_GAP, True, boss_r, tpl, panel, new_v, new_t, G0.nv, look)
+        if done is None: report.append(f'mesh {mi}: no deck copy fits: tiled fill kept')
+        else: report.append(f'mesh {mi}: hull deck copied over the cut (from mesh {done}): {copy_tris} triangles, {len(new_v) - nv0} vertices, {copy_area:.2f} of {outline.area:.2f} m2')
         plates, tplates = deck_tris, floor_tris
         U.add_to_group(mi, 0, new_v, new_t, group_relative=True)
         # bounds: the turret turning round its axis
