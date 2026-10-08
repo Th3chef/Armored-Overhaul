@@ -1,7 +1,7 @@
-"""Armored Overhaul 3.2 - builds the Arsenal / HD2 Mod Manager zip from this folder.
+"""Armored Overhaul 3.3 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-  python tools/unpack_release.py Armored-Overhaul-3.2.0.zip     (once: the game-derived parts, see below)
-  python build.py [--check Armored-Overhaul-3.2.0.zip]
+  python tools/unpack_release.py Armored-Overhaul-3.3.0.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.3.0.zip]
 
 - lua/<folder>.lua: each option folder's Lua addon, as shipped (DERIVED folders are made from another folder's file). Its first line names the addon
   ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
@@ -27,7 +27,7 @@ LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV G
                'Elevation Very Fast', 'Aim Range Wide', 'Aim Range Wider', 'Aim Range Widest', 'Grip Moderate',
                'Grip Strong', 'Grip Maximum', 'Steering Responsive', 'Steering Quick', 'Steering Sharp', 'Power Strong',
                'Power Stronger', 'Power Strongest', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
-               'Turret Indicator']
+               'Turret Indicator', 'Vehicle Loadout']
 # (3.1.0 Test 26) folders made from another folder's Lua: the MBT Turrets 180 choice is the MBT Turrets addon with one line
 # more (its flag asks the turret core for 90 degrees each side), so the two can't drift apart
 DERIVED = {'MBT Turrets 180': ('MBT Turrets', b'o.mbt = true\n',
@@ -45,7 +45,7 @@ IMAGES = ['tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_str
           'sub/aim_range_wider', 'sub/aim_range_widest', 'autoloader', 'gunner_drive', 'sub/gunner_drive_tanks',
           'sub/gunner_drive_both', 'driver_panel', 'gunner_camera', 'sub/camera_close', 'sub/camera_far', 'sub/camera_farther',
           'sub/camera_farthest', 'frv_gunner_drive', 'frv_stability', 'sub/frv_mild', 'sub/frv_stable', 'sub/frv_planted',
-          'turret_indicator']
+          'turret_indicator', 'vehicle_loadout']
 FIXED_TIME = (2026, 1, 1, 0, 0, 0)
 
 

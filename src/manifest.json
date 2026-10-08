@@ -1,9 +1,9 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.2.0",
+  "Name": "Armored Overhaul 3.3.0",
   "IconPath": "thumbnail.png",
-  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank power, grip, steering and suspension; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; and a vehicle indicator. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader.",
+  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank power, grip, steering and suspension; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
   "Options": [
     {
       "Name": "Tank Power",
@@ -123,7 +123,7 @@
     },
     {
       "Name": "Tank MBT Turrets",
-      "Description": "The Bastion and Maelstrom turrets turn like a main battle tank's: all the way round, or half way. The Maelstrom's missile pods and smoke launchers turn with it. The turret wears your camo and shows damage like the rest of the tank. Only you see the turning turrets.",
+      "Description": "The Bastion and Maelstrom turrets turn like a main battle tank's: all the way round, or half way. The Maelstrom's missile pods and smoke launchers turn with it. The turret sits where the game has it; Tank Turret Position in the Mod Options Menu can center it on the hull. The turret wears your camo and shows damage like the rest of the tank. Only you see the turning turrets.",
       "Image": "options/mbt_turrets.png",
       "SubOptions": [
         {
@@ -261,7 +261,7 @@
     },
     {
       "Name": "Gunner Drive",
-      "Description": "Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake and the gun works as normal. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal, and getting out while it rolls brakes it to a stop. With the Mod Bindings Menu you can set your own keys for all of these (controls, tab MODS). Pick which vehicles.",
+      "Description": "Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake and the gun works as normal. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal, and getting out while it rolls brakes it to a stop. With the Mod Bindings Menu you can set your own keys for all of these (controls, tab MODS); a key set there replaces the built-in one. Pick which vehicles.",
       "Image": "options/gunner_drive.png",
       "SubOptions": [
         {
@@ -385,6 +385,14 @@
         "Tank Core",
         "Turret Indicator",
         "Turret Skull"
+      ]
+    },
+    {
+      "Name": "Vehicle Loadout",
+      "Description": "Pick more than one tank, exosuit or FRV in your stratagem loadout: the game normally puts a second one in the first one's slot. Can be turned off in game with the Mod Options Menu.",
+      "Image": "options/vehicle_loadout.png",
+      "Include": [
+        "Vehicle Loadout"
       ]
     }
   ]
