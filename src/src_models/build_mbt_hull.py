@@ -19,16 +19,29 @@ Per skinned mesh (every visual and shadow LOD that has a skeleton map):
     above on the mount and the part below on the vertices' own bones (the original triangle is made degenerate);
   - the cut is closed by a deck (on the hull body bone) and a turret floor (on the mount); the mesh's bounds are grown
     for the turned turret.
-The smallest shadow LOD has no such slot and is left as the game has it (a turret shadow that doesn't turn, far away)."""
+The smallest shadow LOD has no such slot and is left as the game has it (a turret shadow that doesn't turn, far away).
+(3.4.0) The turret's front arms lean inward (no cut-aways on their inner side: the gun no longer swings inside the
+turret), and the deck copied over the old turret spot leaves out the copied strip's hatch."""
 import struct, sys, math, collections, os
 sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from unitlib import Unit
 
 TANKS = {
-    # roof line in the hull meshes' own space; the second gun mount's world position; the hull body bone ('boss')
-    'bastion': {'roof': 2.24, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162)},
-    'maelstrom': {'roof': 0.5625, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162)},
+    # roof line in the hull meshes' own space; the second gun mount's world position; the hull body bone ('boss');
+    # (3.4.0) arms: where the turret's two front arms start leaning (mesh y) and by how much (m of x per m of y)
+    'bastion': {'roof': 2.24, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162), 'arms': (-0.75, 0.40)},
+    'maelstrom': {'roof': 0.5625, 'mount': (0.0, -1.959, 2.525), 'boss_world': (0.0, 0.0, 1.162), 'arms': (-1.0, 0.47)},
 }
+# (3.4.0) A user's idea: with MBT Turrets the gun no longer swings inside the turret, so the cut-aways on the inside of
+# the turret's front arms (left by the game for the barrel's arc) aren't needed. Each arm's front is leaned inward, more
+# the further forward: the inner edge comes out straight and the cut-away moves to the outer corner, so the turned
+# turret sticks out less past the hull. A shear, not a mirror: the plates' art isn't flipped, nothing is turned inside
+# out, and the arm stays joined to the turret behind the bend. Normals are sheared with it (inverse transpose).
+ARM_MIN = 0.3              # m from the turret's middle: only the arms lean (nothing of the turret is closer there)
+# (3.4.0) The deck copy (Test 6-7) brought the hatch of the copied strip along: on the old turret spot it showed twice.
+# Where the strip has it (x, and y from the strip's start), each copy takes the plain plating at the same place on the
+# other side of the strip instead (the strip is the same left and right there).
+HATCH = (-1.49, -0.47, 0.76, 1.76)
 MOUNT_BONE, BOSS_BONE = 159, 46            # 0-based node indices in both hulls (b7e9b43d, 9b115563)
 PREFER = [99, 53, 98, 52, 96, 51]          # side cases l_box_0, r_box_0, l_box_1, r_box_1, l_box_2, r_box_2
 EPS = 1e-5
@@ -71,6 +84,21 @@ def weights(bw):
 
 
 CAP_GAP = 0.003                            # the deck sits this far under the roof line, the turret floor this far over
+# (3.4.0) The turret ring. The hull's deck in front of the game's turret lies 11-15 cm under the roof line, so with the
+# turret moved forward (Turret Position) its front arms showed a gap over it (the tester: "the turret is still floating a
+# bit"). Test 11 dropped the walls' cut edges straight down SKIRT m (texture stretched): "looks better, but it doesnt
+# look natural, looks like its clipping into the hull". the tester picked a recessed ring (Test 15): the walls end at the roof
+# line as in the game, and under them a plain band runs RING_IN m inside the walls, from the turret floor down SKIRT
+# m, in the deck plating's own color (and camo mapping), so it reads as the ring the turret sits on. It follows the
+# roof-line outline (the turret floor's) shrunk RING_IN and smoothed, so it is one clean band. At the game's place
+# and angle it is behind the hull's walls and under the deck (hidden).
+# (Test 19, the tester: "the ring under the turret of the tanks kind of clips into the taller side of the hull") The hull's
+# deck in front of the old turret has raised parts near its sides (the Maelstrom's 5 cm under the roof line at 1.5-2 m
+# out), and the band under the whole turret outline (5 m wide, the hull's front 4.4-4.9 m) poked out past the hull's
+# sides as the turret turned. the tester picked the ring cut to a circle of RING_R round the turret's axis (2.0 m; 1.4 m, a
+# real turret ring, left the arms floating again): it stays off the hull's sides at every angle, and only the outer
+# edges and arm tips overhang it.
+SKIRT, RING_IN, RING_R = 0.16, 0.05, 2.0
 
 
 def oct_normal(raw):
@@ -81,6 +109,56 @@ def oct_normal(raw):
     if z < 0: x, y = (1 - abs(y)) * math.copysign(1, x), (1 - abs(x)) * math.copysign(1, y)
     n = math.sqrt(x * x + y * y + z * z) or 1
     return x / n, y / n, z / n
+
+
+def oct_pack(n, raw):
+    """n (a unit vector) packed as the game packs normals: 10+10 bits octahedral, the upper 12 bits kept from raw"""
+    x, y, z = n
+    s = abs(x) + abs(y) + abs(z)
+    x, y, z = x / s, y / s, z / s
+    if z < 0: x, y = (1 - abs(y)) * math.copysign(1, x), (1 - abs(x)) * math.copysign(1, y)
+    qx = max(0, min(1023, round((x + 1) / 2 * 1023))); qy = max(0, min(1023, round((y + 1) / 2 * 1023)))
+    v = struct.unpack('<I', raw)[0]
+    return struct.pack('<I', (v & ~0xFFFFF) | qx | (qy << 10))
+
+
+def lean_arm(d, x0, arms):
+    """(3.4.0) a turret vertex (decoded) with the front arms leaned inward; None when it isn't on an arm's front"""
+    yc, k = arms
+    x, y, z = d['pos']
+    if y <= yc or abs(x - x0) < ARM_MIN: return None
+    s = 1 if x < x0 else -1                    # left arm moves right, right arm left
+    nd = dict(d)
+    nd['pos'] = (x + s * k * (y - yc), y, z)
+    if 'normal' in d:
+        nx, ny, nz = oct_normal(d['normal'])
+        ny -= s * k * nx
+        L = math.sqrt(nx * nx + ny * ny + nz * nz) or 1
+        nd['normal'] = oct_pack((nx / L, ny / L, nz / L), d['normal'])
+    return nd
+
+
+def skin_shadow(U, mi, sm, boss_r):
+    """(3.4.0) An unskinned shadow mesh (the Bastion's closest shadow, mesh 3) made skinned, so its turret part can turn
+    and move with the turret like the other LODs: bone weights and indices are added to its own layout (the same items
+    the skinned shadow layout has), every vertex 100% on the hull body (it never moved anything else before), and it
+    uses skeleton map `sm` (the next shadow LOD's, whose turret slot is pointed at the mount). Before, its turret shadow
+    stayed where the game's turret was and never turned (seen in game with the turret moved to the middle)."""
+    M = U.meshes[mi]; li = M.layout
+    assert [k for k, MM in enumerate(U.meshes) if MM.layout == li] == [mi], 'layout shared'
+    L = U.layouts[li]
+    n = struct.unpack_from('<I', U.main, L.off + 328)[0]
+    assert n + 2 <= 16 and L.item(6) is None and L.item(7) is None
+    struct.pack_into('<5I', U.main, L.off + 8 + 20 * n, 7, 29, 0, 0, 0)          # bone weights (10:10:10:2)
+    struct.pack_into('<5I', U.main, L.off + 8 + 20 * (n + 1), 6, 28, 0, 0, 0)    # bone indices (4 x uint8)
+    struct.pack_into('<I', U.main, L.off + 328, n + 2)
+    old = L.stride
+    L.items += [(7, 29, 0, old), (6, 28, 0, old + 4)]
+    L.stride = old + 8
+    one = struct.pack('<I', 0xC00003FF) + bytes([boss_r, 0, 0, 0])
+    v = U.vbuf[li]
+    U.vbuf[li] = b''.join(v[k:k + old] + one for k in range(0, len(v) // old * old, old))
+    struct.pack_into('<i', U.main, M.off + 56, sm)
 
 
 def find_panel(U, mi, roof):
@@ -213,6 +291,55 @@ def add_cap(U, li, outline, z, up, slot_r, tpl, panel, new_v, new_t, base, look=
     return n
 
 
+def add_ring(U, li, outline, roof, slot_r, tpl, panel, look, new_v, new_t, base, shadow, axis):
+    """(Test 15) The turret ring: the roof-line outline (the turret floor's) shrunk RING_IN all round and smoothed, run
+    as an upright band from the turret floor down SKIRT, facing out, in the deck plating's plain color (and the deck's
+    camo mapping and shading). Returns the triangle count; -1 when a 16-bit LOD has no room for it."""
+    import numpy as np
+    from shapely.geometry.polygon import orient
+    if shadow: return 0          # (a shadow LOD: the turret floor's shadow covers the ring's)
+    from shapely.geometry import Point
+    inner = outline.buffer(-RING_IN, join_style=2).intersection(Point(axis[0], axis[1]).buffer(RING_R, 48))
+    inner = inner.simplify(0.01, preserve_topology=True)
+    rings = []
+    for poly in getattr(inner, 'geoms', [inner]):
+        if poly.geom_type != 'Polygon' or poly.area < 0.05: continue
+        pts = list(orient(poly, 1.0).exterior.coords)[:-1]          # counter-clockwise seen from above
+        if len(pts) >= 3: rings.append(pts)
+    need = sum(2 * len(r) for r in rings)
+    if U.layouts[li].isz == 2 and base + len(new_v) + need > 65535: return -1
+    cx, cy = (panel['rect'][0] + panel['rect'][2]) / 2, (panel['rect'][1] + panel['rect'][3]) / 2
+    uv = np.array([cx, cy, 1]) @ panel['map']
+    n = 0
+    for pts in rings:
+        m = len(pts)
+        ids = []
+        for i, (x, y) in enumerate(pts):
+            (px, py), (qx, qy) = pts[i - 1], pts[(i + 1) % m]
+            nx, ny = (qy - py), -(qx - px)                           # outward on a counter-clockwise ring
+            h = math.hypot(nx, ny) or 1.0
+            pair = []
+            for z in (roof + CAP_GAP, roof - SKIRT):
+                nv = dict(tpl)
+                nv['pos'] = (x, y, z); nv['uv0'] = (float(uv[0]), float(uv[1]))
+                if 'normal' in nv: nv['normal'] = oct_pack((nx / h, ny / h, 0.0), nv['normal'])
+                if look:
+                    if 'uv1' in look and 'uv1' in nv: nv['uv1'] = tuple(float(q) for q in np.array([x, y, 1]) @ look['uv1'])
+                    for kk in ('uv2', 'color'):
+                        if kk in look and kk in nv: nv[kk] = look[kk]
+                nv['bidx'] = bytes([slot_r, 0, 0, 0]); nv['bw'] = struct.pack('<I', 0xC00003FF)
+                pair.append(base + len(new_v)); new_v.append(U.encode(li, nv))
+            ids.append(pair)
+        # facing out: the winding whose normal points out when the deck's up-facing winding is counter-clockwise
+        # (up_sign 1), the other way round otherwise
+        for i in range(m):
+            (t0, b0), (t1, b1) = ids[i], ids[(i + 1) % m]
+            if panel['up_sign'] > 0: new_t += [(t0, b1, t1), (t0, b0, b1)]
+            else: new_t += [(t0, t1, b1), (t0, b1, b0)]
+            n += 2
+    return n
+
+
 DECK_STRIP = 2.4          # (Test 6) m of the hull's own front deck copied per band
 DECK_UNDER = 0.004        # (Test 6) the tiled panel fill sits this much under the copied deck (shows only in its gaps)
 
@@ -249,7 +376,21 @@ def deck_source(U, mi, outline, roof):
         tu, tv = tiles.pop()
         if tv != 0 or not (tu == 0 or (tu % 2 == 1 and not 13 <= tu <= 18)): continue
         src.append((ds, tu, tv))
-    return src
+    # (3.4.0) the strip's hatch is left out of the copies: there the plain plating from the other side is copied instead
+    from shapely.geometry import box
+    hx0, hx1, hy0, hy1 = HATCH
+    hatch = box(hx0, s0 + hy0, hx1, s0 + hy1)
+    out = []
+    for ds, tu, tv in src:
+        P = [d['pos'] for d in ds]
+        if not (max(p[0] for p in P) < hx0 or min(p[0] for p in P) > hx1 or max(p[1] for p in P) < s0 + hy0 or min(p[1] for p in P) > s0 + hy1):
+            out.append((ds, tu, tv, ('out', hatch), 0.0))
+        else: out.append((ds, tu, tv, None, 0.0))
+        P = [d['pos'] for d in ds]                     # the other side's plating, moved over the hatch
+        dx = hx0 + hx1
+        if not (max(p[0] for p in P) + dx < hx0 or min(p[0] for p in P) + dx > hx1 or max(p[1] for p in P) < s0 + hy0 or min(p[1] for p in P) > s0 + hy1):
+            out.append((ds, tu, tv, ('in', hatch), -dx))
+    return out
 
 
 def add_deck_copy(U, li, src, outline, z, up_sign, slot_r, tpl, look, new_v, new_t, base, roof):
@@ -259,7 +400,7 @@ def add_deck_copy(U, li, src, outline, z, up_sign, slot_r, tpl, look, new_v, new
     art, uv2, color, normal) except uv1, the camo pattern's flat projection, which is worked out at the new place so the
     pattern runs on. Test 5: the texture didn't match the hull (the tiled 2 m2 panel showed grilles and
     seams the hull's deck doesn't have). Returns (triangles, area covered)."""
-    import shapely
+    import shapely, shapely.affinity
     import numpy as np
     from shapely.geometry import Polygon, box
     from shapely.ops import unary_union
@@ -285,9 +426,13 @@ def add_deck_copy(U, li, src, outline, z, up_sign, slot_r, tpl, look, new_v, new
             x0, y0, x1, y1 = g.bounds
             return [(i, k) for i in range(int(math.floor(x0 / 0.25)), int(math.floor(x1 / 0.25)) + 1)
                     for k in range(int(math.floor(y0 / 0.25)), int(math.floor(y1 / 0.25)) + 1)]
-        for sid, (ds, tu, tv) in enumerate(src):
-            P = [d['pos'] for d in ds]
-            tp = Polygon([(p[0], p[1] - shift) for p in P])
+        for sid, (ds, tu, tv, clip, xs) in enumerate(src):
+            P = [(d['pos'][0] - xs, d['pos'][1], d['pos'][2]) for d in ds]      # (3.4.0) xs: taken from the other side
+            sp = Polygon([(p[0], p[1]) for p in P])
+            if clip is not None:                          # (3.4.0) the hatch: left out, or only the stand-in over it
+                sp = sp.difference(clip[1]) if clip[0] == 'out' else sp.intersection(clip[1])
+                if sp.is_empty or sp.area < 1e-8: continue
+            tp = shapely.affinity.translate(sp, 0, -shift)
             if not tp.is_valid or tp.area < 1e-8: continue
             piece = band.intersection(tp)
             if piece.is_empty or piece.area < 1e-8: continue
@@ -346,8 +491,19 @@ def build(tank, van_b, out_b):
     look0 = deck_look(U, lod0, roof)
     report.append(f'deck look (LOD0): uv1 fitted on {look0["n"]} deck vertices (90% within {look0["err"]:.4f}), uv2 {tuple(round(x, 4) for x in look0["uv2"])}, color {look0["color"].hex()}')
     report.append(f'deck panel: rect {[round(x, 3) for x in panel["rect"]]} at z {panel["z"]:.3f} ({panel["area"]:.2f} m2), up winding {panel["up_sign"]}')
-    for mi, M in enumerate(U.meshes):
+    # (3.4.0) an unskinned shadow mesh gets bone data and the largest skinned shadow LOD's skeleton map
+    shadows = [k for k, MM in enumerate(U.meshes) if MM.layout >= 0 and MM.mesh_type == 10]
+    skinned = [k for k in shadows if mesh_smap(U, U.meshes[k]) >= 0]
+    for k in shadows:
+        if mesh_smap(U, U.meshes[k]) >= 0 or not skinned: continue
+        src = max(skinned, key=lambda q: sum(g.ni for g in U.meshes[q].groups))
+        ssm = mesh_smap(U, U.meshes[src]); sb = st[ssm]
+        skin_shadow(U, k, ssm, sb[3][0].index(next(s for s in sb[3][0] if sb[0][s] == BOSS_BONE)))
+        report.append(f'mesh {k}: unskinned shadow given bone data and skeleton map {ssm} (mesh {src}\'s)')
+    for mi, M in sorted(enumerate(U.meshes), key=lambda e: (e[1].mesh_type == 10 and mesh_smap(U, e[1]) in
+                        [mesh_smap(U, U.meshes[q]) for q in skinned if q != e[0]], e[0])):
         if M.layout < 0 or M.mesh_type in (0, 256, 258): continue
+        st = smap_table(U.main)                     # (3.4.0) re-read: a shared skeleton map may already be changed
         sm = mesh_smap(U, M)
         if sm < 0: report.append(f'mesh {mi}: no skeleton map, left as is'); continue
         bones, bones_at, mats_at, remap = st[sm]
@@ -378,6 +534,30 @@ def build(tank, van_b, out_b):
         cands = [s for s in rl if use[s][0] > 0 and use[s][1] == 0]
         order = sorted(cands, key=lambda s: (PREFER.index(bones[s]) if bones[s] in PREFER else 99, s))
         above_verts = {v for t in tris0 for v in t if V(v)['pos'][2] > roof + EPS}
+        if not order:
+            # (3.4.0) a skeleton map already turned for another mesh (the skinned shadow above): its mount slot
+            mount_slots = [s for s in rl if bones[s] == MOUNT_BONE]
+            if mount_slots: order = mount_slots
+        if not order and M.mesh_type == 10:
+            # (3.4.0) the smallest shadow LOD: every bone is shared with the hull below. The track/wheel bone with the
+            # fewest vertices gives them to the hull body (a far shadow: its few points no longer bounce) and carries
+            # the turret instead. Before, this LOD's turret shadow never turned or moved.
+            boss_s = next((s for s in rl if bones[s] == BOSS_BONE), None)
+            spare = [s for s in rl if s != boss_s and use[s][0] == 0]
+            if boss_s is not None and spare:
+                victim = min(spare, key=lambda s: (use[s][1], s))
+                br = rl.index(boss_s); vr = rl.index(victim)
+                L0 = U.layouts[li]; raw0 = bytearray(U.vbuf[li]); bi0 = L0.item(6); bw0 = L0.item(7); moved = 0
+                for v in {v for t in tris0 for v in t}:
+                    d = V(v)
+                    if any(d['bidx'][c] == vr and w > 0 for c, w in enumerate(weights(d['bw']))):
+                        o = v * L0.stride
+                        raw0[o + bi0[3]:o + bi0[3] + 4] = bytes([br, 0, 0, 0])
+                        raw0[o + bw0[3]:o + bw0[3] + 4] = weight_one(d['bw'])
+                        dec.pop(v, None); moved += 1
+                U.vbuf[li] = bytes(raw0)
+                report.append(f'mesh {mi}: shadow slot {victim} (bone {bones[victim]}, {moved} vertices) given to the hull body for the turret')
+                order = [victim]
         if not order:
             report.append(f'mesh {mi}: no slot carries only above-roof geometry; left as is ({len(above_verts)} vertices above)'); continue
         S = order[0]; r = rl.index(S)
@@ -432,7 +612,7 @@ def build(tank, van_b, out_b):
             new_v.append(U.encode(li, nv))
             cut_cache[key] = idx
             return idx
-        crossing = 0
+        crossing = 0; ring_edges = []
         idx_all = U.indices(li, G0.io, G0.ni)
         for t in range(0, len(idx_all) - 2, 3):
             tri = idx_all[t:t + 3]
@@ -450,6 +630,19 @@ def build(tank, van_b, out_b):
             for poly in (above_poly, below_poly):
                 for i in range(1, len(poly) - 1):
                     new_t.append((poly[0], poly[i], poly[i + 1]))
+            # (Test 15) the wall's cut edge on the turret side, for the ring: its two cut points, the wall's outward
+            # (shading) normal and its winding's normal
+            cuts = [k for k in above_poly if k >= G0.nv]
+            if len(cuts) == 2:
+                P3 = [V(G0.vo + k)['pos'] for k in tri]
+                g = (lambda a, b, c: ((b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
+                                      (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
+                                      (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])))(*P3)
+                ds = [V(G0.vo + k) for k in tri]
+                if all('normal' in d for d in ds):
+                    ns = [oct_normal(d['normal']) for d in ds]
+                    nout = tuple(sum(n[q] for n in ns) for q in range(3))
+                    ring_edges.append((cuts[0], cuts[1], nout, g))
             for k in range(3): put_index(G0.io + t + k, tri[0])        # the original: degenerate
         U.ibuf[li] = bytes(ib)
         # caps: the hull's cut opened at the roof line, so the hull gets a deck over the opening (facing up, on the hull
@@ -498,7 +691,33 @@ def build(tank, van_b, out_b):
             deck_tris = add_cap(U, li, outline, roof - CAP_GAP, True, boss_r, tpl, panel, new_v, new_t, G0.nv, look)
         if done is None: report.append(f'mesh {mi}: no deck copy fits: tiled fill kept')
         else: report.append(f'mesh {mi}: hull deck copied over the cut (from mesh {done}): {copy_tris} triangles, {len(new_v) - nv0} vertices, {copy_area:.2f} of {outline.area:.2f} m2')
+        # (Test 15) the turret ring, after the deck (the deck copy has first call on a 16-bit LOD's room)
+        ring_tris = add_ring(U, li, outline, roof, r, tpl, panel, look, new_v, new_t, G0.nv, M.mesh_type == 10, mount_mesh)
+        if ring_tris < 0:
+            # no room for the ring's vertices on this 16-bit LOD: Test 11's skirt instead (the walls' cut points moved
+            # down SKIRT and 5 mm in: no new vertices)
+            for k in {k for a, b, _, _ in ring_edges for k in (a, b)}:
+                d = U.decode(li, new_v[k - G0.nv]); x, y, z = d['pos']
+                if 'normal' in d:
+                    nx, ny, _ = oct_normal(d['normal']); h = math.hypot(nx, ny)
+                    if h > 0.2: x, y = x - nx / h * 0.005, y - ny / h * 0.005
+                d['pos'] = (x, y, z - SKIRT); new_v[k - G0.nv] = U.encode(li, d)
+        report.append(f'mesh {mi}: turret ring ' + ('left out (no room for its vertices: 16-bit indices); the walls reach down instead' if ring_tris < 0 else f'{ring_tris} triangles'))
         plates, tplates = deck_tris, floor_tris
+        # (3.4.0) the turret's front arms leaned inward: every turret vertex there (the game's, the cut's, the floor's)
+        leaned = 0
+        raw = bytearray(U.vbuf[li])
+        for v in above_verts:
+            o = v * L.stride
+            nd = lean_arm(U.decode(li, bytes(raw[o:o + L.stride])), mount_mesh[0], cfg['arms'])
+            if nd: raw[o:o + L.stride] = U.encode(li, nd); leaned += 1
+        U.vbuf[li] = bytes(raw)
+        for i, b in enumerate(new_v):
+            d = U.decode(li, b)
+            if d['bidx'][0] != r: continue
+            nd = lean_arm(d, mount_mesh[0], cfg['arms'])
+            if nd: new_v[i] = U.encode(li, nd); leaned += 1
+        report.append(f'mesh {mi}: {leaned} turret vertices on the front arms leaned inward')
         U.add_to_group(mi, 0, new_v, new_t, group_relative=True)
         # bounds: the turret turning round its axis
         R = max(math.hypot(V(v)['pos'][0] - mount_mesh[0], V(v)['pos'][1] - mount_mesh[1]) for v in above_verts) if above_verts else 0
