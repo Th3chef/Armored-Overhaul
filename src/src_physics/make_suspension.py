@@ -14,6 +14,9 @@ What changes, read from each file itself:
     spring together so each road wheel rests part-way down its travel and can move both ways, like a tank's torsion
     bars, and move each wheel's mount point (+0x0C..+0x14) up its suspension axis (+0x18..+0x20) by the length the
     wheel now rests extended, so the tank sits at its own height.
+  - steering ("VRS " block): +0x10 the full-steering speed (game 20; the max steering angle 23 deg at +0xC is kept).
+    Above that speed the game narrows the steering angle, so a tank boosted by Tank Top Speed (up to 53 km/h in 3.4.0
+    Test 20) turned much wider at full speed. (3.4.0 Test 21, the tester: "with full speed on, turning radius suffers")
   - chassis (Havok vehicle data, "VRD " block, in Havok's hkpVehicleData order): +0x1C torque roll factor (game 1.0:
     the wheels' friction rolls the hull at full strength), +0x34 chassis unit inertia roll (game 2, half its yaw and
     pitch 4), +0x3C friction equalizer (game 0: when one track unloads, its share of the grip lands on the other track
@@ -26,7 +29,8 @@ import patch_writer
 PHYSICS = 0x5f7203c8f280dab8
 BASTION, MAELSTROM = 0x16474112801385b6, 0xb0c9faf4af8903f9      # TD-220 Bastion hull, TD-110 Maelstrom hull
 GAME = {'spring': 12.0, 'comp': 0.5, 'rebound': 3.7, 'roll_torque': 1.0, 'roll_inertia': 2.0, 'equalizer': 0.0,
-        'travel': 0.325, 'com_z': -0.9}
+        'travel': 0.325, 'com_z': -0.9, 'steer_angle': 23.0, 'steer_speed': 20.0, 'spin_damping': 0.1,
+        'collision_spin_damping': 10.0, 'collision_threshold': 2.0}
 # (3.1.0 Test 11) the rigid body's centre of mass (chassis space, z up: the wheel mounts sit at z 0.55): mass 30000 at
 # 0x100, centre of mass (0, 0.5, -0.9) at 0x138. Riding LIFT higher lifts the centre of mass with the hull, so it is
 # lowered by LIFT: it stays as high above the ground as the game has it (Test 10: a tank turning on the spot
@@ -73,9 +77,11 @@ PRESETS = {
     # is raised (rebound 3.7 -> 6 / 8 against the game's spring: about 1.6 / 1.9 times the game's share of critical), and
     # the longer travel (the wheels drop into dips) and the 0.1 m lift stay.
     'Suspension Balanced': {'spring': 12.0, 'comp': 1.0, 'rebound': 6.0, 'roll_torque': 1.0, 'roll_inertia': 2.0,
-                            'equalizer': 0.0, 'travel': 0.5, 'com_drop': 0.1},
+                            'equalizer': 0.0, 'travel': 0.5, 'com_drop': 0.1, 'steer_speed': 25.0,
+                            'spin_damping': 0.5},
     'Suspension Planted': {'spring': 16.0, 'comp': 1.5, 'rebound': 8.0, 'roll_torque': 1.0, 'roll_inertia': 2.0,
-                           'equalizer': 0.0, 'travel': 0.45, 'com_drop': 0.25},
+                           'equalizer': 0.0, 'travel': 0.45, 'com_drop': 0.25, 'steer_speed': 25.0,
+                           'spin_damping': 1.0},
 }
 # the patch header's engine metadata, as in the game's own packages (the same bytes as the 3.0.0 suspension patches)
 HEADER = ('000000001cfa464200000000f52f5043a38b24bc0014ed000000000000f030010000000000000000000000000000000000000000'
@@ -138,6 +144,20 @@ def retune(data, p):
     put(d, r + 0x1C, GAME['roll_torque'], p['roll_torque'])
     put(d, r + 0x34, GAME['roll_inertia'], p['roll_inertia'])
     put(d, r + 0x3C, GAME['equalizer'], p['equalizer'])
+    # (3.4.0 Test 21) the full-steering speed: 30 in Tests 21-24 (x1.5); (Test 25) 25: at 30 the tanks turned about twice
+    # as hard at 30 km/h as the game's and rolled over outward
+    v = d.find(b'VRS ')
+    assert v > 0 and d.find(b'VRS ', v + 4) < 0, 'expected one steering block'
+    assert abs(f32(d, v + 0xC) - GAME['steer_angle']) < 1e-4, f32(d, v + 0xC)              # (the game's angle, left alone)
+    if p.get('steer_speed'): put(d, v + 0x10, GAME['steer_speed'], p['steer_speed'])
+    # (3.4.0 Test 25) Test 24: the tanks still rolled over outward in 30 km/h, 40-56 deg/s turns (from Test 22 on, with
+    # 30 here); the tester chose 25 plus spin damping: the "VRV " block (Havok's velocity damper: normal spin damping +0xC, collision
+    # spin damping +0x10 above the collision threshold +0x14 rad/s; game 0.1 / 10 / 2) damps the hull's turning, so a
+    # lean builds more slowly (and turns a little gentler). Only the normal spin damping changes.
+    w = d.find(b'VRV ')
+    assert w > 0 and d.find(b'VRV ', w + 4) < 0, 'expected one velocity damper block'
+    assert abs(f32(d, w + 0x10) - GAME['collision_spin_damping']) < 1e-4 and abs(f32(d, w + 0x14) - GAME['collision_threshold']) < 1e-4
+    if p.get('spin_damping'): put(d, w + 0xC, GAME['spin_damping'], p['spin_damping'])
     return bytes(d)
 
 
