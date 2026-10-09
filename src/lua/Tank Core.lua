@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.3.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.4.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -142,17 +142,19 @@ local SITES = {
 -- Autoloader and health read the seat): seat and player. The driving code's places (driver input, and the two input
 -- checks that prove the tags) only turn Gunner Drive on: if a game update changes those alone, everything else keeps
 -- working (3.1.0 needed all five, so a change to the 776-byte driving code would have stopped every option).
-local SITE_ORDER = {'seat', 'player'}
-local DRIVE_ORDER = {'blocked', 'uiblock', 'drive'}
+-- (3.4.0 review) a few start-up tables in one local: the file stood at LuaJIT's limit of 200 top-level locals
+local TC = {}
+TC.SITE_ORDER = {'seat', 'player'}
+TC.DRIVE_ORDER = {'blocked', 'uiblock', 'drive'}
 -- RIP-relative globals inside the patterns: {site, displacement position, instruction end}
-local GLOBALS = {
+TC.GLOBALS = {
     seats = {{'seat', 17, 21}},
     players = {{'player', 12, 16}},
     -- (3.1.1 review) the invalid-entity id: the same compare starts the player code and is in the seat code (3.1.0 took it
     -- from the driving code); the two must agree, and the driving code's (below) with them
     sentinel = {{'player', 2, 6}, {'seat', 29, 33}},
 }
-local DRIVE_GLOBALS = {
+TC.DRIVE_GLOBALS = {
     sentinel = {{'drive', 2, 6}},
     vehicles = {{'drive', 75, 79}, {'drive', 194, 198}, {'drive', 289, 293}, {'drive', 356, 360},
                 {'drive', 420, 424}, {'drive', 511, 515}, {'drive', 604, 608}, {'drive', 697, 701}},
@@ -188,8 +190,8 @@ SITES.guns = {rva = 0x77E8C0, anchor_at = 69, anchor_len = 31, pattern = [[48 89
 local EXTRA_ORDER = {'engine', 'layout', 'gearread', 'component', 'selector', 'uifont', 'health', 'reload', 'ammo', 'trigger', 'horn',
                      'release', 'guns'}
 local ALL_ORDER = {}
-for _, n in ipairs(SITE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
-for _, n in ipairs(DRIVE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
+for _, n in ipairs(TC.SITE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
+for _, n in ipairs(TC.DRIVE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
 for _, n in ipairs(EXTRA_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
 for _, name in ipairs(ALL_ORDER) do
     local s = SITES[name]
@@ -214,7 +216,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.3.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.4.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -348,9 +350,9 @@ end
 -- ------------------------------------------------------------------------------------------ log
 -- The log is what a user attaches to a bug report: what the addon found in this game build, where you sat and
 -- what it did, and the last error. Tester builds add the counters and per-frame details used during development.
-local LOG_MAIN = {'version', 'loader', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
+TC.LOG_MAIN = {'version', 'loader', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
     'response', 'overwritten', 'control', 'engine', 'smoke', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'kinds', 'autoloader', 'reloads', 'brakes', 'errors', 'last_error'}
-local LABELS = {loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
+TC.LABELS = {loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
                 engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3, right stick click or a bound key, gunner seat)',
                 sessions = 'times driven from the gunner seat', drive_frames = 'frames driven',
                 response = 'tank answers the throttle', health = 'vehicle health (Vehicle Indicator color)',
@@ -387,7 +389,7 @@ local function itrace(what)
     if #input_trace >= 40 then table.remove(input_trace, 1) end
     input_trace[#input_trace + 1] = string.format('f%d %s', S.frames, what)
 end
-local LOG_TESTER = {'pad_buttons', 'tires', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
+TC.LOG_TESTER = {'pad_buttons', 'tires', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
     'frames', 'polls', 'reads', 'page_checks', 'gear_read', 'engine_starts', 'hud_font', 'smoke_shots'}
 local logged = {}
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
@@ -400,7 +402,7 @@ local logged = {}
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'autoloader', 'gunner_drive'}) do
@@ -484,14 +486,14 @@ local function write_log(force)
         local f = loader.open_log and loader.open_log('ArmoredOverhaul-GunnerDrive.log')
         if not f then return end
         local lines = {}
-        for _, k in ipairs(LOG_MAIN) do lines[#lines + 1] = (LABELS[k] or k:gsub('_', ' ')) .. ': ' .. tostring(S[k]) end
+        for _, k in ipairs(TC.LOG_MAIN) do lines[#lines + 1] = (TC.LABELS[k] or k:gsub('_', ' ')) .. ': ' .. tostring(S[k]) end
         if #history > 0 then
             lines[#lines + 1] = '-- drive history (last ' .. #history .. ') --'
             for _, l in ipairs(history) do lines[#lines + 1] = l end
         end
         if TESTER then
             lines[#lines + 1] = '-- tester details --'
-            for _, k in ipairs(LOG_TESTER) do lines[#lines + 1] = k .. ': ' .. tostring(S[k]) end
+            for _, k in ipairs(TC.LOG_TESTER) do lines[#lines + 1] = k .. ': ' .. tostring(S[k]) end
             if #smoke_trace.look > 0 then
                 lines[#lines + 1] = '-- smoke look-ups (last ' .. #smoke_trace.look .. ') --'
                 for _, l in ipairs(smoke_trace.look) do lines[#lines + 1] = l end
@@ -550,17 +552,17 @@ local function resolve_refs(rvas, list, found)
 end
 local drive_missing = nil          -- (3.1.1 review) why Gunner Drive's places weren't found (nil: found)
 local function resolve_globals(rvas)
-    for _, name in ipairs(SITE_ORDER) do
+    for _, name in ipairs(TC.SITE_ORDER) do
         if not (rvas[name] and site_bytes(name, rvas[name])) then return nil, name .. ' pattern' end
     end
-    local found, why = resolve_refs(rvas, GLOBALS, {})
+    local found, why = resolve_refs(rvas, TC.GLOBALS, {})
     if not found then return nil, why end
     drive_missing = nil
-    for _, name in ipairs(DRIVE_ORDER) do
+    for _, name in ipairs(TC.DRIVE_ORDER) do
         if not (rvas[name] and site_bytes(name, rvas[name])) then drive_missing = name .. ' pattern'; break end
     end
     if not drive_missing then
-        local d, dwhy = resolve_refs(rvas, DRIVE_GLOBALS, {sentinel = found.sentinel})
+        local d, dwhy = resolve_refs(rvas, TC.DRIVE_GLOBALS, {sentinel = found.sentinel})
         if d then found.vehicles = d.vehicles else drive_missing = dwhy end
     end
     drive_available = drive_missing == nil
@@ -2050,6 +2052,9 @@ end
 -- itself only happens when the Gunner Drive option's small flag addon is installed.
 local function publish(mine)
     SEAT_PUB.frame = S.frames
+    -- (3.4.0) every seat's kind and role (the emplacements too), for the Gunner Camera's zoom in other gunner seats;
+    -- kind/role/vehicle below stay tanks and FRVs only
+    SEAT_PUB.any_kind, SEAT_PUB.any_role = (mine and mine.role ~= 0) and mine.kind or nil, mine and mine.role or 0
     -- (2.1) the FRVs too, in any seat, for the Vehicle Indicator and the driver panel (the Gunner camera and the
     -- driver panel check the kind themselves)
     if mine and (VEHICLES[mine.kind] or FRV_KINDS[mine.kind]) and mine.role ~= 0 then

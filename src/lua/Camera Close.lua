@@ -1,16 +1,19 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.3.0 - Gunner camera option (Close): how far behind the turret the tank
+-- Armored Overhaul 3.4.0 - Gunner camera option (Close): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
 -- id; the tank gunner preset is id 26 in the Sept 2026 build). Its camera offset from the turret pivot is +0x34
--- side, +0x38 forward (negative = behind; -1 m for the gunner) and +0x3C up (2 m). This addon moves the camera half a
--- metre lower and further back, then the picked number of metres further back along a shallow 10 degree rise, so you
--- see more of the tank and around it. The game turns that offset with the hull, not the turret (at its own 1 m nobody notices; further back
--- the camera ended up beside the turret when it turned): while you sit in a tank gunner seat the offset is turned
--- with the turret every frame (the turret angle comes from the shared turret tracker; your seat from Tank Core), so
--- the camera stays behind the turret. Height is not changed by the turning. (Tests: +0x24..+0x2C made no visible difference; +0x3C alone only raised the camera.) The turret
--- limits in the same preset (+0x4C..+0x58) belong to MBT Turrets and are not touched here. (3.2.0) The mouse wheel moves the camera in and
+-- side, +0x38 forward (negative = behind; about -1 m for the gunner) and +0x3C up, and the game circles the camera
+-- round that point at the view's three camera distances (+0x24 / +0x28 / +0x2C) along the line of sight.
+-- (3.4.0 Test 16 / Test 30; header brought up to date in the 3.4.0 review) This addon puts that point over the turret
+-- (forward 0) at Close's height (about 1.4 m), and the distance behind on the three camera distances: the game's own
+-- 1 m back, half a metre more and the picked distance (x cos 10 degrees), so you see more of the tank and around it.
+-- The game turns the view with the turret itself; while you sit in a tank gunner seat this addon keeps the point level
+-- when the tank tilts (the turret angle and the hull's axes come from the shared turret tracker; your seat from Tank
+-- Core). A build whose distances can't be read gets the offset as before Test 16: the camera moved back along a
+-- 10 degree rise in the offset, turned with the turret every frame. The turret limits in the same preset
+-- (+0x4C..+0x58) belong to MBT Turrets and are not touched here. (3.2.0) The mouse wheel moves the camera in and
 -- out from the pick while you sit in the gunner seat, and zooms in on the crosshair from the closest point (see the zoom block).
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 if rawget(_G, 'ArmoredOverhaulGunnerCamera') then return end
@@ -32,12 +35,24 @@ local confirmed, fight_backs = false, {}   -- (3.0 review) see apply
 local written = {side = 0, back = 0, up = 0}   -- what this addon wrote last (apply or the turning)
 -- (1.2.2) Every preset sits half a metre lower and half a metre further back than the game's gunner view (1 m back,
 -- 2 m up), and moves back along a 10 degree rise (1.2.0-1.2.1: from the game's view, along 25 degrees): more behind the
--- tank and less above it, for more of the surroundings in view.
+-- tank and less above it, for more of the surroundings in view. (3.4.0 review) Since Test 30 the height is Close's at
+-- every distance and the rise only sets the distance behind (BASE_BACK + the pick x cos 10 degrees); only the offset
+-- fallback (no camera distances, see set_want) still rises with the distance.
 local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
-local distance = PRESET          -- (3.0) metres back along the rise: the mod manager's pick, or the menu's (nil: Off)
+-- (3.4.0 Test 16) the tester: "implementing the same zoomed out camera fix for the tanks. High traverse can get wonky". The
+-- distance behind is no longer the offset (+0x34..+0x3C, in the hull's frame: turned round with the turret by this
+-- addon a quarter degree at a time, which lagged and jumped at high traverse) but the view's three camera distances
+-- (+0x24 / +0x28 / +0x2C: the game circles the camera round a point at that distance, along the line of sight, as in
+-- the FRV gunner seat and on the emplacements since Test 15). The offset keeps only the height, over the turret
+-- (back 0), and every metre behind (the game's own 1 m back included) goes on the three distances.
+local TDIST, TDIST_NAMES = {n = 0x24, m = 0x28, f = 0x2C}, {'n', 'm', 'f'}
+local TANK_DIST = {n = 2, m = 1, f = 0.5}           -- (the gunner view's own, on the known build)
+local reach = 0                                     -- metres added to the three distances (0: the game's own)
+local dist_own, dist_written                        -- the view's own distances; what this addon wrote last
+local distance = PRESET          -- (3.0) the pick in metres (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.3.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.4.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -151,12 +166,16 @@ local function log()
             'gunner view: ', state.view, '\n', 'turning with the turret: ', state.turning, '\n', 'scroll zoom: ', state.zoom, '\n',
             state.zoom_seen and ('crosshair zoom check: ' .. state.zoom_seen .. '\n') or '',
             'zoom keys: ', tostring(state.zoom_keys), '\n', 'zoom readout: ', tostring(state.readout), '\n',
+            'other gunner seats: ', tostring(state.other_views), '\n', 'other seat zoom: ', tostring(state.other_zoom or 'not used yet'), '\n',
             'options menu: ', state.options_menu, '\n', 'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
         if TESTER then
             f:write('-- tester details --\n', 'preset record: ', state.where, '\n', 'writes: ', state.applied, '\n',
                 'turn writes: ', state.turns, '\n', 'tank: ', state.tank, '\n', 'frames: ', state.frames, '\n',
                 'zoom api: ', tostring(state.zoom_api), '\n', 'zoom wheel: ', tostring(state.zoom_raw), '\n',
-                'zoom camera: ', tostring(state.zoom_camera), '\n', 'zoom field of view: ', tostring(state.zoom_fov), '\n')
+                'zoom camera: ', tostring(state.zoom_camera), '\n', 'zoom field of view: ', tostring(state.zoom_fov), '\n',
+                'other seat zoom detail: ', tostring(state.other_detail), '\n',
+                'camera measured: ', tostring(state.cam_measured or 'not yet'), '\n',
+                'view pitch on slopes (Test 35):\n  ', tostring(state.pitch_bins or 'not yet'), '\n')
         end
         f:close()
     end)
@@ -192,41 +211,49 @@ end
 -- (a mod manager redeploy with the game open) takes it from there: 3.1.0 read back what the first copy wrote as the game's
 -- own, so each redeploy moved the camera further (Far: another 2.5 m back), and one done in a turned turret's gunner seat
 -- kept the camera off to the side. Tagged with the game build.
-local keep_get, keep_set, fov_keep_get, fov_keep_set
+-- (3.2.0 Test 8) the gunner view's own field-of-view multipliers ('FOV') are kept the same way (see the zoom block).
+-- (3.4.0 review) and every other own value read from a record on a build that isn't the known one: the gunner view's
+-- camera distances ('DIST') and kick ('KICK'), the other seats' distances, aim multipliers and kick ('SEAT<id>',
+-- 'AIM<id>', 'KICK<id>'). Read back after a reload without the earlier copy's shutdown, they held what that copy wrote,
+-- and each reload added the pick (or faded the kick) again. Each is 'ARMORED_OVERHAUL_GUNNER_<name>' = 'build|v1,v2,..',
+-- the same text 3.1.1-3.3.0 wrote for VIEW and FOV.
+-- keep_own(name, names, v, ...): the values kept under `name` for this build ({[names[i]] = vi}), else `v` (or what
+-- the function `v` returns, called with ...), which is then kept; nil when neither is there.
+local keep_own
 do
     for _, decl in ipairs({'uint32_t GetEnvironmentVariableA(const char *, char *, uint32_t);',
             'int SetEnvironmentVariableA(const char *, const char *);'}) do pcall(ffi.cdef, decl) end
     local okg, get = pcall(function() return ffi.cast('uint32_t (*)(const char *, char *, uint32_t)', k32.GetEnvironmentVariableA) end)
     local oks, set = pcall(function() return ffi.cast('int (*)(const char *, const char *)', k32.SetEnvironmentVariableA) end)
-    local ebuf = ffi.new('char[256]')
-    local KEY = 'ARMORED_OVERHAUL_GUNNER_VIEW'
-    keep_get = function()
+    local EBUF = 512
+    local ebuf = ffi.new('char[?]', EBUF)
+    local function keep_get(name, names)
         if not (okg and get ~= nil) then return nil end
-        local n = get(KEY, ebuf, 256)
-        if n == 0 or n >= 256 then return nil end
-        local tag, a, b, c = ffi.string(ebuf, n):match('^([^|]+)|([^,]+),([^,]+),([^,]+)$')
-        a, b, c = tonumber(a), tonumber(b), tonumber(c)
-        if tag ~= build_tag() or not (a and b and c) then return nil end
-        return {side = a, back = b, up = c}
+        local n = get('ARMORED_OVERHAUL_GUNNER_' .. name, ebuf, EBUF)
+        if n == 0 or n >= EBUF then return nil end
+        local tag, rest = ffi.string(ebuf, n):match('^([^|]+)|(.+)$')
+        if tag ~= build_tag() then return nil end
+        local v, i = {}, 0
+        for x in (rest .. ','):gmatch('([^,]*),') do
+            i = i + 1
+            local k, y = names[i], tonumber(x)
+            if not k or not y then return nil end
+            v[k] = y
+        end
+        return i == #names and v or nil
     end
-    keep_set = function(v)
+    local function keep_set(name, names, v)
         if not (oks and set ~= nil) then return end
-        set(KEY, string.format('%s|%.9g,%.9g,%.9g', build_tag(), v.side, v.back, v.up))
+        local t = {}
+        for i, k in ipairs(names) do t[i] = string.format('%.9g', v[k]) end
+        set('ARMORED_OVERHAUL_GUNNER_' .. name, build_tag() .. '|' .. table.concat(t, ','))
     end
-    -- (3.2.0 Test 8) the gunner view's own field-of-view multipliers, the same way (see the zoom block)
-    local FOV_KEY = 'ARMORED_OVERHAUL_GUNNER_FOV'
-    fov_keep_get = function()
-        if not (okg and get ~= nil) then return nil end
-        local n = get(FOV_KEY, ebuf, 256)
-        if n == 0 or n >= 256 then return nil end
-        local tag, a, b, c = ffi.string(ebuf, n):match('^([^|]+)|([^,]+),([^,]+),([^,]+)$')
-        a, b, c = tonumber(a), tonumber(b), tonumber(c)
-        if tag ~= build_tag() or not (a and b and c) then return nil end
-        return {a = a, b = b, c = c}
-    end
-    fov_keep_set = function(v)
-        if not (oks and set ~= nil) then return end
-        set(FOV_KEY, string.format('%s|%.9g,%.9g,%.9g', build_tag(), v.a, v.b, v.c))
+    keep_own = function(name, names, v, ...)
+        local okk, kept = pcall(keep_get, name, names)
+        if okk and kept then return kept end
+        if type(v) == 'function' then v = v(...) end
+        if v then pcall(keep_set, name, names, v) end
+        return v
     end
 end
 
@@ -600,9 +627,52 @@ end
 -- ---------------------------------------------------------------- applying
 local rec, original, want
 local tries = 0
+-- (3.4.0 review) declared before dist_sync: 3.4.0 tests declared them below it, so there `blocked` was an unset global
+-- and the distances were still rewritten after the addon had given up (or the preset was no longer valid)
 local settled = false
 local blocked = false        -- (2.0.1 review) the record is left alone: gave up, or no longer a valid preset
-local target = {}            -- what the record should hold now (the base offset turned with the turret)
+local function set_want(d)
+    want.side = original.side
+    if d == nil then want.back, want.up, reach = original.back, original.up, 0; return end      -- (the game's own)
+    -- (Test 30, the tester: "its too high up") with the orbit, every distance sits at Close's height (1.4 m over the turret on
+    -- the known build; Tests 16-29 rose 10 degrees with the distance: Farthest 3.1 m); the offset view keeps the rise
+    want.up = original.up - BASE_DOWN + (dist_own and -0.5 or d) * math.sin(RISE)
+    if not dist_own then                                  -- (no distances known: the offset, as before Test 16)
+        want.back, reach = original.back - BASE_BACK - d * math.cos(RISE), 0; return
+    end
+    want.back = 0                                         -- (Test 16) over the turret; the distance behind is `reach`
+    reach = BASE_BACK + d * math.cos(RISE) - original.back
+end
+-- (3.4.0 review) one set of helpers for the three camera distances of any view (the tank's and, below, the other seats';
+-- 3.4.0 tests had two copies): tol 1e-3 for the tank (as before), 1e-4 (the default) for the other seats
+local function tdist_differs(x, y, tol)
+    tol = tol or 1e-4
+    return not (math.abs(x.n - y.n) < tol and math.abs(x.m - y.m) < tol and math.abs(x.f - y.f) < tol)
+end
+-- the distances in `s` with +0x24 at offset `o` (into `out` if given), nil unless all three are plausible
+local function tdist_of(s, o, out)
+    local n, m, f = f32(s, o), f32(s, o + 4), f32(s, o + 8)
+    if not (n and m and f and n >= 0 and n < 50 and m >= 0 and m < 50 and f >= 0 and f < 50) then return nil end
+    out = out or {}
+    out.n, out.m, out.f = n, m, f
+    return out
+end
+local function tdist_read(r) return tdist_of(read((r or rec) + TDIST.n, 12), 0) end
+-- (Test 16) every frame: the three distances = their own + reach, written when that changes (or was changed back)
+-- (3.4.0 review) the table is made only when reach changed or the write is due again (3.4.0 tests: every frame, seated or not)
+local dist_retry = 0                                -- (a failed write is tried again after a second, not every frame)
+local function dist_sync()
+    if not (rec and original and dist_own) or blocked or state.frames < dist_retry then return end
+    if dist_written and dist_written.reach == reach then return end
+    local w = {n = dist_own.n + reach, m = dist_own.m + reach, f = dist_own.f + reach, reach = reach}
+    if dist_written and not tdist_differs(w, dist_written, 1e-3) then dist_written.reach = reach; return end   -- (still what was written)
+    local ok, how = write_floats(rec, TDIST.f + 4, w, TDIST)
+    if ok then dist_written = w
+    else dist_written, dist_retry = nil, state.frames + 60; state.errors = state.errors + 1; state.last_error = 'distance write failed: ' .. tostring(how) end
+end
+-- what the record's offset should hold now: `want` turned (and levelled) with the turret; in the orbit (Test 16) that
+-- is the point over the turret at Close's height, in the offset fallback the camera's place behind the turret
+local target = {}
 local function differs(a, b)
     -- (3.0.1 review) written so a NaN counts as different (it compared as equal before, so it was never corrected)
     for _, k in ipairs(FIELD_NAMES) do if not (math.abs(a[k] - b[k]) <= 1e-3) then return true end end
@@ -664,16 +734,16 @@ local function apply()
         state.view = 'preset no longer valid'; settled = false; blocked = true; return 0
     end
     if not original then
-        local okk, kept = pcall(keep_get)
-        if okk and kept then original = kept else original = now; pcall(keep_set, now) end
-        local o = original                  -- (the distances below are from the game's own view)
+        original = keep_own('VIEW', FIELD_NAMES, now)
+        -- (Test 16) the view's own distances: as known on this build (a copy reloaded mid-zoom can't hand ours on as
+        -- the game's), read from the record on other builds (3.4.0 review: once a game session, then kept; see keep_own)
+        if timestamp == KNOWN_TIMESTAMP then dist_own = TANK_DIST else dist_own = keep_own('DIST', TDIST_NAMES, tdist_read) end
         want = {}
-        want.side = o.side
-        want.back = distance and (o.back - BASE_BACK - distance * math.cos(RISE)) or o.back   -- more negative = further behind
-        want.up = distance and (o.up - BASE_DOWN + distance * math.sin(RISE)) or o.up        -- (distance nil: the game's own)
+        set_want(distance)                                -- (distance nil: the game's own)
         set_target(0)
     end
     local changed, problem = 0, nil
+    if dist_written then local d = tdist_read(); if not d or tdist_differs(d, dist_written, 1e-3) then dist_written = nil end end   -- (Test 16: changed back: written again)
     if confirmed and not written.counted and differs(now, written) and differs(now, target) then   -- (not when it already holds what we want)
         -- (3.0 review) changed since this addon last wrote it: another mod (or the game) wrote it. Three times within a
         -- minute and it is left alone (the 'gave up' below); 2.1 rewrote it every 10 s for ever
@@ -703,8 +773,8 @@ local function apply()
         -- so its shutdown puts the game's view back and a change by another mod is counted (3.1.0: only after a write)
         confirmed = true; note_written()
     end
-    state.view = string.format('camera %.2f m %s and %.2f m up from the turret (game %.2f m back, %.2f m up)', math.abs(want.back),
-        want.back <= 0 and 'back' or 'forward', want.up, math.abs(original.back), original.up)
+    state.view = string.format('camera %.2f m back (along the view) and %.2f m up from the turret (game %.2f m back, %.2f m up)', reach - want.back,
+        want.up, math.abs(original.back), original.up)
         .. (problem and ' [' .. problem .. ']' or '')
     if problem == 'gave up' and not state.fight_noted then
         -- the record keeps being changed back: something else (another mod) writes the gunner camera too
@@ -717,11 +787,14 @@ local function apply()
     -- (2.0.1 review) once it has given up, turning with the turret stops writing too (2.0 kept writing it every turn,
     -- fighting whatever else writes the gunner camera)
     blocked = problem == 'gave up'
+    pcall(dist_sync)                                      -- (Test 16: the distances too, turning or not)
     return changed
 end
 
 -- Every frame: the turret angle and the tank's tilt while you sit in a tank gunner seat (straight back otherwise), and
--- the offset rewritten when it has moved a centimetre (1.2.0-1.2.1: a quarter of a degree of turret turn).
+-- the offset rewritten when it has moved a centimetre (1.2.0-1.2.1: a quarter of a degree of turret turn). (3.4.0
+-- review) In the orbit (Test 16) that offset is only the point over the turret, so it moves only with the tilt; the
+-- distance behind is dist_sync's.
 local seat_watch = {}
 local last_step, retry_at
 local basis, level = {}, false
@@ -738,8 +811,10 @@ local function turning_text(found, tank, extra)
 end
 -- ---------------------------------------------------------------- scroll-wheel zoom (3.2.0)
 -- (3.2.0) In the gunner seat the mouse wheel moves the camera in and out: the picked distance (Close .. Farthest)
--- is where it starts each time you sit down, every notch moves it ZOOM.step metres along the same 10 degree rise
--- (wheel up = closer), and it glides there (ZOOM.speed m/s) so it feels smooth. From the closest distance, more wheel
+-- is where it starts each time you sit down, every notch moves the pick ZOOM.step metres (wheel up = closer; x cos 10
+-- degrees behind, at Close's height since Test 30: 3.4.0 review), and it glides there (ZOOM.speed m/s) so it feels
+-- smooth. (3.4.0 review) The wheel reaches ZOOM.max in the tank's orbit and ZOOM.max_other (the 3.2.0-3.3.0 reach) in
+-- the offset fallback and in the other gunner seats, whose views were not tested further out. From the closest distance, more wheel
 -- up zooms the view itself in on the crosshair, and wheel down zooms back out before the camera moves back again.
 -- (Test 6: more zoom wanted) the crosshair zoom goes in 1.25x steps up to 10x (Test 5: 1.5,
 -- 2, 3, 4) and glides between steps like the distance does.
@@ -751,9 +826,12 @@ end
 -- the camera's field of view is read before and 0.6 s after: if it didn't narrow, the crosshair zoom is not used for
 -- the rest of the game and the wheel moves the camera only (Test 7: steps that don't show felt like a "buffer"
 -- before the camera moved back).
-local ZOOM = {step = 0.5, min = -0.5, max = 7, speed = 8, fovs = {}, glide = 12, search_every = 2}
+local ZOOM = {step = 0.5, min = -0.5, max = 16, max_other = 7, speed = 8, fovs = {}, glide = 12}   -- (3.4.0 Test 28, the tester: "needs to go farther back": the wheel reaches 12, was 7; Test 31: "a bit more": 16)
 do local f = 1.25; while f < 10 do ZOOM.fovs[#ZOOM.fovs + 1] = f; f = f * 1.25 end; ZOOM.fovs[#ZOOM.fovs + 1] = 10 end
 local zoom = {seated = false, extra = 0, d = nil, t = nil, idx = nil, level = 0, f = 1, notches = 0}
+-- (3.4.0) the FRV gunner seat's and the emplacements' zoom (see 'other gunner seats')
+local OZ = {view = nil, extra = 0, d = 0, level = 0, f = 1, t = nil, ours_o = nil, ours_f = nil, checked = {}, writes = 0, reset = 0,
+            dnow = {}, fnow = {}}                   -- (3.4.0 review: the records' values read each frame, two tables reused)
 local FOVF = {a = 0x5C, b = 0x60, c = 0x64}
 -- orig: the game's own multipliers; ours: what was written last; works: nil (not checked yet), true, false (not shown)
 local fov = {orig = nil, ours = nil, kept = 0, reset = 0, works = nil, base = nil, check_at = nil}
@@ -783,11 +861,6 @@ do
     end
 end
 state.zoom = 'not used yet'
-local function set_want(d)
-    want.side = original.side
-    want.back = original.back - BASE_BACK - d * math.cos(RISE)
-    want.up = original.up - BASE_DOWN + d * math.sin(RISE)
-end
 -- the wheel's notches this frame (wheel up positive); nil when the engine has no mouse wheel
 local function wheel()
     local SR = rawget(_G, 'stingray')
@@ -842,34 +915,214 @@ local function camera_fovs()
     end
     return out
 end
-local function fov_read()
-    local s = read(rec + FOVF.a, 12)
-    local a, b, c = f32(s, 0), f32(s, 4), f32(s, 8)
-    if not (a and b and c and a > 0.01 and a < 5 and b > 0.01 and b < 5 and c > 0.01 and c < 5) then return nil end
-    return {a = a, b = b, c = c}
+-- (3.4.0 Tests 28 and 35, Tester only) The tester's diagnostics, all in DIAG (3.4.0 review: nil in a release build, so
+-- nothing of them is made or run there, and they take one top-level local, not four).
+local DIAG = TESTER and {cm = {next_at = 0, cam = nil, text = nil, near = nil, far = nil}, ps = {next_at = 0, bins = {}, order = {}}} or nil
+if DIAG then
+    local CM, PS = DIAG.cm, DIAG.ps
+    -- (Test 28) the tester: the distance "doesn't seem to match up anymore". Where the gunner camera really is, from the turret's
+    -- turning point, once a second: the nearest camera to it is taken once (a search of the cameras within 30 m), then
+    -- only its position is read. Logged with what this addon asked for. (3.4.0 review) The camera's unit is checked alive
+    -- before every use and forgotten out of the seat (DIAG.leave; 3.4.0 tests kept it into the next mission, where it was
+    -- a destroyed unit), and a search that finds no camera waits 5 s before the next (was 1 s).
+    function DIAG.measure()
+        if fov.no_check or state.clock < CM.next_at then return end      -- (not after a game close during the camera check)
+        CM.next_at = state.clock + 1
+        local U, _, _, CAM = TT.api()
+        local gun, node = TT.found.gun, TT.found.gun_node or 1
+        if not (U and CAM and gun and TT.alive(gun)) then return end
+        local okg, gp = pcall(U.world_position, gun, node)
+        if not okg or gp == nil then return end
+        if CM.cam and not TT.alive(CM.cam.u) then CM.cam = nil end
+        if not CM.cam then
+            local cams = camera_fovs()
+            local best, bd
+            for _, c in ipairs(cams or {}) do
+                local okc, cc = pcall(U.camera, c.u, c.i)
+                local okp, p = false, nil
+                if okc and cc ~= nil then okp, p = pcall(CAM.world_position, cc) end
+                if okp and p ~= nil then local d = tt_dist2(p, gp); if not bd or d < bd then best, bd = {u = c.u, i = c.i}, d end end
+            end
+            CM.cam = best
+            if not best then CM.next_at = state.clock + 5; return end
+        end
+        local okc, cc = pcall(U.camera, CM.cam.u, CM.cam.i)
+        local okp, p = false, nil
+        if okc and cc ~= nil then okp, p = pcall(CAM.world_position, cc) end
+        if not okp or p == nil then CM.cam = nil; return end
+        local cx, cy, cz = tt_comps(p); local gx, gy, gz = tt_comps(gp)
+        if not cx or not gx then return end
+        local flat, up = math.sqrt((cx - gx) ^ 2 + (cy - gy) ^ 2), cz - gz
+        local total = math.sqrt(flat * flat + up * up)
+        CM.near = math.min(CM.near or total, total); CM.far = math.max(CM.far or total, total)
+        local own = dist_own and string.format('; distances written %.2f / %.2f / %.2f', dist_own.n + reach, dist_own.m + reach, dist_own.f + reach) or ''
+        local text = string.format('%.1f m from the turret (%.1f m level, %.1f m up); asked for %.2f m back along the view and %.2f m up, zoom step %s%s; nearest %.1f, farthest %.1f',
+            total, flat, up, reach - (want and want.back or 0), want and want.up or 0, tostring(zoom.d or distance), own, CM.near, CM.far)
+        -- (Test 31) the steady distances: once the wheel has been left alone for 2 s (and not zoomed in), what each asked-for
+        -- distance really gave, so a limit of the game's shows (Test 30: 13.3 m asked, 8.2 m measured)
+        local asked = reach - (want and want.back or 0)
+        if CM.asked ~= asked then CM.asked, CM.since = asked, state.clock end
+        if zoom.level == 0 and state.clock - (CM.since or state.clock) >= 2 then
+            CM.pairs = CM.pairs or {}
+            local key = string.format('%.1f', asked)
+            if CM.pairs[key] == nil then CM.order = CM.order or {}; CM.order[#CM.order + 1] = key; if #CM.order > 10 then CM.pairs[table.remove(CM.order, 1)] = nil end end
+            CM.pairs[key] = string.format('%.1f', total)
+            local t = {}
+            for _, k in ipairs(CM.order) do t[#t + 1] = k .. ' -> ' .. CM.pairs[k] end
+            text = text .. '; steady (asked -> measured, m): ' .. table.concat(t, ', ')
+        elseif zoom.level > 0 then text = text .. string.format('; zoomed in (step %d): %.1f m from the turret', zoom.level, total) end
+        if not CM.text or math.abs(total - (CM.last or 0)) > 0.25 or text ~= CM.text and state.clock >= (CM.logged or 0) + 2 then
+            CM.text, CM.last, CM.logged = text, total, state.clock; state.cam_measured = text; log()
+        end
+    end
+    -- (Test 35) where the view stops on slopes: Test 34 moved the view's up/down limits by the slope and the tester still had the
+    -- problem. Five times a second in the gunner seat: the view's pitch against the horizon and against the hull, by the
+    -- slope the view faces (5-degree bins); the lowest and highest of each show which frame the limit is in
+    function DIAG.pitch()
+        if state.clock < PS.next_at or not CM.cam then return end
+        PS.next_at = state.clock + 0.2
+        if not TT.alive(CM.cam.u) then CM.cam = nil; return end         -- (3.4.0 review)
+        local U, _, Q, CAM = TT.api()
+        local pub = rawget(_G, 'ArmoredOverhaulTurretAngle')
+        local ax = type(pub) == 'table' and pub.axes
+        if not (U and Q and CAM and CAM.world_rotation and Q.forward and type(ax) == 'table' and ax.ok) then return end
+        local okc, cc = pcall(U.camera, CM.cam.u, CM.cam.i)
+        if not okc or cc == nil then return end
+        local okr, q = pcall(CAM.world_rotation, cc)
+        if not okr or q == nil then return end
+        local okf, fv = pcall(Q.forward, q)
+        if not okf then return end
+        local fx, fy, fz = tt_comps(fv)
+        local ux, uy, uz = tonumber(ax.ux), tonumber(ax.uy), tonumber(ax.uz)
+        if not fx or not ux then return end
+        local world = math.deg(math.asin(math.max(-1, math.min(1, fz))))
+        local d = fx * ux + fy * uy + fz * uz
+        local hull = math.deg(math.asin(math.max(-1, math.min(1, d))))
+        -- the slope the view faces: the hull-plane direction under the view, against the horizon
+        local hx, hy, hz = fx - d * ux, fy - d * uy, fz - d * uz
+        local hn = math.sqrt(hx * hx + hy * hy + hz * hz)
+        if hn < 1e-3 then return end
+        local slope = math.deg(math.asin(math.max(-1, math.min(1, hz / hn))))
+        local key = math.floor(slope / 5 + 0.5) * 5
+        if key < -40 or key > 40 then return end
+        local b = PS.bins[key]
+        if not b then b = {n = 0, wlo = 99, whi = -99, hlo = 99, hhi = -99}; PS.bins[key] = b; PS.order[#PS.order + 1] = key; table.sort(PS.order) end
+        b.n = b.n + 1
+        b.wlo, b.whi = math.min(b.wlo, world), math.max(b.whi, world)
+        b.hlo, b.hhi = math.min(b.hlo, hull), math.max(b.hhi, hull)
+        local lines = {}
+        for _, k in ipairs(PS.order) do
+            local e = PS.bins[k]
+            lines[#lines + 1] = string.format('slope %+d: view %+.0f..%+.0f against the horizon, %+.0f..%+.0f against the hull (%d)', k, e.wlo, e.whi, e.hlo, e.hhi, e.n)
+        end
+        state.pitch_bins = table.concat(lines, '\n  ')
+        if state.clock >= (PS.logged or 0) + 5 then PS.logged = state.clock; log() end     -- (the log rewritten every 5 s at most)
+    end
+    -- out of the seat: the camera's unit forgotten (it may be gone by the time you sit down again)
+    function DIAG.leave() CM.cam = nil end
 end
-local function fov_differs(x, y) return not (math.abs(x.a - y.a) < 1e-5 and math.abs(x.b - y.b) < 1e-5 and math.abs(x.c - y.c) < 1e-5) end
+-- the three field-of-view multipliers in `s` at offset `o` (into `out` if given; nil if not all there); fov_ok: each in
+-- (lo, 5)
+local function fov_of(s, o, out)
+    local a, b, c = f32(s, o), f32(s, o + 4), f32(s, o + 8)
+    if not (a and b and c) then return nil end
+    out = out or {}
+    out.a, out.b, out.c = a, b, c
+    return out
+end
+local function fov_ok(t, lo) return t.a > lo and t.a < 5 and t.b > lo and t.b < 5 and t.c > lo and t.c < 5 end
+local function fov_read(out)
+    local t = fov_of(read(rec + FOVF.a, 12), 0, out)
+    return t and fov_ok(t, 0.01) and t or nil
+end
+-- (3.4.0 review) one compare for every view (3.4.0 tests also had same3): tol 1e-5 for the tank (the default), 1e-4 for
+-- the other seats, as before
+local function fov_differs(x, y, tol)
+    tol = tol or 1e-5
+    return not (math.abs(x.a - y.a) < tol and math.abs(x.b - y.b) < tol and math.abs(x.c - y.c) < tol)
+end
 -- the gunner view's field of view for zoom factor `f` (1 = the game's own), checked every frame while zoomed
+-- (3.4.0 Test 16-17) the tester: "counter the recoil on the camera when zoomed in, as it shakes considerably". The preset's
+-- +0x6C..+0x84 are the view's kick from a shot (two sets of three and one more: tank gunner 15/25/5 15/25/5 20; aim
+-- views: FRV 100 x7, HMG 0/0/0 3/1/1 20, AT 0/0/0 30/10/10 20, which matches how much each one shakes; Test 15's recoil
+-- test cut the AT's shake to a quarter with +0x78 at a tenth). The kick is what makes the view follow the gun's recoil
+-- (Camera Shake Off in the game's options changed nothing). the tester chose a steady view when zoomed (Test 17): the kick
+-- fades as you zoom in, so the view holds still and the crosshair moves with the recoil; at x1 it is the game's own. The
+-- Anti-Tank's aim view is already a 4x scope ("shakes tremendously"), so its scope counts as zoom. Put back with the
+-- zoom. (Test 16 divided +0x78 alone by the zoom: "largely unchanged"; Test 17 faded all of them times (1 / zoom)^3.)
+-- (Test 18, the tester: "the zoomed in firing is better, but the shake still needs to be reduced") the fade is steeper:
+-- (1 / zoom)^8 (x1.25: 17 %, x1.56: 3 %, x2: 0.4 %; the AT's scope: 0 from the start). Tests 18-30 faded +0x84 too;
+-- since Tests 30 and 31 only +0x78..+0x80 fade (KICK_FOLLOW below; comments brought up to date in the 3.4.0 review).
+local KICKF = {a = 0x6C, b = 0x70, c = 0x74, d = 0x78, e = 0x7C, g = 0x80, h = 0x84}
+local KICK_KEYS = {'a', 'b', 'c', 'd', 'e', 'g', 'h'}
+-- (3.4.0 Test 30) the tester on Test 29: zoomed in, "the zoom camera stays where the tank initially was. the tank keeps moving
+-- on". The first three (+0x6C..+0x74) are how hard the view follows its seat's movement (0 on the emplacements, which
+-- never move; 15/25/5 on the tank, 100 in the FRV): faded with the zoom (Tests 17-29), the zoomed camera stayed put
+-- while the tank drove off. They keep their own values now (Test 30 still faded +0x78..+0x84).
+local KICK_FOLLOW = {a = true, b = true, c = true, h = true}
+-- (Test 31) Test 30 kept the first three and the zoomed camera still stayed behind ("Still not following the tank"):
+-- +0x84 (20 on every view but the FRV aim, 100: the fastest seat) keeps its own too. Only +0x78..+0x80 fade now (the one
+-- that cut the Anti-Tank's shake most in Test 15).
+-- The kick of the record at r (into `out` if given), nil unless every value is plausible; (3.4.0 review) from `s` at
+-- offset `o` when the caller has read it already
+local function kick_read(r, out, s, o)
+    if not s then s, o = read(r + KICKF.a, 28), 0 end
+    if not s then return nil end
+    local t = out or {}
+    for i, k in ipairs(KICK_KEYS) do
+        local v = f32(s, o + (i - 1) * 4)
+        if not v or not (v >= 0 and v < 1000) then return nil end
+        t[k] = v
+    end
+    return t
+end
+local function kick_differs(x, y) for _, k in ipairs(KICK_KEYS) do if math.abs(x[k] - y[k]) > 1e-4 then return true end end return false end
+local KICK_NOW = {}                                       -- (3.4.0 review) the kick read each frame, one table reused
+-- the kick at `scale` (1: its own) of the record at r; `ours`: what was written last (nil: nothing); returns the new ours.
+-- (3.4.0 review) `s`, `o`: the record from +0x6C on, if the caller has read it. What to write is made again only when
+-- the scale changes (3.4.0 tests: a table every frame); the record is still read, so the game setting it back is seen.
+local function kick_apply(r, own, scale, ours, s, o)
+    if not own then return ours end
+    local now = kick_read(r, KICK_NOW, s, o)
+    if not now then return ours end
+    if scale >= 0.9995 then
+        if ours and not kick_differs(now, ours) then write_floats(r, KICKF.h + 4, own, KICKF) end
+        return nil
+    end
+    local w = ours
+    if not (w and w.scale == scale and w.own == own) then
+        w = {scale = scale, own = own}
+        for _, k in ipairs(KICK_KEYS) do w[k] = KICK_FOLLOW[k] and own[k] or own[k] * scale end
+    end
+    if kick_differs(now, w) then write_floats(r, KICKF.h + 4, w, KICKF) end
+    return w
+end
+local function kick_scale(f) local q = 1 / (f * f); q = q * q; return q * q end      -- (1 / f)^8
+local TANK_KICK = {a = 15, b = 25, c = 5, d = 15, e = 25, g = 5, h = 20}     -- (the gunner view's own, on the known build)
+local FOV_NAMES = {'a', 'b', 'c'}
 local function apply_fov(f)
     if not fov.orig then
         if f <= 1.0005 then return true end
-        local okk, kept = pcall(fov_keep_get)
-        if okk and kept then fov.orig = kept
-        else
-            fov.orig = fov_read()
-            if not fov.orig then return false, 'field of view unreadable' end
-            pcall(fov_keep_set, fov.orig)
-        end
+        fov.orig = keep_own('FOV', FOV_NAMES, fov_read)
+        if not fov.orig then return false, 'field of view unreadable' end
     end
-    local now = fov_read()
-    if not now then return false, 'field of view unreadable' end
+    -- (3.4.0 review) one read a frame for the multipliers and the kick (+0x5C..+0x87) into reused tables (3.4.0 tests:
+    -- two reads and four tables a frame while zoomed); what to write is made again only when the zoom changes
+    local s = read(rec + FOVF.a, KICKF.h + 4 - FOVF.a)
+    local now = s and fov_of(s, 0, fov.now)
+    if now then fov.now = now; if not fov_ok(now, 0.01) then now = nil end end
     local o = fov.orig
     if f <= 1.0005 then                                     -- (the game's own back, if it still holds ours)
+        -- (3.4.0 review) the kick first: put back even when the multipliers can't be read
+        if fov.kick then fov.kick = kick_apply(rec, fov.kick_own, 1, fov.kick, s, KICKF.a - FOVF.a) end
+        if not now then return false, 'field of view unreadable' end
         if fov.ours and not fov_differs(now, fov.ours) then write_floats(rec, FOVF.c + 4, o, FOVF) end
         fov.ours = nil
         return true
     end
-    local want_f = {a = o.a / f, b = o.b / f, c = o.c / f}
+    if not now then return false, 'field of view unreadable' end
+    local want_f = fov.ours
+    if not (want_f and want_f.f == f) then want_f = {a = o.a / f, b = o.b / f, c = o.c / f, f = f} end
     if fov.ours then if fov_differs(now, fov.ours) then fov.reset = fov.reset + 1 else fov.kept = fov.kept + 1 end end
     if fov_differs(now, want_f) then
         if not fov.marked then fov.marked = 'zooming'; pcall(zmark, fov.no_check and 'nocheckzooming' or 'zooming') end   -- (cleared the next frame: see zoom_frame)
@@ -877,6 +1130,11 @@ local function apply_fov(f)
         if not ok then return false, 'write failed: ' .. tostring(how) end
     end
     fov.ours = want_f
+    if fov.kick_own == nil then                           -- (the game's own kick: as known on this build, else read)
+        -- (3.4.0 review) read once a game session, then kept (see keep_own)
+        fov.kick_own = timestamp == KNOWN_TIMESTAMP and TANK_KICK or keep_own('KICK', KICK_KEYS, kick_read, rec) or false
+    end
+    if fov.kick_own then fov.kick = kick_apply(rec, fov.kick_own, kick_scale(f), fov.kick, s, KICKF.a - FOVF.a) end
     if TESTER then state.zoom_fov = string.format('preset x%.3f/%.3f/%.3f (game %.3f/%.3f/%.3f); kept %d frames, set back by the game %d',
         want_f.a, want_f.b, want_f.c, o.a, o.b, o.c, fov.kept, fov.reset) end
     return true
@@ -1028,7 +1286,8 @@ local function ro_gui(SR)
     return g
 end
 -- every frame: drawn while the zoom changed within hold + fade seconds and you sit in the gunner seat
-local function readout(seated)
+local function readout(seated, level)
+    level = level or zoom.level
     local age = state.clock - RO.at
     if RO.off or not seated or age > RO.hold + RO.fade then
         if RO.texts then ro_clear() end
@@ -1053,7 +1312,7 @@ local function readout(seated)
     end
     local mh = G.material(g, m)
     if mh ~= nil then M.set_texture(mh, slot, a) end
-    local str = zoom.level > 0 and string.format(ZOOM.fovs[zoom.level] < 9.95 and 'x%.1f' or 'x%.0f', ZOOM.fovs[zoom.level]) or 'x1'
+    local str = level > 0 and string.format(ZOOM.fovs[level] < 9.95 and 'x%.1f' or 'x%.0f', ZOOM.fovs[level]) or 'x1'
     local k = age <= RO.hold and 1 or math.max(0, 1 - (age - RO.hold) / RO.fade)
     if RO.texts then
         RO.frames = RO.frames + 1
@@ -1081,11 +1340,11 @@ local function zoom_frame(seated)
     if not seated or not distance or not original then
         if zoom.seated then
             zoom.seated = false
-            if fov.ours then pcall(apply_fov, 1) end
+            if fov.ours or fov.kick then pcall(apply_fov, 1) end     -- (3.4.0 review: or the kick, see apply_fov)
             zoom.level, zoom.f = 0, 1
             if original and distance then set_want(distance) end
         end
-        if RO.texts then pcall(readout, false) end
+        if RO.texts and not OZ.view then pcall(readout, false) end
         return
     end
     if not zoom.seated then                                 -- (sat down: the picked distance again)
@@ -1093,7 +1352,8 @@ local function zoom_frame(seated)
     end
     local n = (wheel() or 0) + zb_notches()
     local level_was = zoom.level
-    local lo, hi = ZOOM.min - distance, ZOOM.max - distance
+    -- (3.4.0 review) 16 m in the orbit only; the offset fallback keeps the 3.2.0-3.3.0 reach (or the pick, if further)
+    local lo, hi = ZOOM.min - distance, (dist_own and ZOOM.max or math.max(ZOOM.max_other, distance)) - distance
     while n > 0 do                                          -- wheel up: closer, then the crosshair zoom
         if zoom.extra > lo + 1e-6 then zoom.extra = math.max(lo, zoom.extra - ZOOM.step)
         elseif zoom.level < #ZOOM.fovs and fov.works ~= false then zoom.level = zoom.level + 1 end
@@ -1120,7 +1380,7 @@ local function zoom_frame(seated)
     end
     if fov.marked == 'zooming' then fov.marked = 'zoomed'; pcall(zmark, fov.no_check and 'nocheck' or 'zoomed') end   -- (the write before this frame went through)
     if zoom.f > 1.0005 and fov.works == nil then pcall(fov_check, zoom.f) end
-    if zoom.f > 1.0005 or fov.ours then
+    if zoom.f > 1.0005 or fov.ours or fov.kick then          -- (3.4.0 review: a kick not put back yet is tried again)
         local ok, done, why = pcall(apply_fov, zoom.f)
         if not ok or not done then fov.works = false; state.zoom_seen = 'crosshair zoom: ' .. tostring(ok and why or done) end
     end
@@ -1140,8 +1400,217 @@ local function zoom_frame(seated)
     end
 end
 
+-- ---------------------------------------------------------------- other gunner seats (3.4.0)
+-- The same wheel (and Zoom In / Zoom Out keys) in the FRV's gunner seat and on the HMG and Anti-Tank Emplacements. Each
+-- seat has two view presets in the same table (found by narrowing one preset at a time while sitting in each, Tests
+-- 9 and 13): its view, and its aim view while you aim (right mouse button).
+--   FRV gunner 35, aiming 74; HMG Emplacement 10, aiming 11; Anti-Tank Emplacement 12, aiming 13 (the scope)
+-- (Test 14, the tester: "the zoom should only work on the frv gun when you are currently aiming" / "you should be able to zoom
+-- out if youre not aiming though") Not aiming, the wheel moves the camera back (up to ZOOM.max_other m: 3.4.0 review) and in again, as far as
+-- the game's own place. (Test 15) It goes back along its own line of sight, through the view's three camera distances
+-- (+0x24 / +0x28 / +0x2C: these views circle round a point at that distance, closer when you look down, and the aim
+-- views have shorter ones). Test 14 moved the offset (+0x34..+0x3C) as on the tank, but in these seats the offset is
+-- in another frame: the HMG's camera went off to the side and up into the air, and the FRV's lagged behind the turret. Aiming, it zooms the crosshair (the same steps up to 10x
+-- as the tank, through the aim view's own field-of-view multipliers); the aim view keeps its crosshair in the middle of
+-- the screen, so the zoom closes in on it (Tests 10-12: zoomed without aiming, the emplacements' crosshair, well above
+-- the middle, slid away, and the FRV's aim view never zoomed). The zoom step is kept while you stay in the seat.
+-- Getting out, a menu Off or the game closing puts both presets' own values back (when they still hold what this addon
+-- wrote). Seat kinds come from Tank Core (any_kind, any_role: every seat, emplacements too).
+local OTHER = {
+    [0x1A] = {id = 35, aim = 74, name = 'FRV gunner seat', own = {n = 0.75, m = 5, f = 5}, pitch = {-60, 75},
+              aim_fov = {a = 0.85, b = 0.85, c = 0.85}, kick = {a = 100, b = 100, c = 100, d = 100, e = 100, g = 100, h = 100}},
+    [0x20] = {id = 10, aim = 11, name = 'HMG Emplacement', own = {n = 3.75, m = 4, f = 3.75}, pitch = {-65, 65},
+              aim_fov = {a = 0.85, b = 0.80, c = 0.90}, kick = {a = 0, b = 0, c = 0, d = 3, e = 1, g = 1, h = 20}},
+    [0x01] = {id = 12, aim = 13, name = 'Anti-Tank Emplacement', own = {n = 3.75, m = 4, f = 3.75}, pitch = {-45, 45},
+              aim_fov = {a = 0.25, b = 0.25, c = 0.25}, kick = {a = 0, b = 0, c = 0, d = 30, e = 10, g = 10, h = 20}, scope = 4},
+}
+state.other_views = 'not used yet'
+-- an other seat's two records, checked: each one's own number at +0, the view's pitch limits as in the game, plausible
+-- distances and aim multipliers; nil when either fails
+local function other_rec(v)
+    if OZ.checked[v.id] ~= nil then return OZ.checked[v.id] or nil end
+    local r, ra = rec + (v.id - KNOWN_ID) * STRIDE, rec + (v.aim - KNOWN_ID) * STRIDE
+    local s, sa = read(r, STRIDE), read(ra, STRIDE)
+    local okv = s and sa and u32(s, 0) == v.id and u32(sa, 0) == v.aim
+        and math.abs((f32(s, 0x4C) or 0) - v.pitch[1]) < 0.5 and math.abs((f32(s, 0x50) or 0) - v.pitch[2]) < 0.5
+    local o = okv and tdist_of(s, TDIST.n)
+    local af = okv and fov_of(sa, FOVF.a)
+    okv = o and af and fov_ok(af, 0.05)
+    if okv then
+        -- their own values: the game's as known on this build (a Lua rebuilt mid-zoom can't hand ours on as the game's);
+        -- read from the records on other builds, (3.4.0 review) once a game session and then kept (see keep_own), so a
+        -- reload there can't either. (The 3.4.0 tests' comment here spoke of a check of the records against the known
+        -- values that the code never had.)
+        if timestamp == KNOWN_TIMESTAMP then v.o, v.afo, v.akick = v.own, v.aim_fov, v.kick
+        else
+            v.o, v.afo = keep_own('SEAT' .. v.id, TDIST_NAMES, o), keep_own('AIM' .. v.aim, FOV_NAMES, af)
+            v.akick = keep_own('KICK' .. v.aim, KICK_KEYS, kick_read, ra)
+        end
+    end
+    OZ.checked[v.id] = okv and {r = r, ra = ra} or false
+    state.other_views = {}
+    for _, w in pairs(OTHER) do
+        local c = OZ.checked[w.id]
+        if c ~= nil then state.other_views[#state.other_views + 1] = w.name .. (c and string.format(' (presets %d, aiming %d)', w.id, w.aim) or ' (its view presets were not found: left alone)') end
+    end
+    table.sort(state.other_views); state.other_views = table.concat(state.other_views, ', ')
+    return okv and OZ.checked[v.id] or nil
+end
+-- aiming: the right mouse button held (pcall: an engine without it reads as not aiming, so the wheel only moves the
+-- camera)
+local function aiming()
+    local SR = rawget(_G, 'stingray')
+    local M = type(SR) == 'table' and SR.Mouse
+    if not M then return false end
+    if OZ.aim_idx == nil then
+        local ok, i = pcall(M.button_index, 'right')
+        OZ.aim_idx = (ok and type(i) == 'number') and i or false
+    end
+    if not OZ.aim_idx then return false end
+    local ok, v = pcall(M.button, OZ.aim_idx)
+    return ok and type(v) == 'number' and v > 0.5
+end
+-- (Test 12, tester) the field of view of the view's camera now (the first camera unit in the world: one in these seats)
+local function other_cam_fov()
+    local U, W, _, CAM = TT.api()
+    if not (U and W and CAM and U.num_cameras and U.camera and CAM.vertical_fov and W.units) then return nil end
+    if not OZ.cam_unit then
+        local okw, world = pcall(rawget(_G, 'stingray').Application.main_world)
+        if not okw or world == nil then return nil end
+        local okl, all = pcall(W.units, world)
+        if not okl or type(all) ~= 'table' then return nil end
+        for _, u in ipairs(all) do
+            local okn, n = pcall(U.num_cameras, u)
+            if okn and type(n) == 'number' and n > 0 then OZ.cam_unit = u; break end
+        end
+        if not OZ.cam_unit then return nil end
+    end
+    local okc, c = pcall(U.camera, OZ.cam_unit, 1)                 -- (1-based: camera 0 crashed the game in 3.2.0)
+    if not okc or c == nil then OZ.cam_unit = nil; return nil end
+    local okf, fv = pcall(CAM.vertical_fov, c)
+    return okf and type(fv) == 'number' and fv or nil
+end
+local function other_detail(v, aim)
+    local now = other_cam_fov()
+    local sa = OZ.rec and read(OZ.rec.ra, STRIDE)                  -- (3.4.0 review: read here, Tester only)
+    state.other_detail = string.format('%s (%s): aim preset %d multipliers %.3f/%.3f/%.3f; zoom written %d time(s), changed back by the game %d time(s); camera field of view %s (%s when you sat down)',
+        v.name, aim and 'aiming' or 'not aiming', v.aim, f32(sa, 0x5C) or -1, f32(sa, 0x60) or -1, f32(sa, 0x64) or -1, OZ.writes, OZ.reset,
+        now and string.format('%.3f', now) or '?', OZ.fov0 and string.format('%.3f', OZ.fov0) or '?')
+end
+-- puts an other seat's own values back (only what still holds this addon's values) and forgets it
+local function other_release()
+    local v = OZ.view
+    if not v then return end
+    local rr = OZ.rec
+    if rr then
+        if OZ.ours_o then
+            local now = tdist_read(rr.r)
+            if now and not tdist_differs(now, OZ.ours_o) then write_floats(rr.r, TDIST.f + 4, v.o, TDIST) end
+        end
+        if OZ.ours_f then
+            local now = fov_of(read(rr.ra + FOVF.a, 12), 0)
+            if now and not fov_differs(now, OZ.ours_f, 1e-4) then write_floats(rr.ra, FOVF.c + 4, v.afo, FOVF) end
+        end
+        if OZ.kick then kick_apply(rr.ra, v.akick, 1, OZ.kick) end
+    end
+    OZ.view, OZ.rec, OZ.ours_o, OZ.ours_f, OZ.cam_unit, OZ.detail_at, OZ.key, OZ.kick = nil, nil, nil, nil, nil, nil, nil, nil
+    OZ.extra, OZ.d, OZ.level, OZ.f = 0, 0, 0, 1
+    if RO.texts then pcall(readout, false) end
+end
+-- every frame: `v` the other seat you sit in (nil: none)
+local function other_frame(v)
+    if v ~= OZ.view then other_release() end
+    if not v then return end
+    local rr = other_rec(v)
+    if not rr then return end
+    if not OZ.view then
+        OZ.view, OZ.rec, OZ.t = v, rr, state.clock; state.other_zoom = v.name .. ': sat down'
+        if TESTER then local okf, fv = pcall(other_cam_fov); OZ.fov0 = okf and fv or nil end
+    end
+    local aim = aiming()
+    local n = (wheel() or 0) + zb_notches()
+    local level_was = OZ.level
+    if aim then                                             -- aiming: the crosshair zoom
+        OZ.level = math.max(0, math.min(#ZOOM.fovs, OZ.level + n))
+    else                                                    -- not aiming: the camera back (wheel down) and in
+        OZ.extra = math.max(0, math.min(ZOOM.max_other, OZ.extra - n * ZOOM.step))   -- (3.4.0 review: 7 m, not the tank's 16)
+    end
+    local dt = math.max(0, state.clock - (OZ.t or state.clock)); OZ.t = state.clock
+    -- the camera distances (the view, not the aim view): its own, each OZ.d further; written when they aren't so
+    -- (3.4.0 review) looked at only while the camera is moved back or being put back, and what to write made again only
+    -- when OZ.d changes (3.4.0 tests read both records whole and made two tables every frame in the seat)
+    if OZ.d ~= OZ.extra then
+        local step = ZOOM.speed * dt
+        OZ.d = math.abs(OZ.extra - OZ.d) <= step and OZ.extra or OZ.d + (OZ.extra > OZ.d and step or -step)
+    end
+    if OZ.d > 1e-4 or OZ.ours_o then
+        local s = read(rr.r + TDIST.n, 12)
+        if not s then return end
+        local now, wo = tdist_of(s, 0, OZ.dnow), OZ.ours_o
+        if not (wo and wo.d == OZ.d) then local o = v.o; wo = {n = o.n + OZ.d, m = o.m + OZ.d, f = o.f + OZ.d, d = OZ.d} end
+        if not now or tdist_differs(now, wo) then
+            local ok, how = write_floats(rr.r, TDIST.f + 4, wo, TDIST)
+            if not ok then state.errors = state.errors + 1; state.last_error = v.name .. ': camera write failed: ' .. tostring(how) end
+        end
+        OZ.ours_o = OZ.d > 1e-4 and wo or nil
+    end
+    -- the crosshair zoom (the aim view): glides to its step in log space, the aim view's own multipliers divided by it
+    local goalf = OZ.level > 0 and ZOOM.fovs[OZ.level] or 1
+    if OZ.f ~= goalf then
+        local lf, lg = math.log(OZ.f), math.log(goalf)
+        lf = lf + (lg - lf) * math.min(1, dt * ZOOM.glide)
+        OZ.f = math.abs(lf - lg) < 0.002 and goalf or math.exp(lf)
+    end
+    local ks = kick_scale(OZ.f * (v.scope or 1))                     -- (Test 17) the kick fades as you zoom in
+    local zoomed = OZ.f > 1.0005 or OZ.ours_f
+    if zoomed or ks < 0.9995 or OZ.kick then
+        -- (3.4.0 review) the aim view's multipliers and kick in one read, only while they are (or were) changed
+        local sa = read(rr.ra + FOVF.a, KICKF.h + 4 - FOVF.a)
+        if not sa then return end
+        if zoomed then
+            local wf = v.afo
+            if OZ.f > 1.0005 then
+                wf = OZ.ours_f
+                if not (wf and wf.f == OZ.f) then local fo = v.afo; wf = {a = fo.a / OZ.f, b = fo.b / OZ.f, c = fo.c / OZ.f, f = OZ.f} end
+            end
+            local nf = fov_of(sa, 0, OZ.fnow)
+            if OZ.ours_f and not (nf and not fov_differs(nf, OZ.ours_f, 1e-4)) then OZ.reset = OZ.reset + 1 end      -- (Test 11) the game changed ours
+            if not (nf and not fov_differs(nf, wf, 1e-4)) then
+                OZ.writes = OZ.writes + 1
+                local ok, how = write_floats(rr.ra, FOVF.c + 4, wf, FOVF)
+                if not ok then state.errors = state.errors + 1; state.last_error = v.name .. ': zoom write failed: ' .. tostring(how) end
+            end
+            OZ.ours_f = OZ.f > 1.0005 and wf or nil
+        end
+        if ks < 0.9995 or OZ.kick then OZ.kick = kick_apply(rr.ra, v.akick, ks, OZ.kick, sa, KICKF.a - FOVF.a) end
+    end
+    -- the readout: while aiming (the step shown as you aim and as it changes)
+    if aim and (OZ.level ~= level_was or not OZ.aimed) then RO.at = state.clock end
+    OZ.aimed = aim
+    local okr, rerr = pcall(readout, aim, OZ.level)
+    if not okr then RO.off = 'off after an error: ' .. tostring(rerr); state.readout = RO.off; pcall(ro_clear) end
+    local key = v.id * 100000 + OZ.level * 1000 + math.floor(OZ.extra * 10 + 0.5) + (aim and 0.5 or 0)
+    if key ~= OZ.key then
+        OZ.key = key
+        state.other_zoom = v.name .. ': ' .. string.format('camera %.1f m further back, crosshair zoom x%.1f when aiming', OZ.extra, goalf)
+        if TESTER then pcall(other_detail, v, aim); OZ.detail_at = state.clock + 0.8 end     -- (and again once the zoom has glided)
+    elseif TESTER and OZ.detail_at and state.clock >= OZ.detail_at then
+        OZ.detail_at = nil; pcall(other_detail, v, aim)
+    end
+end
+
 local function follow_turret()
     local seat, core = rawget(_G, 'ArmoredOverhaulSeat'), rawget(_G, 'ArmoredOverhaulGunnerDrive')
+    -- (3.4.0) the FRV gunner seat and the emplacements: their own views (every seat kind comes from Tank Core)
+    do
+        local v
+        if type(seat) == 'table' and type(core) == 'table' and core.phase ~= 'off' and distance and not blocked
+            and seat.any_role == 2 and seat.any_kind and (core.frames or 0) - (seat.frame or -1e9) <= SEAT_FRESH then
+            v = OTHER[seat.any_kind]
+        end
+        local okv, err = pcall(other_frame, v)
+        if not okv then state.errors = state.errors + 1; state.last_error = 'other view: ' .. tostring(err); pcall(other_release) end
+    end
     local a, hold = 0, false
     if type(seat) == 'table' and type(core) == 'table' then
         local cf = core.frames or 0
@@ -1149,6 +1618,9 @@ local function follow_turret()
         local core_ok = core.phase ~= 'off' and state.frames - (seat_watch.seen or state.frames) <= CORE_STALL
         local seated = core_ok and seat.role == 2 and seat.kind and TT.TANKS[seat.kind] and cf - (seat.frame or -1e9) <= SEAT_FRESH
         pcall(zoom_frame, seated and not blocked and distance ~= nil)
+        if DIAG then                                          -- (Test 28: where the camera really is; Test 35: its pitch on slopes)
+            if seated and distance and not blocked then pcall(DIAG.measure); pcall(DIAG.pitch) else DIAG.leave() end
+        end
         if seated and (blocked or not distance) then
             -- (3.0.1 review) nothing to turn (left alone, or Off in the menu): the turret is not tracked (3.0.1 tracked it
             -- every frame first); Off writes the game's own view, straight behind, once below
@@ -1197,8 +1669,10 @@ local function follow_turret()
         end
     else
         pcall(zoom_frame, false)
+        if DIAG then DIAG.leave() end
         state.turning = 'no: Tank Core is not running (it comes with this option)'; turning_was[1] = nil; seat_watch.kind = nil
     end
+    pcall(dist_sync)                                          -- (Test 16) the distance behind
     if blocked or hold or state.frames < (retry_at or 0) then return end
     -- (3.0 review) Off in the menu: the game's own view, straight behind, never turned or levelled
     if not distance then set_target(0) elseif level then set_target_level(a, basis) else set_target(math.floor(a / ANGLE_STEP + 0.5) * ANGLE_STEP) end
@@ -1224,7 +1698,7 @@ end
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'camera'}) do
@@ -1278,26 +1752,28 @@ end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
 local next_check = 0                                    -- (main loop: frame of the next check; set by the menu too)
-local MENU_PRESETS = {false, -0.5, 2, 4, 6}             -- Off (the game's own view), Close, Far, Farther, Farthest
+-- (Test 32) the labels give where the camera really ends up from the turret, as measured, rounded to half a metre:
+-- (3.4.0 review: brought up to date) the picks ask for about 1.0 / 4.45 / 7.4 / 10.4 m behind (the game's own 1 m, half a
+-- metre and the pick x cos 10 degrees) and give about 1.5 / 3.5 / 5 / 6.5 m (the game's view keeps less of a long distance)
+local MENU_PRESETS = {false, -0.5, 3, 6, 9}             -- Off (the game's own view), Close, Far, Farther, Farthest (Test 28: were 2, 4, 6)
 local MENU_PICK = 2
 for i, d in ipairs(MENU_PRESETS) do if d == PRESET then MENU_PICK = i end end
 -- The option as the mod manager shows it, starting at the pick (the id carries it). The game takes a new distance the
 -- next time you sit in the gunner seat.
 menu_rows.camera = {
     {'armored_overhaul.camera.' .. PRESET_NAME:lower(), {type = 'choice', label = 'Tank Gunner Camera',
-        choices = {'Off', 'Close (1 m behind)', 'Far (3.5 m behind)', 'Farther (5.4 m behind)', 'Farthest (7.4 m behind)'}, default = MENU_PICK, description = 'Puts the Bastion and Maelstrom gunner camera lower and further back so you see more around the tank. It stays behind the turret as it turns. The pick is where the camera starts: the mouse wheel (or the Mod Bindings Menu\'s Zoom In / Zoom Out keys) moves it closer or further back, and from the closest point zooms in on the crosshair.'}, 'distance'},
+        choices = {'Off', 'Close (about 1.5 m back)', 'Far (about 3.5 m back)', 'Farther (about 5 m back)', 'Farthest (about 6.5 m back)'}, default = MENU_PICK, description = 'Puts the Bastion and Maelstrom gunner camera lower and further back so you see more around the tank. It stays behind the turret as it turns. The pick is where the camera starts: the mouse wheel (or the Mod Bindings Menu\'s Zoom In / Zoom Out keys) moves it closer or further back, and from the closest point zooms in on the crosshair.'}, 'distance'},
 }
 menu_set = function(key, v)
     if key ~= 'distance' or MENU_PRESETS[v] == nil then return end
     distance = MENU_PRESETS[v] or nil
     state.preset = v == MENU_PICK and string.format('%s (picked in the mod manager)', PRESET_NAME)
-        or (distance and ({'Close (1 m behind)', 'Far (3.5 m behind)', 'Farther (5.4 m behind)', 'Farthest (7.4 m behind)'})[v - 1] .. ' (Mod Options Menu)' or 'off: the game\'s own view (Mod Options Menu)')
+        or (distance and ({'Close (about 1.5 m back)', 'Far (about 3.5 m back)', 'Farther (about 5 m back)', 'Farthest (about 6.5 m back)'})[v - 1] .. ' (Mod Options Menu)' or 'off: the game\'s own view (Mod Options Menu)')
     zoom.seated = false                                  -- (3.2.0) the new distance is the zoom's new start
-    if fov.ours then pcall(apply_fov, 1) end
+    if fov.ours or fov.kick then pcall(apply_fov, 1) end   -- (3.4.0 review: or the kick)
     zoom.level, zoom.f = 0, 1
     if original then
-        want.back = distance and (original.back - BASE_BACK - distance * math.cos(RISE)) or original.back
-        want.up = distance and (original.up - BASE_DOWN + distance * math.sin(RISE)) or original.up
+        set_want(distance)
         set_target(0); settled = false; last_step = nil
     end
     -- (3.0.1 review) checked at the next frame, as the Turret core does (3.0.1: up to 10 s later after a turning error)
@@ -1373,7 +1849,7 @@ local function tick()
         if not okA then state.errors = state.errors + 1; state.last_error = tostring(changed); state.status = 'error: ' .. tostring(changed)
         else state.status = 'active' end
         -- (3.0.1 review) the options menu and the preset too: a menu linked later is in the log
-        local summary = state.status .. state.view .. state.errors .. state.turning .. state.options_menu .. state.preset .. tostring(state.zoom) .. tostring(state.zoom_keys) .. tostring(state.readout)
+        local summary = state.status .. state.view .. state.errors .. state.turning .. state.options_menu .. state.preset .. tostring(state.zoom) .. tostring(state.zoom_keys) .. tostring(state.readout) .. tostring(state.other_views) .. tostring(state.other_zoom) .. (TESTER and tostring(state.other_detail) or '')
         if summary ~= shown then shown = summary; log() end
         next_check = state.frames + ((okA and settled) and SETTLED_EVERY or CHECK_EVERY)
     end
@@ -1399,8 +1875,13 @@ do
         pcall(function()
             if phase ~= 'ready' or not (rec and original and confirmed) then return end
             phase = 'closed'                                -- (nothing is written after this)
-            if fov.ours then pcall(apply_fov, 1) end        -- (3.2.0: the gunner view's field of view, if zoomed)
+            if fov.ours or fov.kick then pcall(apply_fov, 1) end   -- (3.2.0: the gunner view's field of view, if zoomed; 3.4.0 review: or its kick)
+            pcall(other_release)                            -- (3.4.0: the FRV gunner's or an emplacement's view)
             if RO.mark == 'trying' then pcall(ro_mark, 'ok') end   -- (closed normally: the readout didn't crash it)
+            if dist_written and dist_own then          -- (Test 16) the distances, if they still hold ours
+                local d = tdist_read()
+                if d and not tdist_differs(d, dist_written, 1e-3) then write_floats(rec, TDIST.f + 4, dist_own, TDIST) end
+            end
             local now = check(rec, true)
             if now and not differs(now, written) and differs(now, original) then
                 local ok, how = write_floats(rec, FIELD.up + 4, original)

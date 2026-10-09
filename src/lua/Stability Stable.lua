@@ -1,7 +1,7 @@
--- HD2-Addon: mods/chef/armored_overhaul_handling
+-- HD2-Addon: mods/chef/armored_overhaul_stability
 -- Armored Overhaul 3.4.0 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
 -- Throttle Response, for the TD-220 Bastion and TD-110 Maelstrom (one source, built once per option and strength;
--- this copy is the 'grip' option, Strong). Written from scratch.
+-- this copy is the 'stability' option, Stable). Written from scratch.
 --
 -- How it works: a tank drives on the engine's Havok vehicle kit. These options change it live, on the tank you sit in
 -- (any seat), through the game's own vehicle physics interface - the same calls the game makes when a tank is set up
@@ -50,8 +50,8 @@
 -- and so does the game closing (3.4.0 review: every value this part changed, where the tank still holds what it wrote).
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 local TESTER = false
-local PART = 'grip'
-local PRESET, PRESET_NAME = 1.35, 'Strong'   -- the strength picked in the mod manager (baked in per sub-option)
+local PART = 'stability'
+local PRESET, PRESET_NAME = 1.5, 'Stable'   -- the strength picked in the mod manager (baked in per sub-option)
 -- (Test 20) the five options: their global (the Driver Panel's handling check and the other parts read it), log, title,
 -- menu row (id kept from the earlier copies, so a saved pick keeps its place) and the choices
 local PARTS = {

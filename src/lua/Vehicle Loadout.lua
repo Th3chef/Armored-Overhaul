@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_vehicle_loadout
--- Armored Overhaul 3.3.0 - Vehicle Loadout option: lets you pick more than one tank, exosuit or FRV in your stratagem
+-- Armored Overhaul 3.4.0 - Vehicle Loadout option: lets you pick more than one tank, exosuit or FRV in your stratagem
 -- loadout. Written from scratch.
 --
 -- How the game limits it (game.dll, Sept 2026 build): each stratagem has a data record (the stratagem list,
@@ -30,7 +30,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.3.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.4.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            vehicles = 'none yet', groups = 'none yet', changed = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (on)', frames = 0}
 rawset(_G, 'ArmoredOverhaulVehicleLoadout', S)
@@ -255,7 +255,7 @@ end
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'loadout'}) do

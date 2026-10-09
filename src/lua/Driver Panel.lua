@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.3.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.4.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
@@ -31,7 +31,7 @@ local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.3.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.4.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
            speed = 'not measured yet', fastest = 'not measured yet', speed_check = 'none', handling_check = 'not driven yet', options_menu = 'not installed (the defaults are used)'}
@@ -111,7 +111,7 @@ rawset(_G, 'ArmoredOverhaulDriverPanelPlace', PLACE)
 local panel_on = true
 local menu_link
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     hub.groups.driver_panel = {status = S,
@@ -1000,8 +1000,10 @@ local function handling_check(seat, hull, kmh, t)
     if not r then
         if #HC.order >= 6 then HC.list[table.remove(HC.order, 1)] = nil end
         r = {name = (tostring(TT.tank or '?')):match('^(%a+)') or '?', top = 0, flat = 0, max_rpm = 0, yaw = 0, pivot = 0, runs = 0,
-             set = string.format('menu when first driven: power %s, grip %s, steering %s', hc_mult('ArmoredOverhaulPower'),
-                hc_mult('ArmoredOverhaulHandling'), hc_mult('ArmoredOverhaulSteering'))}
+             set = string.format('menu when first driven: engine torque %s, grip %s, steering %s, top speed %s, throttle %s, stability %s',
+                hc_mult('ArmoredOverhaulPower'), hc_mult('ArmoredOverhaulHandling'), hc_mult('ArmoredOverhaulSteering'),
+                hc_mult('ArmoredOverhaulTopSpeed'), hc_mult('ArmoredOverhaulThrottle'),
+                hc_mult('ArmoredOverhaulStability'))}
         HC.list[vid] = r; HC.order[#HC.order + 1] = vid
     end
     -- (Test 12) the hull's slope and turn rate first: the standard runs only count on flat ground (one sample each in
