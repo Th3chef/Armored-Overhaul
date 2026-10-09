@@ -1,35 +1,72 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.3.0",
+  "Name": "Armored Overhaul 3.4.0",
   "IconPath": "thumbnail.png",
-  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank power, grip, steering and suspension; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
+  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
   "Options": [
     {
-      "Name": "Tank Power",
-      "Description": "More pulling power for the Bastion and Maelstrom: quicker off the line and up slopes. Top speed is unchanged.",
+      "Name": "Tank Top Speed",
+      "Description": "A faster Bastion and Maelstrom: more engine speed and pulling power, so a higher top speed and quicker acceleration, forward and in reverse, without the extra pull tipping the hull back more than the game's own. Changes the tank you are in, at once.",
+      "Image": "options/tank_speed.png",
+      "SubOptions": [
+        {
+          "Name": "Fast (x1.1)",
+          "Description": "A tenth more engine speed and pulling power.",
+          "Image": "options/sub/speed_fast.png",
+          "Include": [
+            "Tank Core",
+            "Top Speed Fast"
+          ]
+        },
+        {
+          "Name": "Faster (x1.15)",
+          "Description": "About a sixth more engine speed and pulling power.",
+          "Image": "options/sub/speed_faster.png",
+          "Include": [
+            "Tank Core",
+            "Top Speed Faster"
+          ]
+        },
+        {
+          "Name": "Fastest (x1.3)",
+          "Description": "Three tenths more engine speed and pulling power.",
+          "Image": "options/sub/speed_fastest.png",
+          "Include": [
+            "Tank Core",
+            "Top Speed Fastest"
+          ]
+        }
+      ]
+    },
+    {
+      "Name": "Tank Engine Torque",
+      "Description": "More engine torque for the Bastion and Maelstrom: quicker off the line and up slopes, without the extra pull tipping the hull back more than the game's own. Top speed is unchanged unless Tank Top Speed is on too (their torque boosts multiply). Changes the tank you are in, at once.",
       "Image": "options/tank_power.png",
       "SubOptions": [
         {
-          "Name": "Strong (x1.25)",
-          "Description": "A quarter more pulling power.",
+          "Name": "Strong (x1.2)",
+          "Description": "A fifth more engine torque.",
           "Include": [
+            "Tank Core",
             "Power Strong"
           ],
           "Image": "options/sub/power_strong.png"
         },
         {
-          "Name": "Stronger (x1.5)",
-          "Description": "Half again the pulling power.",
+          "Name": "Stronger (x1.35)",
+          "Description": "About a third more engine torque.",
           "Include": [
+            "Tank Core",
             "Power Stronger"
           ],
           "Image": "options/sub/power_stronger.png"
         },
         {
-          "Name": "Strongest (x2)",
-          "Description": "Twice the pulling power.",
+          "Name": "Strongest (x1.5)",
+          "Description": "Half again the engine torque.",
           "Include": [
+            "Tank Core",
             "Power Strongest"
           ],
           "Image": "options/sub/power_strongest.png"
@@ -38,29 +75,32 @@
     },
     {
       "Name": "Tank Grip",
-      "Description": "More track grip for the Bastion and Maelstrom: less sliding on slopes and in turns.",
+      "Description": "More track grip for the Bastion and Maelstrom: less sliding on slopes and in turns. Changes the tank you are in, at once.",
       "Image": "options/tank_grip.png",
       "SubOptions": [
         {
-          "Name": "Moderate (x1.25)",
-          "Description": "A quarter more grip.",
+          "Name": "Moderate (x1.2)",
+          "Description": "A fifth more grip.",
           "Include": [
+            "Tank Core",
             "Grip Moderate"
           ],
           "Image": "options/sub/grip_moderate.png"
         },
         {
-          "Name": "Strong (x1.5)",
-          "Description": "Half again the grip.",
+          "Name": "Strong (x1.35)",
+          "Description": "About a third more grip.",
           "Include": [
+            "Tank Core",
             "Grip Strong"
           ],
           "Image": "options/sub/grip_strong.png"
         },
         {
-          "Name": "Maximum (x2)",
-          "Description": "Twice the grip: the tanks stick to the ground.",
+          "Name": "Maximum (x1.5)",
+          "Description": "Half again the grip.",
           "Include": [
+            "Tank Core",
             "Grip Maximum"
           ],
           "Image": "options/sub/grip_maximum.png"
@@ -69,7 +109,7 @@
     },
     {
       "Name": "Tank Steering",
-      "Description": "Quicker steering for the Bastion and Maelstrom: they start and stop turning sooner.",
+      "Description": "Quicker steering for the Bastion and Maelstrom: they start and stop turning sooner. Changes every tank at once.",
       "Image": "options/tank_steering.png",
       "SubOptions": [
         {
@@ -99,13 +139,50 @@
       ]
     },
     {
+      "Name": "Tank Throttle Response",
+      "Description": "Snappier Bastion and Maelstrom: the throttle and brake let go sooner when you release them, and gear changes and switching between forward and reverse wait less. Changes the tanks at once.",
+      "Image": "options/tank_throttle.png",
+      "SubOptions": [
+        {
+          "Name": "Quick",
+          "Description": "Throttle and brake let go twice as fast; half the pause when changing gear or direction.",
+          "Image": "options/sub/throttle_quick.png",
+          "Include": [
+            "Tank Core",
+            "Throttle Quick",
+            "Shift Quick"
+          ]
+        },
+        {
+          "Name": "Quicker",
+          "Description": "Four times as fast; a fifth of the pause.",
+          "Image": "options/sub/throttle_quicker.png",
+          "Include": [
+            "Tank Core",
+            "Throttle Quicker",
+            "Shift Quicker"
+          ]
+        },
+        {
+          "Name": "Instant",
+          "Description": "The throttle and brake follow your keys at once, and gear and direction changes have no pause.",
+          "Image": "options/sub/throttle_instant.png",
+          "Include": [
+            "Tank Core",
+            "Throttle Instant",
+            "Shift Instant"
+          ]
+        }
+      ]
+    },
+    {
       "Name": "Tank Suspension",
-      "Description": "Longer road wheel travel for the Bastion and Maelstrom: the wheels drop into dips so the tracks stay on the ground, firmer damping settles the hull quickly after rocks and bumps, and a lower center of gravity makes them harder to tip. The tanks ride 0.1 m higher than in the game.",
+      "Description": "Longer road wheel travel for the Bastion and Maelstrom: the wheels drop into dips so the tracks stay on the ground, firmer damping settles the hull quickly after rocks and bumps, and a lower center of gravity makes them harder to tip. The tanks ride 0.1 m higher than in the game, keep their full steering angle up to a slightly higher speed for tighter turns when driving fast, and damp the hull's turning so a lean builds more slowly (tanks called in after a change).",
       "Image": "options/tank_suspension.png",
       "SubOptions": [
         {
           "Name": "Balanced",
-          "Description": "Half a meter of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game.",
+          "Description": "Half a meter of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game. Light turn damping.",
           "Include": [
             "Suspension Balanced"
           ],
@@ -113,11 +190,45 @@
         },
         {
           "Name": "Planted",
-          "Description": "A little less travel, slightly firmer springs, about twice the game's damping and the lowest center of gravity: the calmest ride, very hard to tip.",
+          "Description": "A little less travel, slightly firmer springs, about twice the game's damping and the lowest center of gravity: the calmest ride, very hard to tip. Firmer turn damping.",
           "Include": [
             "Suspension Planted"
           ],
           "Image": "options/sub/suspension_heavy.png"
+        }
+      ]
+    },
+    {
+      "Name": "Tank Stability",
+      "Description": "Keeps the Bastion and Maelstrom flat on the ground: downforce presses the tank down harder the faster it goes, so it feels heavy and stays planted over crests and bumps instead of floating. The roll and lean are the game's own. Changes the tank you are in, at once.",
+      "Image": "options/tank_stability.png",
+      "SubOptions": [
+        {
+          "Name": "Stable",
+          "Description": "Weighs 1.5 times as much at 45 km/h.",
+          "Image": "options/sub/stability_stable.png",
+          "Include": [
+            "Tank Core",
+            "Stability Stable"
+          ]
+        },
+        {
+          "Name": "Steady",
+          "Description": "Weighs twice as much at 45 km/h.",
+          "Image": "options/sub/stability_steady.png",
+          "Include": [
+            "Tank Core",
+            "Stability Steady"
+          ]
+        },
+        {
+          "Name": "Planted",
+          "Description": "Weighs three times as much at 45 km/h.",
+          "Image": "options/sub/stability_planted.png",
+          "Include": [
+            "Tank Core",
+            "Stability Planted"
+          ]
         }
       ]
     },
@@ -309,7 +420,7 @@
       "Image": "options/gunner_camera.png",
       "SubOptions": [
         {
-          "Name": "Close (1 m behind)",
+          "Name": "Close (about 1.5 m back)",
           "Description": "The game's distance, 1.4 m up (the game: 2 m).",
           "Include": [
             "Camera Close",
@@ -318,8 +429,8 @@
           "Image": "options/sub/camera_close.png"
         },
         {
-          "Name": "Far (3.5 m behind)",
-          "Description": "1.9 m up.",
+          "Name": "Far (about 3.5 m back)",
+          "Description": "1.4 m up.",
           "Include": [
             "Camera Far",
             "Tank Core"
@@ -327,8 +438,8 @@
           "Image": "options/sub/camera_far.png"
         },
         {
-          "Name": "Farther (5.4 m behind)",
-          "Description": "2.2 m up.",
+          "Name": "Farther (about 5 m back)",
+          "Description": "1.4 m up.",
           "Include": [
             "Camera Farther",
             "Tank Core"
@@ -336,8 +447,8 @@
           "Image": "options/sub/camera_farther.png"
         },
         {
-          "Name": "Farthest (7.4 m behind)",
-          "Description": "2.5 m up: the widest view.",
+          "Name": "Farthest (about 6.5 m back)",
+          "Description": "1.4 m up: the widest view.",
           "Include": [
             "Camera Farthest",
             "Tank Core"

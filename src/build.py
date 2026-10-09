@@ -1,7 +1,7 @@
-"""Armored Overhaul 3.3 - builds the Arsenal / HD2 Mod Manager zip from this folder.
+"""Armored Overhaul 3.4 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-  python tools/unpack_release.py Armored-Overhaul-3.3.0.zip     (once: the game-derived parts, see below)
-  python build.py [--check Armored-Overhaul-3.3.0.zip]
+  python tools/unpack_release.py Armored-Overhaul-3.4.0.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.4.0.zip]
 
 - lua/<folder>.lua: each option folder's Lua addon, as shipped (DERIVED folders are made from another folder's file). Its first line names the addon
   ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
@@ -24,9 +24,12 @@ PATCH = '9ba626afa44a3aa3.patch_0'
 LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV Gunner Drive', 'Turret Core', 'MBT Turrets',
                'MBT Turrets 180',
                'Traverse Quick', 'Traverse Fast', 'Traverse Very Fast', 'Elevation Quick', 'Elevation Fast',
-               'Elevation Very Fast', 'Aim Range Wide', 'Aim Range Wider', 'Aim Range Widest', 'Grip Moderate',
+               'Elevation Very Fast', 'Aim Range Wide', 'Aim Range Wider', 'Aim Range Widest', 'Top Speed Fast', 'Top Speed Faster',
+               'Top Speed Fastest', 'Grip Moderate',
                'Grip Strong', 'Grip Maximum', 'Steering Responsive', 'Steering Quick', 'Steering Sharp', 'Power Strong',
-               'Power Stronger', 'Power Strongest', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
+               'Power Stronger', 'Power Strongest', 'Throttle Quick', 'Throttle Quicker', 'Throttle Instant', 'Shift Quick',
+               'Shift Quicker', 'Shift Instant', 'Stability Stable',
+               'Stability Steady', 'Stability Planted', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
                'Turret Indicator', 'Vehicle Loadout']
 # (3.1.0 Test 26) folders made from another folder's Lua: the MBT Turrets 180 choice is the MBT Turrets addon with one line
 # more (its flag asks the turret core for 90 degrees each side), so the two can't drift apart
@@ -36,9 +39,11 @@ GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Suspen
                 ('Suspension Planted', 'physics/Suspension Planted'), ('FRV Mild', 'physics/FRV Mild'),
                 ('FRV Stable', 'physics/FRV Stable'), ('FRV Planted', 'physics/FRV Planted')]
 # icons in the zip, in Arsenal order (each option's icon, then its choices')
-IMAGES = ['tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_strongest', 'tank_grip', 'sub/grip_moderate',
+IMAGES = ['tank_speed', 'sub/speed_fast', 'sub/speed_faster', 'sub/speed_fastest', 'tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_strongest', 'tank_grip', 'sub/grip_moderate',
           'sub/grip_strong', 'sub/grip_maximum', 'tank_steering', 'sub/steering_responsive', 'sub/steering_quick',
-          'sub/steering_sharp', 'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy', 'mbt_turrets', 'sub/mbt_360',
+          'sub/steering_sharp', 'tank_throttle', 'sub/throttle_quick', 'sub/throttle_quicker', 'sub/throttle_instant',
+          'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy',
+          'tank_stability', 'sub/stability_stable', 'sub/stability_steady', 'sub/stability_planted', 'mbt_turrets', 'sub/mbt_360',
           'sub/mbt_180',
           'turret_traverse', 'sub/traverse_quick', 'sub/traverse_fast', 'sub/traverse_very_fast', 'turret_elevation',
           'sub/elevation_quick', 'sub/elevation_fast', 'sub/elevation_very_fast', 'turret_aim_range', 'sub/aim_range_wide',
