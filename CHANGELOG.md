@@ -1,5 +1,36 @@
 # Changelog
 
+## 3.4.0
+
+New:
+- **Tank Top Speed (new option, first in the list).** More engine speed and pulling power for the Bastion and Maelstrom: a higher top speed and quicker acceleration, forward and in reverse. *Fast* x1.1, *Faster* x1.15 or *Fastest* x1.3 (the game's tanks top out at about 35 km/h on the flat). It changes the tank you are in at once, in any seat. In the Mod Options Menu (Off, Fast, Faster or Fastest) a change reaches every tank the mod has changed at once, and Off puts the tank's own engine back.
+- **Tank Throttle Response (new option).** *Quick*, *Quicker* or *Instant*: the throttle and brake let go twice as fast, four times as fast or at once when you release the keys, and the pause when changing gear or between forward and reverse is half, a fifth or none. It changes the tanks at once and has a Mod Options Menu row.
+- **Tank Stability (new option).** Downforce: the tank is pressed down harder the faster it goes, weighing 1.5 times (*Stable*), twice (*Steady*) or three times (*Planted*) as much at 45 km/h, so it stays on the ground over crests, ramps and bumps instead of floating. The extra grows with the speed squared: about half of it at 32 km/h, little at walking pace. It pushes through the tank's center, so it doesn't lean the hull. It changes the tank you are in at once and has a Mod Options Menu row.
+- **Zoom in the FRV gunner seat and on the HMG and Anti-Tank Emplacements** (with Tank Gunner Camera). The mouse wheel (or the Zoom In / Zoom Out keys) moves the camera back when you're not aiming, and zooms on the crosshair up to x10 while aiming.
+
+Changes:
+- **Tank Power is now Tank Engine Torque**, and it changes the tank you are in at once (it used to change only tanks called in afterwards). *Strong* x1.2, *Stronger* x1.35, *Strongest* x1.5 (were x1.25, x1.5 and x2), so the tank doesn't turn into a racecar. With Tank Top Speed on too, their torque boosts multiply.
+- **Tank Grip** changes the tank you are in at once (it used to change only tanks called in afterwards). *Moderate* x1.2, *Strong* x1.35, *Maximum* x1.5 (were x1.25, x1.5 and x2).
+- Tank Top Speed and Tank Engine Torque never tip the hull back more than the game's own: the extra pull is balanced out.
+- **Tank Steering:** its text now says it changes every tank at once (it always did).
+- **Tank Suspension:** the tanks keep their full steering angle up to a slightly higher speed (the game narrows the steering above a set speed), for tighter turns when driving fast, and the hull's turning is damped so a lean builds more slowly (*Balanced* light, *Planted* firmer): fewer rollovers in fast turns. Used by tanks called in after a change.
+- **Tank Turret Traverse, Elevation and Aim Range** now also change the tanks already out in the mission (not only tanks called in after), from the Mod Options Menu, at once. The gunner view's limits and look speed follow from the next time you sit in the gunner seat.
+- **Tank Turret Aim Range:** the gunner view goes 20 degrees below the gun's lowest angle and 15 above its highest (never above 60), so on slopes the camera no longer stops the barrel short of its range (reported by a player: facing downhill you couldn't aim below level).
+- **Maelstrom laser designator** (with MBT Turrets): aims down to 60 degrees below level and as high as the view, and is locked to its mount, so it always points where the turret faces.
+- **Tank MBT Turrets models:** the turret's front arms lean inward (no inward cut-away), the double deck hatch where the old turret sat is fixed, the turret ring is cut to 2 m round the turret's axis so it doesn't clip into the taller side of the hull, and the turret shadows follow the moved and turned turret.
+- **Tank Gunner Camera, smoother:** the camera circles the turret along your view instead of being turned with the turret a step at a time, so it stays smooth even at high traverse.
+- **Tank Gunner Camera, farther presets,** labeled by where the camera really ends up: *Close* about 1.5 m back, *Far* about 3.5 m, *Farther* about 5 m and *Farthest* about 6.5 m. Every distance sits 1.4 m above the turret (it used to rise with the distance), and the mouse wheel goes farther out in the tank.
+- **Steady zoomed view:** zoomed in on the crosshair, the view no longer shakes with the gun's recoil, and it keeps following the tank as it drives.
+
+Fixes:
+- Code review: more of the game's own values are put back when the game closes; safer after a game update (values out of range are left alone, searches are cached, less work per frame); a few rare edge cases fixed (another camera mod fighting the camera, turret settings handed to another mod, records from an earlier mission).
+
+Known issues:
+- Smoke from the gunner seat doesn't work in a tank another player called in yet.
+- Tank Turret Position *Centered* moves the turret model and the gun; the tank's hit areas stay where the game has them.
+- With a key set for Forward in the Mod Bindings Menu, holding W in the gunner seat may still nudge the tank a little. Please report it with your logs if you see it.
+- Tank Suspension still needs the tank to be called in again after a change (it's in the tank's physics file); every other tank option changes mid-game.
+
 ## 3.3.0
 
 New:
