@@ -1,28 +1,33 @@
 -- HD2-Addon: mods/chef/armored_overhaul_steering
--- Armored Overhaul 3.3.0 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.4.0 - Tank Steering and Tank Throttle Response options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'steering' option, Responsive). Written from scratch.
 --
--- How it works: the tanks drive on the engine's Havok vehicle kit. When a tank is set up, the game scales its Havok
--- wheels, engine and transmission by the tank's VehicleMotion settings (static VehicleMotionComponent table,
--- 0x1C8-byte records; tank values in brackets):
---   +0x164 wheel radius (0.9)          +0x168 wheel friction multiplier (0.7)          -> Tank grip
---   +0x16C steering rate (2.25): how fast the steering input may change per second      -> Tank steering
---   +0x15C engine torque scale (0.4): the engine's pulling power                        -> Tank power (1.3)
--- (+0x158 RPM scale sets the engine's speed; it stays the game's own. (3.3.0) A Tank Top Speed option was tried and
--- dropped: the rpm scale didn't raise the top speed, and +0x160 (transmission scale) is never applied by the game.)
+-- How it works: every frame the game moves each vehicle's driving input (steering, throttle, brake) towards what the
+-- driver holds, at rates from the vehicle's VehicleMotion settings (static VehicleMotionComponent table, 0x1C8-byte
+-- records, read each frame at game.dll+0x715902; tank values in brackets):
+--   +0x16C steering rate (2.25): how fast the steering may change, per second              -> Tank Steering
+--   +0x170 / +0x174 throttle let-off rate (4 / 5): how fast the throttle drops when let go  -> Tank Throttle Response
+--   +0x178 / +0x17C brake let-off rate (10 / 5)                                              -> Tank Throttle Response
+-- (pressing the throttle or brake moves at 100 per second already; which rate of each pair is used depends on a game
+-- flag. The FRV has 100 / 8 and 50 / 5.) Tank Throttle Response also cuts the gearbox's clutch delay, live (the
+-- 'shift' part of the Top Speed source). Since 3.4.0 Test 20 Tank Grip and Tank Engine Torque (Tank Power) are live
+-- too, in the Top Speed source: their VehicleMotion fields (+0x168, +0x15C) were only used when a tank was set up.
 -- This addon finds that table through its generated accessor (hash % slot count, linear probe), looks the two tanks
--- up by entity hash and scales its fields. Tanks called in afterwards use the new values.
+-- up by entity hash and scales its fields. The game reads them every frame: every tank changes at once.
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 local PART = 'steering'
 local TESTER = false
 local PRESET, PRESET_NAME = 1.25, 'Responsive'   -- the strength picked in the mod manager (baked in per sub-option)
+-- (Test 20) each option: its global, log, title, fields, Mod Options Menu row (group, choices, multipliers, text)
 local PARTS = {
-    grip = {global = 'ArmoredOverhaulHandling', file = 'TankHandling', title = 'Tank Grip', what = 'track grip',
-            fields = {grip = 0x168}},
     steering = {global = 'ArmoredOverhaulSteering', file = 'TankSteering', title = 'Tank Steering', what = 'steering response',
-                fields = {steering = 0x16C}},
-    power = {global = 'ArmoredOverhaulPower', file = 'TankPower', title = 'Tank Power', what = 'engine pulling power',
-             fields = {power = 0x15C}},
+                fields = {steering = 0x16C}, menu = 'steering',
+                choices = {'Off', 'Responsive (x1.25)', 'Quick (x1.5)', 'Sharp (x2)'}, mults = {1, 1.25, 1.5, 2},
+                description = 'Quicker steering for the Bastion and Maelstrom: they start and stop turning sooner. Changes every tank at once.'},
+    throttle = {global = 'ArmoredOverhaulThrottle', file = 'TankThrottle', title = 'Tank Throttle Response', what = 'throttle and brake let-off',
+                fields = {throttle = 0x170, throttle_b = 0x174, brake = 0x178, brake_b = 0x17C}, menu = 'throttle',
+                choices = {'Off', 'Quick', 'Quicker', 'Instant'}, mults = {1, 2, 4, 25},
+                description = 'Snappier Bastion and Maelstrom: the throttle and brake let go sooner, and gear and direction changes wait less (Instant: no wait). Changes every tank at once.'},
 }
 local P = PARTS[PART]
 if not P or rawget(_G, P.global) then return end
@@ -53,13 +58,14 @@ local KNOWN_RVA = 0x507A00
 local KNOWN_TIMESTAMP = 0x6AB3B43F
 -- (3.0.1 review) the game's own values on that build (both tanks): what is found there must be these, or it was
 -- already scaled (an earlier copy of this addon whose Lua was rebuilt while the game kept running)
-local VANILLA = {grip = 0.7, steering = 2.25, power = 0.4}
-local STRENGTHS = {1.25, 1.5, 2}             -- (3.1.1 review) every option's three strengths (see the originals in apply)
+local VANILLA = {steering = 2.25, throttle = 4, throttle_b = 5, brake = 10, brake_b = 5}
+-- (3.1.1 review) the option's three strengths (see the originals in apply)
+local STRENGTHS = {P.mults[2], P.mults[3], P.mults[4]}
 local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.3.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.4.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0, clock = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
@@ -253,7 +259,7 @@ do
     end
 end
 
--- Grip, steering and power look for the same vehicle-settings table. After a game update only one of them searches the
+-- Steering and Throttle Response look for the same vehicle-settings table. After a game update only one of them searches the
 -- game code; the other waits and takes its candidates (and takes the search over if the first one stops).
 local SHARED_STALL = 120
 local shared = rawget(_G, 'ArmoredOverhaulVehicleMotion')
@@ -322,7 +328,7 @@ end
 
 -- A tank record is accepted only if its wheel radius and friction multiplier look like the tank's, and every field
 -- this option changes is in a believable range. Returns the fields' current values.
-local LIMITS = {grip = {0.001, 50}, steering = {0.05, 200}, power = {0.01, 20}}
+local LIMITS = {steering = {0.05, 200}, throttle = {0.01, 5000}, throttle_b = {0.01, 5000}, brake = {0.01, 5000}, brake_b = {0.01, 5000}}
 local function sane(record)
     local s = read(record + 0x158, 0x28)             -- +0x158 .. +0x17F: every field either option reads
     if not s then return nil end
@@ -506,10 +512,10 @@ local next_check = 0
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
-    for _, g in ipairs({'steering'}) do
+    for _, g in ipairs({P.menu}) do
         hub.groups[g] = {status = state,
             rows = function() local r = menu_rows[g]; if type(r) == 'function' then r = r() end; return r or {} end,
             set = function(key, value) return menu_set(key, value) end}
@@ -541,7 +547,7 @@ do
         if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
         at = (frame == true and 0 or frame) + 60
         local mine = true
-        for _, g in ipairs({'steering'}) do if not hub.done[g] then mine = false end end
+        for _, g in ipairs({P.menu}) do if not hub.done[g] then mine = false end end
         if mine then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
@@ -559,18 +565,20 @@ do
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
-local MENU_CHOICES, MENU_MULTS = {'Off', 'Responsive (x1.25)', 'Quick (x1.5)', 'Sharp (x2)'}, {1, 1.25, 1.5, 2}
+local MENU_CHOICES, MENU_MULTS = P.choices, P.mults
 local MENU_PICK = 2
 for i, m in ipairs(MENU_MULTS) do if i > 1 and math.abs(m - PRESET) < 1e-6 then MENU_PICK = i end end
 -- One row, the option as the mod manager shows it; it starts at the pick (the id carries it, so another pick in the
--- mod manager starts from its own). Off = the game's own values. Tanks called in after a change use it.
-menu_rows.steering = {
-    {'armored_overhaul.' .. PART .. '.' .. PRESET_NAME:lower(), {type = 'choice', label = 'Tank Steering', choices = MENU_CHOICES,
-        default = MENU_PICK, description = 'Quicker steering for the Bastion and Maelstrom: they start and stop turning sooner. Tanks called in after a change use it.'}, 'mult'},
+-- mod manager starts from its own). Off = the game's own values. Every tank changes at once.
+menu_rows[P.menu] = {
+    {'armored_overhaul.' .. PART .. '.' .. PRESET_NAME:lower(), {type = 'choice', label = P.title, choices = MENU_CHOICES,
+        default = MENU_PICK, description = P.description}, 'mult'},
 }
+state.choice = MENU_PICK        -- (Test 20) the pick, for the Throttle Response's live clutch part (Top Speed source)
 menu_set = function(key, v)
     if key ~= 'mult' or not MENU_MULTS[v] then return end
     mult = MENU_MULTS[v]
+    state.choice = v
     for k, o in pairs(originals) do
         local w = wants[k] or {}
         for _, f in ipairs(FIELD_NAMES) do w[f] = o[f] * mult end

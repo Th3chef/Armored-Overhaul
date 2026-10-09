@@ -1,72 +1,126 @@
 -- HD2-Addon: mods/chef/armored_overhaul_handling
--- Armored Overhaul 3.3.0 - Tank grip, Tank steering and Tank power options for the TD-220 Bastion and TD-110 Maelstrom
--- (one source, built once per option and strength; this copy is the 'grip' option, Maximum). Written from scratch.
+-- Armored Overhaul 3.4.0 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
+-- Throttle Response, for the TD-220 Bastion and TD-110 Maelstrom (one source, built once per option and strength;
+-- this copy is the 'grip' option, Maximum). Written from scratch.
 --
--- How it works: the tanks drive on the engine's Havok vehicle kit. When a tank is set up, the game scales its Havok
--- wheels, engine and transmission by the tank's VehicleMotion settings (static VehicleMotionComponent table,
--- 0x1C8-byte records; tank values in brackets):
---   +0x164 wheel radius (0.9)          +0x168 wheel friction multiplier (0.7)          -> Tank grip
---   +0x16C steering rate (2.25): how fast the steering input may change per second      -> Tank steering
---   +0x15C engine torque scale (0.4): the engine's pulling power                        -> Tank power (1.3)
--- (+0x158 RPM scale sets the engine's speed; it stays the game's own. (3.3.0) A Tank Top Speed option was tried and
--- dropped: the rpm scale didn't raise the top speed, and +0x160 (transmission scale) is never applied by the game.)
--- This addon finds that table through its generated accessor (hash % slot count, linear probe), looks the two tanks
--- up by entity hash and scales its fields. Tanks called in afterwards use the new values.
+-- How it works: a tank drives on the engine's Havok vehicle kit. These options change it live, on the tank you sit in
+-- (any seat), through the game's own vehicle physics interface - the same calls the game makes when a tank is set up
+-- (game.dll+0x7194C0):
+--   the tank's handle: interface [game.dll+0x3326310] slot 0 (physics id, 0x10, out) -> [out+0x20]
+--   engine get / set: interface [game.dll+0x3326320] slots 0x80 / 0x88 (handle, 0x28-byte engine block:
+--   +0x8 max rpm, +0xC max torque)
+--   wheel get / set: slots 0x40 / 0x48 (handle, wheel 0..9, 0x2C-byte wheel block: +0xC friction, +0x14 max friction)
+--   transmission get / set: slots 0x90 / 0x98 (handle, 0x14-byte block: +0x10 clutch delay, 0.3 s)
+-- (Test 29) Tank Stability is downforce. the tester: "work more on keeping the tank flat on the ground. It should feel heavy
+-- properly, but in this game its got a floaty physics". The tank's Havok aerodynamics (the hull physics' "VRA " block:
+-- air density 15, frontal area 8, drag 14, lift 0 on both tanks) are read and set live through slots 0x20 / 0x28
+-- (handle, density, drag, lift: the game's own call at game.dll+0x718E20 scales the density by its air factor, the two
+-- floats at +0x654 / +0x658 of the tank's record below; the read gives the resource's density, so the part scales it
+-- the same way before it sends it - 3.4.0 review). A
+-- negative lift coefficient presses the hull down with 0.5 x density x area x lift x speed squared (Havok's convention:
+-- its vehicle demo uses -0.3 for downforce); it acts at the centre of mass, so it adds weight without leaning the hull.
+-- The pick is the tank's weight at 45 km/h: Stable x1.5, Steady x2, Planted x3 (half that extra at 32 km/h, a tenth at
+-- 14 km/h). (Test 36's lift test, lift raised by 15.7: the tester "felt lighter than usual, but the vanilla tank already feels
+-- light": the call reaches the physics and a positive lift lifts, so the negative one presses down; Test 32's x1.15 to
+-- x1.5 were too little to notice: Test 37 x1.5 / x2 / x3.)
+-- The torque roll and pitch factors, row +0x630 / +0x634 of the tank's 0x670-byte record (the component's +0x70), are
+-- handed to the physics every frame (game.dll+0x71750D; 1 and 1 on both tanks). (Test 23, the tester: "keeping the tank on the
+-- ground with all the extra torque") The extra drive is kept from tipping the hull back: every part but shift sets
+-- them to
+--   roll  = the tank's own (Tests 24-28: x Stability; Test 29, the tester: "lets leave that at 1")
+--   pitch = the tank's own / (Top Speed x Engine Torque)
+-- so the extra pulling power tips the hull back no more than the game's own (all parts agree on it). (Test 24) The roll
+-- factor is no longer lowered: Test 23 (roll 0.2) still leaned 43 deg outward in a 38 km/h, 40 deg/s turn, and in 3.1.0
+-- cutting the hull's roll factor in the physics file made the tanks tippier (the game's centre of mass sits below the
+-- ground, so the tracks' grip leans the hull into a turn). Grip and Stability leave it alone.
+-- (Tank Turn Radius, Tests 20-22, is gone: the tank's Havok steering object couldn't be found from game.dll's data; the
+-- wider turns at speed were fixed in Tank Suspension's physics instead.)
+-- Tank Top Speed raises the engine's max rpm and torque together (its top speed is held by the engine's power curve,
+-- not by its gearing: 3.4.0 tests, max rpm x1.5 and torque x1.5 40 km/h against 35). Tank Engine Torque raises the
+-- torque (pulling power: quicker off the line and up slopes); with both, the torque is the two multiplied. Tank Grip
+-- raises every wheel's friction and max friction. The 'shift' part (in the Tank Throttle Response option, next to the
+-- VehicleMotion let-off rates of the Steering source) cuts the clutch delay, following that option's pick. (3.4.0 Test 20: Engine Torque - Tank Power until 3.3.0 - and Grip were
+-- scaled in the game's VehicleMotion table, which only tanks called in afterwards used; the tester: "lets implement all of
+-- those" - now they change the tank you are in at once.)
+-- The tank is found in the networked vehicle component [game.dll+0x3326458] (map +0x40, entries +0x58, entry +0xC
+-- the physics id). The three places are read from the game's own code (pattern below), so they follow a game update
+-- (3.4.0 review: on a build it doesn't know, the first part to find them shares the place with the others, which check
+-- the code there instead of searching game.dll again).
+-- The tank keeps the change when you get out. Each tank's own values are kept, so Off (Mod Options Menu) puts them back,
+-- and so does the game closing (3.4.0 review: every value this part changed, where the tank still holds what it wrote).
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
-local PART = 'grip'
 local TESTER = false
-local PRESET, PRESET_NAME = 2.0, 'Maximum'   -- the strength picked in the mod manager (baked in per sub-option)
+local PART = 'grip'
+local PRESET, PRESET_NAME = 1.5, 'Maximum'   -- the strength picked in the mod manager (baked in per sub-option)
+-- (Test 20) the five options: their global (the Driver Panel's handling check and the other parts read it), log, title,
+-- menu row (id kept from the earlier copies, so a saved pick keeps its place) and the choices
 local PARTS = {
+    speed = {global = 'ArmoredOverhaulTopSpeed', file = 'TankSpeed', title = 'Tank Top Speed', what = 'engine\'s max rpm and torque',
+             menu = 'speed', choices = {'Off', 'Fast (x1.1)', 'Faster (x1.15)', 'Fastest (x1.3)'}, mults = {1, 1.1, 1.15, 1.3},
+             description = 'A faster Bastion and Maelstrom: more engine speed and pulling power, forward and in reverse. Changes the tank you are in at once.'},
+    torque = {global = 'ArmoredOverhaulPower', file = 'TankPower', title = 'Tank Engine Torque', what = 'engine torque',
+              menu = 'power', choices = {'Off', 'Strong (x1.2)', 'Stronger (x1.35)', 'Strongest (x1.5)'}, mults = {1, 1.2, 1.35, 1.5},
+              description = 'More engine torque for the Bastion and Maelstrom: quicker off the line and up slopes. Changes the tank you are in at once.'},
     grip = {global = 'ArmoredOverhaulHandling', file = 'TankHandling', title = 'Tank Grip', what = 'track grip',
-            fields = {grip = 0x168}},
-    steering = {global = 'ArmoredOverhaulSteering', file = 'TankSteering', title = 'Tank Steering', what = 'steering response',
-                fields = {steering = 0x16C}},
-    power = {global = 'ArmoredOverhaulPower', file = 'TankPower', title = 'Tank Power', what = 'engine pulling power',
-             fields = {power = 0x15C}},
+            menu = 'grip', choices = {'Off', 'Moderate (x1.2)', 'Strong (x1.35)', 'Maximum (x1.5)'}, mults = {1, 1.2, 1.35, 1.5},
+            description = 'More track grip for the Bastion and Maelstrom: less sliding on slopes and in turns. Changes the tank you are in at once.'},
+    -- (Test 20) no menu row of its own: it follows Tank Throttle Response's pick (the Steering source's 'throttle' part)
+    shift = {global = 'ArmoredOverhaulShift', file = 'TankShift', title = 'Tank Throttle Response (gear changes)', what = 'clutch delay',
+             follow = 'ArmoredOverhaulThrottle', choices = {'Off', 'Quick', 'Quicker', 'Instant'}, mults = {1, 0.5, 0.2, 0}},
+    -- (Test 29) downforce: the tank pressed down harder the faster it goes (the multiplier is its weight at 45 km/h; see the
+    -- top). Tests 24-28 raised the roll factor instead (the tester: x2 "rolled easier"; "leave that at 1")
+    stability = {global = 'ArmoredOverhaulStability', file = 'TankStability', title = 'Tank Stability', what = 'weight at 45 km/h, from downforce',
+                 menu = 'stability', choices = {'Off', 'Stable', 'Steady', 'Planted'}, mults = {1, 1.5, 2, 3},   -- (Test 37: were 1.15 / 1.3 / 1.5)
+                 description = 'Keeps the Bastion and Maelstrom on the ground: pressed down harder the faster they go, so they stay flat over crests and bumps instead of floating. Changes the tank you are in at once.'},
 }
 local P = PARTS[PART]
 if not P or rawget(_G, P.global) then return end
 
-local byte, min, max = string.byte, math.min, math.max
+local byte, min, max, floor = string.byte, math.min, math.max, math.floor
 local TWO32 = 4294967296
+local KNOWN_RVA, KNOWN_TIMESTAMP = 0x719554, 0x6AB3B43F
+-- The game's tank engine on that build (both tanks): a tank found with another max rpm was boosted already (an
+-- earlier copy of this addon whose Lua was rebuilt while the game kept running): its own values are worked back.
+local VANILLA_MAX_RPM, VANILLA_TORQUE = 5000, 4000
+local VANILLA_FRICTION, VANILLA_MAX_FRICTION = 0.5, 1.5            -- (every wheel, both tanks)
+local WHEEL_SIZE, FRICTION_AT, MAX_FRICTION_AT, MAX_WHEELS = 0x2C, 0xC, 0x14, 10
+local TRANS_SIZE, CLUTCH_AT, VANILLA_CLUTCH = 0x14, 0x10, 0.3
+local ROW_SIZE, ROLL_AT, VANILLA_ROLL, VANILLA_PITCH = 0x670, 0x630, 1, 1
+-- (3.4.0 review) the record's air factor: the game sends density x (+0x654 x +0x658) (game.dll+0x718E20)
+local AIR_AT = 0x654
+-- (Test 29) Tank Stability's downforce: both hulls 30000 kg, frontal area 8, lift 0, air density 15, drag 14 (the hull
+-- physics' own); the pick is the tank's weight at 45 km/h
+local HULL_MASS, GRAVITY, FRONTAL_AREA, REF_SPEED, VANILLA_LIFT = 30000, 9.81, 8, 12.5, 0
+local VANILLA_DENSITY, VANILLA_DRAG = 15, 14
+-- mov rax,[rbx+58h] / mov rbx,[rax+rcx*8] / mov rcx,rbx / call (accessor) / mov r9,[rip+INFO] / lea r8,[rbp+x] /
+-- mov ecx,[rbx+0Ch] / mov edx,10h / mov rdi,rax / call [r9] / ... / mov rax,[rip+API] / ... / call [rax+80h]
+local SITE = '48 8B 43 58 48 8B 1C C8 48 8B CB E8 ?? ?? ?? ?? 4C 8B 0D ?? ?? ?? ?? 4C 8D 45 ?? 8B 4B 0C BA 10 00 00 00 48 8B F8 41 FF 11 48 8B 4D ?? 48 8D 55 ?? 33 C0 0F 57 C0 8B 19 8B CB 48 89 45 ?? 89 45 ?? 48 8B 05 ?? ?? ?? ?? 0F 11 45 ?? 0F 11 45 ?? 0F 11 45 ?? FF 90 80 00 00 00'
+local SITE_ANCHOR, SITE_ANCHOR_AT = '\xBA\x10\x00\x00\x00\x48\x8B\xF8\x41\xFF\x11', 0x1E
+local INFO_DISP, API_DISP = 0x13, 0x44           -- (rip-relative: next instruction at +0x17 / +0x48)
+-- the same function's map lookup, up to 0x100 bytes before: cmp edx,[rip+x] / mov rbx,[rip+COMPONENT] / jne / ...
+local LOOKUP = '3B 15 ?? ?? ?? ?? 48 8B 1D ?? ?? ?? ?? 75 ?? B8 FF FF FF FF EB ?? 44 8B 4B 48 33 C9 44 8B 53 50'
+local LOOKUP_DISP = 0x9                          -- (next instruction at +0xD)
+local ENGINE_SIZE, MAX_RPM_AT, TORQUE_AT = 0x28, 0x8, 0xC
+local TANK_KINDS = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
+-- frames between looks at the tank you are in (~2 s): a new tank, or one the game set up again under the same handle
+-- (every value read back and put right; 3.4.0 review: Stability's lift, which the game's read doesn't show, is sent at
+-- every look for that)
+local CHECK_EVERY = 120
+local MAX_TANKS = 8
 
-local TANKS = {
-    {key = 'bastion', name = 'Bastion', hi = 0x16474112, lo = 0x801385B6},
-    {key = 'maelstrom', name = 'Maelstrom', hi = 0xB0C9FAF4, lo = 0xAF8903F9},
-}
-local FRICTION_AT, RADIUS_AT = 0x168, 0x164
-local FIELD = P.fields
-local FIELD_NAMES = {}
-for k in pairs(FIELD) do FIELD_NAMES[#FIELD_NAMES + 1] = k end
-table.sort(FIELD_NAMES)
-local SPAN = 0                                       -- bytes from the record start to the end of the last field
-for _, off in pairs(FIELD) do SPAN = max(SPAN, off + 4) end
-
--- Accessor shape (the VehicleMotion lookup, game.dll+0x507A00 in the Sept 2026 build). Immediates that may change
--- between game builds are wildcards and read back: settings-root offset, divide magic, slot count, stride, data offset.
-local ACCESSOR = '48 85 C9 74 ?? 48 8B 05 ?? ?? ?? ?? 44 8B C1 4C 8B 90 ?? ?? ?? ?? 48 B8 ?? ?? ?? ?? ?? ?? ?? ?? 48 F7 E1'
-local ACCESSOR_ANCHOR = '\x48\xF7\xE1\x48\x8B\xC1'
-local ACCESSOR_ANCHOR_AT = 32
-local TAIL = '8B 48 08 48 69 C1 ?? ?? ?? ?? 48 05 ?? ?? ?? ??'   -- mov ecx,[rax+8] / imul rax,rcx,stride / add rax,data
-local SLOTS = '41 83 F9 ??'                                         -- cmp r9d, slot count
-local KNOWN_RVA = 0x507A00
-local KNOWN_TIMESTAMP = 0x6AB3B43F
--- (3.0.1 review) the game's own values on that build (both tanks): what is found there must be these, or it was
--- already scaled (an earlier copy of this addon whose Lua was rebuilt while the game kept running)
-local VANILLA = {grip = 0.7, steering = 2.25, power = 0.4}
-local STRENGTHS = {1.25, 1.5, 2}             -- (3.1.1 review) every option's three strengths (see the originals in apply)
-local MAX_TRIES = 5
-local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
-local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
-
-local state = {version = '3.3.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
-               last_error = 'none',
-               applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0, clock = 0,
+local state = {version = '3.4.0', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
+               tanks = {}, errors = 0, last_error = 'none', frames = 0, writes = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
+state.part, state.live_mult = PART, 1            -- (Test 20: what this part multiplies now, for the other parts)
 rawset(_G, P.global, state)
+-- (Test 20) every live part's own record of each tank's own values (shared: the first part to see a tank keeps them)
+local OWN = rawget(_G, 'ArmoredOverhaulLiveOwn')
+if type(OWN) ~= 'table' then OWN = {}; rawset(_G, 'ArmoredOverhaulLiveOwn', OWN) end
+-- (3.4.0 review) the places the first part found, by game build (the others check the code there instead of searching)
+local PLACES = rawget(_G, 'ArmoredOverhaulLivePlaces')
+if type(PLACES) ~= 'table' then PLACES = {}; rawset(_G, 'ArmoredOverhaulLivePlaces', PLACES) end
 
--- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
--- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
+-- (3.3.0) The logs folder: Bingus Shared Loader v19's log_directory, else %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs.
 if not rawget(_G, 'ArmoredOverhaulLogsDir') then rawset(_G, 'ArmoredOverhaulLogsDir', function()
     local L = rawget(_G, 'CowboyBingusModLoader')
     local d = type(L) == 'table' and L.log_directory
@@ -79,34 +133,36 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local ok_ffi, ffi = pcall(require, 'ffi')
 if not ok_ffi or not ffi.abi('win') or not ffi.abi('64bit') then return end
-
--- Own function-pointer types, so another mod's declarations can't clash with ours.
 pcall(ffi.cdef, [[
     typedef struct { void *base; void *allocation_base; uint32_t allocation_protection; uint16_t partition;
-        uint16_t reserved; size_t size; uint32_t state; uint32_t protection; uint32_t type; } TtRegion;
+        uint16_t reserved; size_t size; uint32_t state; uint32_t protection; uint32_t type; } TsRegion;
 ]])
--- The kernel32 functions below have to be declared before they can be looked up (1.1.0 relied on another mod having
--- declared them, and failed to load without it: "missing declaration for symbol 'GetModuleHandleA'"). Each is
--- declared on its own; if another mod already declared one (with its own types), that declaration is used, since
--- the function is cast to this addon's own pointer type anyway.
+-- (1.1.0 lesson) each kernel32 function declared on its own before it is looked up
 for _, decl in ipairs({'void *GetModuleHandleA(const char *);', 'void *GetCurrentProcess(void);',
         'int ReadProcessMemory(void *, const void *, void *, size_t, size_t *);',
-        'size_t VirtualQuery(const void *, void *, size_t);', 'int VirtualProtect(void *, size_t, uint32_t, uint32_t *);'}) do
+        'size_t VirtualQuery(const void *, void *, size_t);'}) do
     pcall(ffi.cdef, decl)
 end
-local k32 = ffi.load('kernel32')
+local okk, k32 = pcall(ffi.load, 'kernel32')
+if not okk then return end
 local GetModuleHandleA = ffi.cast('void *(*)(const char *)', k32.GetModuleHandleA)
 local GetCurrentProcess = ffi.cast('void *(*)(void)', k32.GetCurrentProcess)
 local ReadProcessMemory = ffi.cast('int (*)(void *, const void *, void *, size_t, size_t *)', k32.ReadProcessMemory)
 local VirtualQuery = ffi.cast('size_t (*)(const void *, void *, size_t)', k32.VirtualQuery)
-local VirtualProtect = ffi.cast('int (*)(void *, size_t, uint32_t, uint32_t *)', k32.VirtualProtect)
 local U8 = ffi.typeof('uint8_t *')
-local F32P = ffi.typeof('float *')
 local process = GetCurrentProcess()
 local BUF_SIZE = 0x40400
 local buf = ffi.new('uint8_t[?]', BUF_SIZE)
 local got = ffi.new('size_t[1]')
-local region = ffi.new('TtRegion[1]')
+local region = ffi.new('TsRegion[1]')
+-- own function-pointer types: another mod's declarations can't clash with them
+local INFO_FN = ffi.typeof('int64_t (*)(uint32_t, uint32_t, void *)')
+local ENGINE_FN = ffi.typeof('void (*)(uint32_t, void *)')
+local WHEEL_FN = ffi.typeof('void (*)(uint32_t, uint32_t, void *)')
+local AERO_GET_FN = ffi.typeof('void (*)(uint32_t, float *, float *, float *)')   -- (Test 29: Tank Stability)
+local AERO_SET_FN = ffi.typeof('void (*)(uint32_t, float, float, float)')
+local info_out = ffi.new('uint8_t[256]')
+local engine_buf = ffi.new('uint8_t[64]')
 
 local function num(p) return tonumber(ffi.cast('uintptr_t', p)) end
 local function read(address, size)
@@ -127,44 +183,33 @@ local function ptr(s, o)
     if v < 0x10000 then return nil end
     return ffi.cast(U8, v)
 end
-local box = ffi.new('uint8_t[4]')
-local box_f = ffi.cast(F32P, box)
+local fbox = ffi.new('float[1]')
+-- (3.4.0 review) nil for a missing or short read (the checks below then say no, not throw)
 local function f32(s, o)
-    if not s or o + 4 > #s then return nil end
-    box[0], box[1], box[2], box[3] = byte(s, o + 1, o + 4)
-    return tonumber(box_f[0])
+    if type(s) ~= 'string' or o < 0 or o + 4 > #s then return nil end
+    ffi.copy(fbox, ffi.cast('const char *', s) + o, 4); return tonumber(fbox[0])
 end
--- Writes floats into game data. Read/write pages are written directly; read-only data pages are opened for the
--- write and restored straight after. Code, guard, no-access and reserved memory are never touched.
-local old_prot = ffi.new('uint32_t[1]')
-local function page_info(address, size)
-    if VirtualQuery(address, region, ffi.sizeof('TtRegion')) == 0 then return nil end
+local function with_f32(s, o, v)
+    fbox[0] = v
+    return s:sub(1, o) .. ffi.string(fbox, 4) .. s:sub(o + 5)
+end
+-- executable code (a function the game's own table points at): checked before every first call through it
+local function is_code(p)
+    if p == nil or VirtualQuery(p, region, ffi.sizeof('TsRegion')) == 0 then return false end
     local r = region[0]
-    if r.state ~= 0x1000 or num(address) + size > num(r.base) + tonumber(r.size) then return nil end
-    return r.protection, r.type
+    return r.state == 0x1000 and bit.band(r.protection, 0xF0) ~= 0 and bit.band(r.protection, 0x101) == 0
 end
-local function poke(address, fields, values)
-    local p = ffi.cast(F32P, address)
-    for k, off in pairs(fields) do p[off / 4] = values[k] end
+
+-- (Test 20) game data the parts write (the torque factors): committed read/write heap, the whole span in one region
+local function writable(p, n)
+    if p == nil or VirtualQuery(p, region, ffi.sizeof('TsRegion')) == 0 then return false end
+    local r = region[0]
+    return r.state == 0x1000 and (r.protection == 4 or r.protection == 0x40) and (r.type == 0x20000 or r.type == 0x40000)
+        and num(p) + n <= num(r.base) + tonumber(r.size)
 end
-local function write_floats(address, size, fields, values)
-    local prot, kind = page_info(address, size)
-    if not prot then return false, 'memory not committed' end
-    local how = string.format('page 0x%X/0x%X', prot, kind)
-    if kind ~= 0x20000 and kind ~= 0x40000 and kind ~= 0x1000000 then return false, how end
-    -- (3.0 review) 4 read/write; 8 write-copy (a module's data before its first write: writing makes the page
-    -- this process's own copy, as any write by the game does)
-    if prot == 4 or prot == 8 then poke(address, fields, values); return true, how end
-    if prot ~= 2 then return false, how end
-    local opened = VirtualProtect(address, size, 4, old_prot) ~= 0
-    if not opened then opened = VirtualProtect(address, size, 8, old_prot) ~= 0 end
-    if not opened then return false, how .. ', open refused' end
-    local restore = old_prot[0]
-    local ok = pcall(poke, address, fields, values)
-    -- (3.0 review) the old protection put back, checked: a page left writable is said in the log
-    local back = VirtualProtect(address, size, restore, old_prot) ~= 0
-    if not back then state.errors = state.errors + 1; state.last_error = how .. ': opened for a write, its protection could not be put back' end
-    return ok, how .. (back and ' (opened for the write)' or ' (opened for the write; putting its protection back failed)')
+local function poke(p, values)
+    local f = ffi.cast('float *', p)
+    for i, v in ipairs(values) do f[i - 1] = v end
 end
 
 local function parse(text)
@@ -172,7 +217,7 @@ local function parse(text)
     for t in text:gmatch('%S+') do out[#out + 1] = t == '??' and -1 or tonumber(t, 16) end
     return out
 end
-local ACC_MASK, TAIL_MASK = parse(ACCESSOR), parse(TAIL)
+local SITE_MASK, LOOKUP_MASK = parse(SITE), parse(LOOKUP)
 local function matches(s, start, mask)
     if start < 1 or start + #mask - 1 > #s then return false end
     for i = 1, #mask do
@@ -182,338 +227,481 @@ local function matches(s, start, mask)
     return true
 end
 
-local SLOTS_MASK = parse(SLOTS)
-
 -- ---------------------------------------------------------------- logging
+local tanks, order               -- (see applying)
 local function log()
     pcall(function()
         local f = loader.open_log and loader.open_log('ArmoredOverhaul-' .. P.file .. '.log')
         if not f then return end
-        -- what a bug report needs: the game build, how the vehicle settings were found, the preset, each
-        -- tank's values now (and the game's own), errors
         f:write('Armored Overhaul - ', P.title, '\n', 'version: ', state.version, '\n', 'status: ', state.status, '\n',
-            'game: ', state.game, '\n', 'found: ', state.how, '\n', 'preset: ', state.preset, '\n')
-        for _, t in ipairs(TANKS) do f:write(t.name, ': ', state.tanks[t.key] or 'not found', '\n') end
-        f:write('options menu: ', state.options_menu, '\n', 'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
-        if TESTER then
-            f:write('-- tester details --\n', 'table: ', state.table, ' (', state.slots, ' slots)\n', 'writes: ', state.applied,
-                '\n', 'frames: ', state.frames, '\n')
+            'game: ', state.game, '\n', 'found: ', state.found, '\n', 'preset: ', state.preset, '\n')
+        local any = false
+        for _, vehicle in ipairs(order) do
+            if state.tanks[vehicle] then f:write(state.tanks[vehicle], '\n'); any = true end
         end
+        if not any then f:write('tanks: none sat in yet\n') end
+        f:write('options menu: ', state.options_menu, '\n', 'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
+        if TESTER then f:write('-- tester details --\n', 'writes: ', state.writes, '\n', 'frames: ', state.frames, '\n') end
         f:close()
     end)
 end
+local function fail(what)
+    state.errors = state.errors + 1
+    state.last_error = what
+end
 
--- ---------------------------------------------------------------- preset
--- Both tanks get the multiplier of the sub-option picked in the mod manager (no settings file).
-state.preset = string.format('%s (%s times the game\'s %s, picked in the mod manager)', PRESET_NAME, tostring(PRESET), P.what)
-local mult = PRESET            -- (3.0) the multiplier in use: the mod manager's pick, or the Mod Options Menu's
-
--- ---------------------------------------------------------------- finding the table
+-- ---------------------------------------------------------------- finding the game's places
 local game, image_size, timestamp
-
--- After a game update the search runs once; what it finds is saved per game build (timestamp and size), so later
--- launches of the same build skip it. The saved place is checked again before it is used.
-local CACHE_HEADER = 'armored overhaul ' .. P.file:lower() .. ' 1'
-local function cache_path()
-    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
-    return root and root ~= '' and (root .. '\\ArmoredOverhaul-' .. P.file .. '.cache') or nil
-end
-local function build_tag() return string.format('%08X-%X', timestamp, image_size) end
--- (3.1.1 review) Each tank's game values, kept for the life of the game's process (its environment block, which a reload of
--- the game's Lua doesn't touch; gone when the game closes), tagged with the game build: a copy of this addon loaded again
--- in the same session takes them from there, on any build (3.1.0 could only tell scaled values on the Sept 2026 build).
-local keep_get, keep_set
-do
-    for _, decl in ipairs({'uint32_t GetEnvironmentVariableA(const char *, char *, uint32_t);',
-            'int SetEnvironmentVariableA(const char *, const char *);'}) do pcall(ffi.cdef, decl) end
-    local okg, get = pcall(function() return ffi.cast('uint32_t (*)(const char *, char *, uint32_t)', k32.GetEnvironmentVariableA) end)
-    local oks, set = pcall(function() return ffi.cast('int (*)(const char *, const char *)', k32.SetEnvironmentVariableA) end)
-    local ebuf = ffi.new('char[256]')
-    local function name(key) return 'ARMORED_OVERHAUL_' .. PART:upper() .. '_' .. key:upper() end
-    keep_get = function(key)
-        if not (okg and get ~= nil) then return nil end
-        local n = get(name(key), ebuf, 256)
-        if n == 0 or n >= 256 then return nil end
-        local tag, rest = ffi.string(ebuf, n):match('^([^|]+)|(.*)$')
-        if tag ~= build_tag() then return nil end
-        local out, i = {}, 0
-        for v in rest:gmatch('[^,]+') do
-            i = i + 1
-            local x = tonumber(v)
-            if not FIELD_NAMES[i] or not x then return nil end
-            out[FIELD_NAMES[i]] = x
-        end
-        return i == #FIELD_NAMES and out or nil
-    end
-    keep_set = function(key, values)
-        if not (oks and set ~= nil) then return end
-        local parts = {}
-        for i, k in ipairs(FIELD_NAMES) do parts[i] = string.format('%.9g', values[k]) end
-        set(name(key), build_tag() .. '|' .. table.concat(parts, ','))
-    end
-end
-
--- Grip, steering and power look for the same vehicle-settings table. After a game update only one of them searches the
--- game code; the other waits and takes its candidates (and takes the search over if the first one stops).
-local SHARED_STALL = 120
-local shared = rawget(_G, 'ArmoredOverhaulVehicleMotion')
-if type(shared) ~= 'table' then shared = {}; rawset(_G, 'ArmoredOverhaulVehicleMotion', shared) end
-local wait = {beat = nil, since = 0}         -- the last search step seen from the other option, and when
-local function cache_load()
-    local path = cache_path()
-    local f = path and io and io.open and io.open(path, 'r')
-    if not f then return nil end
-    local text = f:read('*a'); f:close()
-    local head, tag, rva = text:match('^([^\n]*)\n([^\n]*)\naccessor=(%x+)')
-    if head ~= CACHE_HEADER or tag ~= build_tag() then return nil end
-    return tonumber(rva, 16)
-end
-local function cache_save(rva)
-    local path = cache_path()
-    local f = path and io and io.open and io.open(path, 'w')
-    if not f then return end
-    f:write(CACHE_HEADER, '\n', build_tag(), '\n', string.format('accessor=%X', rva), '\n')
-    f:close()
-end
-
-local function accessor_at(rva)
-    local s = read(game + rva, 0xC0)
-    if not s or not matches(s, 1, ACC_MASK) then return nil end
-    local tail_at, slots_at
-    for i = #ACC_MASK + 1, #s - #TAIL_MASK + 1 do
-        if not slots_at and matches(s, i, SLOTS_MASK) then slots_at = i end
-        if slots_at and matches(s, i, TAIL_MASK) then tail_at = i; break end
-    end
-    if not tail_at then return nil end
-    local stride = u32(s, tail_at + 5)                  -- tail_at is 1-based; u32 takes 0-based offsets
-    local data = u32(s, tail_at + 11)
-    local slots = byte(s, slots_at + 3)
-    local root_rva = rva + 12 + i32(s, 8)               -- mov rax,[rip+disp] ends at pattern offset 12
-    local root_off = u32(s, 18)
-    if not stride or stride < FRICTION_AT + 4 or stride > 0x4000 or slots < 1 or data ~= slots * 16 then return nil end
-    return {root = game + root_rva, root_off = root_off, slots = slots, data = data, stride = stride}
-end
-
-local function table_base(acc)
-    local root = ptr(read(acc.root, 8), 0)
-    if not root then return nil end
-    return ptr(read(root + acc.root_off, 8), 0)
-end
-
-local function hash_mod(hi, lo, n) return ((hi % n) * (TWO32 % n) + lo) % n end
-
-local function find_record(base, acc, t)
-    local slot = hash_mod(t.hi, t.lo, acc.slots)
-    for _ = 1, acc.slots do
-        local s = read(base + slot * 16, 12)
-        if not s then return nil end
-        local lo, hi = u32(s, 0), u32(s, 4)
-        if lo == t.lo and hi == t.hi then
-            local index = u32(s, 8)
-            if index >= acc.slots * 4 then return nil end
-            return base + acc.data + index * acc.stride
-        end
-        if lo == 0 and hi == 0 then return nil, 'absent' end      -- (3.1.1 review: not in the table, as opposed to unreadable)
-        slot = slot + 1
-        if slot >= acc.slots then slot = 0 end
-    end
-    return nil, 'absent'
-end
-
--- A tank record is accepted only if its wheel radius and friction multiplier look like the tank's, and every field
--- this option changes is in a believable range. Returns the fields' current values.
-local LIMITS = {grip = {0.001, 50}, steering = {0.05, 200}, power = {0.01, 20}}
-local function sane(record)
-    local s = read(record + 0x158, 0x28)             -- +0x158 .. +0x17F: every field either option reads
-    if not s then return nil end
-    local radius, friction = f32(s, RADIUS_AT - 0x158), f32(s, FRICTION_AT - 0x158)
-    if not (radius and radius > 0.3 and radius < 3 and friction > 0.001 and friction < 50) then return nil end
-    local v = {}
-    for k, off in pairs(FIELD) do
-        local x, lim = f32(s, off - 0x158), LIMITS[k]
-        if not x or x < lim[1] or x > lim[2] then return nil end
-        v[k] = x
-    end
-    return v
-end
-
--- Compatibility search after a game patch: one 256 KB chunk of game code per frame.
-local scan = {offset = 0x1000, hits = {}}
-local function scan_step()
-    local size = min(0x40000 + 0x100, image_size - scan.offset)
-    if size <= 0 then return true end
-    -- (3.0.1 review) a page that can't be queried is stepped over (it ended the search, with the rest unsearched)
-    if VirtualQuery(game + scan.offset, region, ffi.sizeof('TtRegion')) == 0 then
-        scan.offset = scan.offset + 0x1000; return scan.offset >= image_size
-    end
-    local r = region[0]
-    local region_end = num(r.base) + tonumber(r.size) - num(game)
-    local exec = r.state == 0x1000 and (r.protection == 0x20 or r.protection == 0x40 or r.protection == 0x10)
-    if not exec then scan.offset = max(scan.offset + 0x1000, region_end); return scan.offset >= image_size end
-    size = min(size, region_end - scan.offset)
-    local s = read(game + scan.offset, size)
-    if s then
-        local at = 1
-        while true do
-            local f = s:find(ACCESSOR_ANCHOR, at, true)
-            if not f then break end
-            local start = f - ACCESSOR_ANCHOR_AT
-            if matches(s, start, ACC_MASK) then scan.hits[#scan.hits + 1] = scan.offset + start - 1 end
-            at = f + 1
+local G = {}                 -- info, api, component (addresses of the three pointers in game.dll)
+local scan = {at = nil}      -- a search through game.dll, a few pieces a frame
+local function site_at(base_rva, s, i)
+    -- s: bytes read from game.dll at rva base_rva; i: 1-based index of the site's first byte
+    if not matches(s, i, SITE_MASK) then return false end
+    local site = base_rva + i - 1
+    local info = site + 0x17 + i32(s, i - 1 + INFO_DISP)
+    local api = site + 0x48 + i32(s, i - 1 + API_DISP)
+    -- the map lookup, up to 0x100 bytes before the site
+    local before = read(game + site - 0x100, 0x100)
+    if not before then return false end
+    for j = 0x100 - #LOOKUP_MASK + 1, 1, -1 do
+        if matches(before, j, LOOKUP_MASK) then
+            local at = site - 0x100 + j - 1
+            G.info, G.api, G.component = info, api, at + 0xD + i32(before, j - 1 + LOOKUP_DISP)
+            G.site = site
+            return true
         end
     end
-    scan.offset = scan.offset + min(0x40000, size)
-    return scan.offset >= image_size
+    return false
 end
-
-local function resolve(rvas)
-    local second = nil
-    for _, rva in ipairs(rvas) do
-        local acc = accessor_at(rva)
-        local base = acc and table_base(acc)
-        if base then
-            local good, absent = 0, 0
-            for _, t in ipairs(TANKS) do
-                local rec, why = find_record(base, acc, t)
-                if rec and sane(rec) then good = good + 1 elseif why == 'absent' then absent = absent + 1 end
+local function find_step()
+    -- first the known place (this build), then the place another part found on this build (its code checked as the
+    -- known place's is), then the whole of game.dll, 16 pieces of 256 KB a frame
+    if not scan.at then
+        scan.at = 0x1000
+        local s = read(game + KNOWN_RVA, #SITE_MASK)
+        if s and site_at(KNOWN_RVA, s, 1) then return 'at its known place' end
+    end
+    local shared = PLACES[state.game]
+    local at = type(shared) == 'table' and tonumber(shared.site)
+    if at and at ~= scan.tried and at >= 0x1000 and at + #SITE_MASK <= image_size then
+        scan.tried = at
+        local s = read(game + at, #SITE_MASK)
+        if s and site_at(at, s, 1) then return 'where another part found it' end
+    end
+    for _ = 1, 16 do
+        if scan.at >= image_size then return false end
+        local n = min(0x40000 + 0x100, image_size - scan.at)
+        local s = read(game + scan.at, n)
+        if s then
+            local from = 1
+            while true do
+                local k = s:find(SITE_ANCHOR, from, true)
+                if not k then break end
+                if k - SITE_ANCHOR_AT >= 1 and site_at(scan.at, s, k - SITE_ANCHOR_AT) then return 'by its code pattern' end
+                from = k + 1
             end
-            if good == #TANKS then return acc, base, rva end
-            -- (3.1.1 review) a table where one tank is sane and the other isn't in it at all (a game update changed that
-            -- tank) is kept as a second choice; one where a tank is there but not sane is another component's table (the
-            -- search finds several accessors over the same settings root) and is never taken
-            if good > 0 and good + absent == #TANKS and not second then second = {acc, base, rva} end
         end
+        scan.at = scan.at + 0x40000
     end
-    if second then return second[1], second[2], second[3] end
+    return nil
+end
+
+-- ---------------------------------------------------------------- the tank's engine
+local fns = {}
+local function fn(slot_table, slot, ctype)
+    local key = slot_table .. slot
+    if fns[key] then return fns[key] end
+    local tbl = ptr(read(game + G[slot_table], 8))
+    local p = tbl and ptr(read(tbl + slot, 8))
+    if not p or not is_code(p) then return nil end
+    fns[key] = ffi.cast(ctype, p)
+    return fns[key]
+end
+local function handle_of(vehicle)
+    local comp = ptr(read(game + G.component, 8))
+    local hdr = comp and read(comp + 0x40, 0x20)
+    if not hdr then return nil, 'vehicle list unreadable' end
+    local entries, cap, empty, mult = ptr(hdr, 0), u32(hdr, 8), u32(hdr, 12), u32(hdr, 16)
+    if not entries or cap == 0 or cap > 0x100000 then return nil, 'vehicle list empty' end
+    local start = tonumber(ffi.cast('uint32_t', ffi.cast('uint64_t', vehicle) * mult))
+    local idx
+    for i = 0, min(cap, 64) - 1 do
+        local e = read(entries + ((start + i) % cap) * 8, 8)
+        if not e then return nil, 'vehicle list unreadable' end
+        local k = u32(e, 0)
+        if k == empty then break end
+        if k == vehicle then idx = u32(e, 4); break end
+    end
+    if not idx or idx > 0xFFFF then return nil, 'tank not in the vehicle list' end
+    local per = ptr(hdr, 0x18)
+    local ent = per and ptr(read(per + idx * 8, 8))
+    local rec = ent and read(ent, 0x10)
+    if not rec then return nil, 'tank record unreadable' end
+    local info = fn('info', 0, INFO_FN)
+    if not info then return nil, 'physics lookup not found' end
+    ffi.fill(info_out, 256)
+    info(u32(rec, 0xC), 0x10, info_out)
+    local hp = ptr(ffi.string(info_out + 0x20, 8))
+    local h = hp and read(hp, 4)
+    if not h then return nil, 'no physics handle' end
+    return u32(h, 0), idx, comp
+end
+-- (Test 20) the tank's 0x670-byte record (component +0x70, by its index)
+local function row_of(comp, idx)
+    local rows = comp and ptr(read(comp + 0x70, 8))
+    return rows and rows + idx * ROW_SIZE
+end
+local function get_block(h, slot, size)
+    local f = fn('api', slot, ENGINE_FN)
+    if not f then return nil end
+    ffi.fill(engine_buf, 64)
+    f(h, engine_buf)
+    return ffi.string(engine_buf, size)
+end
+local function set_block(h, slot, s)
+    local f = fn('api', slot, ENGINE_FN)
+    if not f then return false end
+    ffi.fill(engine_buf, 64)
+    ffi.copy(engine_buf, s, #s)
+    f(h, engine_buf)
+    return true
+end
+local function get_engine(h) return get_block(h, 0x80, ENGINE_SIZE) end
+local function set_engine(h, s) return set_block(h, 0x88, s) end
+local function get_trans(h) return get_block(h, 0x90, TRANS_SIZE) end
+local function set_trans(h, s) return set_block(h, 0x98, s) end
+local function is_trans(s)
+    local down, up, clutch = f32(s, 0), f32(s, 4), f32(s, CLUTCH_AT)
+    if not (down and up and clutch) then return false end
+    return down > 10 and down < 50000 and up > down and up < 50000 and clutch >= 0 and clutch < 10
+end
+-- (3.4.0 review) an engine block that looks like one (max rpm and torque in range) before anything is worked from it
+local function is_engine(s)
+    local rpm, tq = f32(s, MAX_RPM_AT), f32(s, TORQUE_AT)
+    if not (rpm and tq) then return false end
+    return rpm > 100 and rpm < 50000 and tq > 10 and tq < 1e6
+end
+
+-- (Test 20) a wheel's block (wheel i: 0..9, the indices the game's own per-wheel handlers use)
+local wheel_buf = ffi.new('uint8_t[64]')
+local function get_wheel(h, i)
+    local f = fn('api', 0x40, WHEEL_FN)
+    if not f then return nil end
+    ffi.fill(wheel_buf, 64)
+    f(h, i, wheel_buf)
+    return ffi.string(wheel_buf, WHEEL_SIZE)
+end
+local function set_wheel(h, i, s)
+    local f = fn('api', 0x48, WHEEL_FN)
+    if not f then return false end
+    ffi.fill(wheel_buf, 64)
+    ffi.copy(wheel_buf, s, #s)
+    f(h, i, wheel_buf)
+    return true
+end
+local function is_wheel(s)
+    local r, m, fr, mf = f32(s, 0), f32(s, 8), f32(s, FRICTION_AT), f32(s, MAX_FRICTION_AT)
+    if not (r and m and fr and mf) then return false end
+    return r > 0.05 and r < 3 and m >= 1 and m < 100000 and fr >= 0 and fr < 20 and mf >= 0 and mf < 50
+end
+-- (Test 29) the aerodynamics (Tank Stability): slot 0x20 reads air density, drag and lift; slot 0x28 sets them (by value)
+local aero_buf = ffi.new('float[3]')
+local function get_aero(h)
+    local f = fn('api', 0x20, AERO_GET_FN)
+    if not f then return nil end
+    aero_buf[0], aero_buf[1], aero_buf[2] = -1, -1, -1e9
+    f(h, aero_buf, aero_buf + 1, aero_buf + 2)
+    return {aero_buf[0], aero_buf[1], aero_buf[2]}
+end
+local function set_aero(h, density, drag, lift)
+    local f = fn('api', 0x28, AERO_SET_FN)
+    if not f then return false end
+    f(h, density, drag, lift)
+    return true
+end
+local function is_aero(a)
+    if type(a) ~= 'table' or type(a[1]) ~= 'number' or type(a[2]) ~= 'number' or type(a[3]) ~= 'number' then return false end
+    return a[1] > 0.01 and a[1] < 1000 and a[2] >= 0 and a[2] < 1000 and a[3] > -1000 and a[3] < 1000
+end
+-- (3.4.0 review) the tank's air factor, as the game's own call works it (record +0x654 x +0x658; 1 when unreadable or
+-- out of range): the read gives the resource's density, the physics holds it times this
+local function air_factor(comp, idx)
+    local row = row_of(comp, idx)
+    local v = row and read(row + AIR_AT, 8)
+    local a, b = f32(v, 0), f32(v, 4)
+    if not (a and b and a > 0 and a < 100 and b > 0 and b < 100) then return 1 end
+    return a * b
+end
+-- downforce (newtons, negative = down) of a lift coefficient at 45 km/h, and the lift that gives the picked weight there
+local function downforce(density, lift) return 0.5 * density * FRONTAL_AREA * lift * REF_SPEED * REF_SPEED end
+local function wanted_lift(own, density, m)
+    if m == 1 then return own end
+    return own - (m - 1) * HULL_MASS * GRAVITY / (0.5 * density * FRONTAL_AREA * REF_SPEED * REF_SPEED)
 end
 
 -- ---------------------------------------------------------------- applying
-local acc, base
-local originals, tries, wants, shown_values = {}, {}, {}, {}
--- (3.0 review) another mod writing the same values: a tank this addon had set, found changed back 3 times within a
--- minute, is left alone (2.1 rewrote it every 10 s for ever) until the next pick in the Mod Options Menu
--- (3.0.1 review: menu_set starts over; a mod still changing it is found again within ~3 checks)
-local fight = {set = {}, backs = {}}
--- (3.1.1 review) per tank, what it holds that this addon put there (written, or already the wanted values): what the
--- shutdown compares with. Kept apart from fight.set, which a menu pick clears.
-local held = {}
-local settled = false           -- true once both tanks hold the preset
-local function differs(a, b)
-    for _, k in ipairs(FIELD_NAMES) do if math.abs(a[k] - b[k]) > 1e-4 then return true end end
-    return false
+local mult = PRESET
+state.live_mult = mult
+tanks, order = {}, {}            -- vehicle id -> {h, own, name, note}
+-- the other live part's multiplier (Top Speed and Engine Torque both set the torque: it is their product)
+local function other(global)
+    local st = rawget(_G, global)
+    local m = type(st) == 'table' and tonumber(st.live_mult)
+    return (m and m > 0.1 and m < 10) and m or 1
 end
-local function apply()
-    -- (2.0.1 review) the table is looked up again each time (two small reads): if the game ever rebuilds it (a mission
-    -- loading), the new one is used rather than the one found first
-    local b = table_base(acc)
-    if b ~= nil and num(b) ~= num(base) then base = b; tries, shown_values, held = {}, {}, {}; fight = {set = {}, backs = {}} end
-    local changed, open = 0, 0
-    for _, t in ipairs(TANKS) do
-        local rec, why = find_record(base, acc, t)
-        local current = rec and sane(rec)
-        if not current then
-            -- (3.1.1 review) a tank this game version's table doesn't have at all doesn't keep the option checking every 2 s
-            state.tanks[t.key] = why == 'absent' and 'not found (not in this game version\'s vehicle settings)' or 'not found'
-            shown_values[t.key] = nil
-            if why ~= 'absent' then open = open + 1 end
-        else
-            if not originals[t.key] then
-                -- (3.1.1 review) the game's own values: kept by an earlier copy this session if there was one; else what is
-                -- there, unless it is exactly the game's own times one of the option's strengths (an earlier copy's value
-                -- whose kept copy is gone): then the game's own. Any other value (another mod's, or a game data change) is
-                -- taken as it is (3.1.0, on the Sept 2026 build, replaced any value that wasn't the game's own).
-                local okk, o = pcall(keep_get, t.key)
-                if not (okk and o) then
-                    o = current
-                    -- (on the Sept 2026 build only, whose own values VANILLA holds: after a game update a new value of the
-                    -- game's could be one of those multiples by chance, and the kept values cover a reload there)
-                    for _, k in ipairs(timestamp == KNOWN_TIMESTAMP and FIELD_NAMES or {}) do
-                        for _, m in ipairs(STRENGTHS) do
-                            if math.abs(current[k] - VANILLA[k] * m) < 1e-4 then
-                                o = {}
-                                for _, f in ipairs(FIELD_NAMES) do o[f] = VANILLA[f] end
-                                state.errors = state.errors + 1
-                                state.last_error = string.format('%s: %s found at %.3f, the game\'s %.3f x%g (left by an earlier copy): the game\'s own used',
-                                    t.name, k, current[k], VANILLA[k], m)
-                                break
-                            end
-                        end
-                        if o ~= current then break end
-                    end
-                    pcall(keep_set, t.key, o)
-                end
-                originals[t.key] = o
-                local want = {}
-                for _, k in ipairs(FIELD_NAMES) do want[k] = o[k] * mult end
-                wants[t.key] = want
-            end
-            local o, want = originals[t.key], wants[t.key]
-            local problem, now = nil, current
-            if fight.set[t.key] and differs(current, fight.set[t.key]) then   -- changed since this addon wrote it
-                local bk = fight.backs[t.key] or {}
-                fight.backs[t.key] = bk
-                bk[#bk + 1] = state.clock                -- (3.1.1 review: seconds; 3600 frames was 15 s at 240 fps)
-                while state.clock - bk[1] > 60 do table.remove(bk, 1) end
-                if #bk >= 3 and (tries[t.key] or 0) < MAX_TRIES then
-                    tries[t.key] = MAX_TRIES; state.errors = state.errors + 1
-                    state.last_error = t.name .. ': another mod keeps changing it back: left alone'
-                end
-            end
-            if not differs(current, want) then fight.set[t.key] = current; held[t.key] = current end   -- (3.1.1 review: for the shutdown)
-            if differs(current, want) then
-                open = open + 1
-                if (tries[t.key] or 0) < MAX_TRIES then
-                    local ok, how = write_floats(rec, SPAN, FIELD, want)
-                    now = sane(rec) or current
-                    if ok and not differs(now, want) then
-                        changed = changed + 1; tries[t.key] = nil; fight.set[t.key] = now; held[t.key] = now; state.applied = state.applied + 1; open = open - 1
-                    else
-                        tries[t.key] = (tries[t.key] or 0) + 1; state.errors = state.errors + 1
-                        state.last_error = t.name .. ': write failed: ' .. tostring(how)
-                        problem = 'write failed: ' .. tostring(how)
-                    end
-                else
-                    problem = 'gave up'; open = open - 1      -- (3.0 review: left alone, not checked every 2 s)
-                end
-            end
-            -- the log text is only rebuilt when a value or problem changed
-            local sig = problem or ''
-            for _, k in ipairs(FIELD_NAMES) do sig = sig .. string.format('|%.4f', now[k]) end
-            if sig ~= shown_values[t.key] then
-                shown_values[t.key] = sig
-                local parts = {}
-                for _, k in ipairs(FIELD_NAMES) do
-                    parts[#parts + 1] = string.format('%s x%.2f (%.3f, game %.3f)', k, now[k] / o[k], now[k], o[k])
-                end
-                state.tanks[t.key] = table.concat(parts, ', ') .. (problem and ' [' .. problem .. ']' or '')
-            end
+-- what the engine block should hold: from the tank's own block, max rpm x Top Speed, torque x Top Speed x Engine Torque
+local function wanted_engine(own)
+    local s = PART == 'speed' and mult or other('ArmoredOverhaulTopSpeed')
+    local q = PART == 'torque' and mult or other('ArmoredOverhaulPower')
+    local e = own
+    if s ~= 1 then e = with_f32(e, MAX_RPM_AT, f32(own, MAX_RPM_AT) * s) end
+    if s * q ~= 1 then e = with_f32(e, TORQUE_AT, f32(own, TORQUE_AT) * s * q) end
+    return e
+end
+-- the tank's own engine block: on the known build its rpm and torque are the game's (whatever another part or an earlier
+-- copy wrote); on others what it held when a live part first saw it
+local function own_engine(key, now)
+    local o = OWN[key]
+    if o and o.engine then return o.engine, o.note end
+    local own, note = now, nil
+    if timestamp == KNOWN_TIMESTAMP then
+        local rpm, tq = f32(now, MAX_RPM_AT), f32(now, TORQUE_AT)
+        if math.abs(rpm - VANILLA_MAX_RPM) > 1 or math.abs(tq - VANILLA_TORQUE) > 1 then
+            own = with_f32(with_f32(now, MAX_RPM_AT, VANILLA_MAX_RPM), TORQUE_AT, VANILLA_TORQUE)
+            note = string.format(' (found at %.0f rpm / %.0f torque: the game\'s own taken)', rpm, tq)
         end
     end
-    settled = open == 0
-    return changed
+    OWN[key] = OWN[key] or {}
+    OWN[key].engine, OWN[key].note = own, note
+    return own, note
+end
+local function own_wheels(key, h)
+    local o = OWN[key]
+    if o and o.wheels then return o.wheels end
+    local list = {}
+    for i = 0, MAX_WHEELS - 1 do
+        local w = get_wheel(h, i)
+        if not w or not is_wheel(w) then break end
+        if timestamp == KNOWN_TIMESTAMP then w = with_f32(with_f32(w, FRICTION_AT, VANILLA_FRICTION), MAX_FRICTION_AT, VANILLA_MAX_FRICTION) end
+        list[#list + 1] = w
+    end
+    if #list == 0 then return nil end
+    OWN[key] = OWN[key] or {}
+    OWN[key].wheels = list
+    return list
+end
+-- (Test 20) the gearbox: its own block (on the known build its clutch delay is the game's 0.3 s, whatever was written)
+local function own_trans(key, now)
+    local o = OWN[key]
+    if o and o.trans then return o.trans end
+    local own = now
+    if timestamp == KNOWN_TIMESTAMP then own = with_f32(now, CLUTCH_AT, VANILLA_CLUTCH) end
+    OWN[key] = OWN[key] or {}
+    OWN[key].trans = own
+    return own
+end
+-- (3.4.0 review) the log line is made again only when something it shows changed (not at every look)
+local function unchanged(t, ...)
+    local k, n = t.shown, select('#', ...)
+    if k and k.n == n then
+        local same = true
+        for i = 1, n do if k[i] ~= select(i, ...) then same = false; break end end
+        if same then return true end
+    end
+    t.shown = {n = n, ...}
+    return false
+end
+local function describe(t, now)
+    local roll, pitch = t.tilt_now and t.tilt_now[1], t.tilt_now and t.tilt_now[2]
+    local sent = PART == 'stability' and (t.aero_sent or now[3]) or nil
+    if PART == 'stability' then
+        if unchanged(t, now[1], now[2], now[3], sent, t.aero_own, t.aero_density, t.aero_drag, roll, pitch, t.tilt_skip) then return end
+    elseif unchanged(t, now, t.own, t.own1, t.wheels, t.note, roll, pitch, t.tilt_skip) then return end
+    local head = string.format('%s 0x%X: ', t.name, t.vehicle)
+    local tail = (t.tilt_skip and '; torque factors not confirmed on this game version (left alone)')
+        or (roll and string.format('; torque roll %.3f, pitch %.3f', roll, pitch)) or ''
+    if PART == 'grip' then
+        state.tanks[t.vehicle] = head .. string.format('%d wheels, friction %.3f / max %.3f (their own %.3f / %.3f)%s',
+            t.wheels or 0, f32(now, FRICTION_AT), f32(now, MAX_FRICTION_AT), f32(t.own1, FRICTION_AT), f32(t.own1, MAX_FRICTION_AT), t.note or '') .. tail
+    elseif PART == 'shift' then
+        state.tanks[t.vehicle] = head .. string.format('clutch delay %.3f s (its own %.3f s)', f32(now, CLUTCH_AT), f32(t.own, CLUTCH_AT))
+    elseif PART == 'stability' then
+        local d = t.aero_density
+        state.tanks[t.vehicle] = head .. string.format('lift %.2f sent (the game reads back %.2f; its own %.2f; air density %.3g (x%.3g the tank\'s air factor), drag %.3g): pressed down with %.0f kN at 45 km/h, x%.2f its weight',
+            sent, now[3], t.aero_own, d, t.aero_factor or 1, t.aero_drag, -downforce(d, sent - t.aero_own) / 1000, 1 - downforce(d, sent - t.aero_own) / (HULL_MASS * GRAVITY)) .. tail
+    else
+        state.tanks[t.vehicle] = head .. string.format('max rpm %.0f, torque %.0f (its own %.0f / %.0f)%s',
+            f32(now, MAX_RPM_AT), f32(now, TORQUE_AT), f32(t.own, MAX_RPM_AT), f32(t.own, TORQUE_AT), t.note or '') .. tail
+    end
+end
+local function remember(vehicle, h, name)
+    local t = tanks[vehicle]
+    if t and t.h == h then return t end
+    if not t then
+        order[#order + 1] = vehicle
+        if #order > MAX_TANKS then local old = table.remove(order, 1); tanks[old] = nil; state.tanks[old] = nil end
+    end
+    t = {vehicle = vehicle, h = h, key = string.format('%X:%X', vehicle, h), name = name or (t and t.name) or 'tank'}
+    tanks[vehicle] = t
+    return t
+end
+local function far(a, b) return math.abs(a[1] - b[1]) > 1e-5 or math.abs(a[2] - b[2]) > 1e-5 end
+-- two floats of game data (the record's torque factors): written when not what is wanted, read back
+local function put_pair(t, at, want, what)
+    if not writable(at, 8) then return nil, what .. ': memory not writable' end
+    poke(at, want)
+    state.writes = state.writes + 1
+    local v = read(at, 8)
+    local now = v and {f32(v, 0), f32(v, 4)}
+    if not now or far(now, want) then fail(string.format('%s 0x%X: the %s did not take the new values', t.name, t.vehicle, what)) end
+    return now or want
+end
+-- (Test 23) the torque factors every part sets (see the top), from the tank's own: whichever part looks last writes the
+-- same values (each reads the others' multipliers), so they never fight
+local function wanted_tilt(own)
+    local sp = PART == 'speed' and mult or other('ArmoredOverhaulTopSpeed')
+    local q = PART == 'torque' and mult or other('ArmoredOverhaulPower')
+    return {own[1], own[2] / (sp * q)}                 -- (Test 29: the roll factor the tank's own again)
+end
+local function apply_tilt(t, idx, comp)
+    local row = row_of(comp, idx)
+    local v = row and read(row + ROLL_AT, 8)
+    if not v then return false, 'record unreadable' end
+    local now = {f32(v, 0), f32(v, 4)}
+    if not (now[1] and now[2] and now[1] >= 0 and now[1] < 20 and now[2] >= 0 and now[2] < 20) then return false, 'torque factors out of range' end
+    -- (3.4.0 review) the record's place is known on the known build only: on another, written only where it reads about
+    -- 1 and 1 (the game's own) or what this part, or another live part, wrote there last (they all write the same
+    -- values); else left alone, and said in the log
+    local wrote = OWN[t.key] and OWN[t.key].tilt_held
+    if timestamp ~= KNOWN_TIMESTAMP and not (math.abs(now[1] - 1) < 0.05 and math.abs(now[2] - 1) < 0.05)
+            and not (t.held and not far(now, t.held)) and not (wrote and not far(now, wrote)) then
+        t.tilt_now, t.tilt_skip = nil, true
+        return true
+    end
+    t.tilt_skip = nil
+    OWN[t.key] = OWN[t.key] or {}
+    if not OWN[t.key].tilt then
+        OWN[t.key].tilt = timestamp == KNOWN_TIMESTAMP and {VANILLA_ROLL, VANILLA_PITCH} or now
+    end
+    t.tilt_own, t.at = OWN[t.key].tilt, row + ROLL_AT
+    local want = wanted_tilt(t.tilt_own)
+    if far(now, want) then
+        local done, why = put_pair(t, t.at, want, 'torque factors')
+        if not done then return false, why end
+        now = done
+    end
+    t.held, t.tilt_now, OWN[t.key].tilt_held = now, now, now
+    return true
+end
+local apply_part = {}
+apply_part.grip = function(t, h, idx, comp)
+    local own = own_wheels(t.key, h)
+    if not own then return false, 'wheels unreadable' end
+    t.wheels, t.own1, t.own_wheels, t.want_wheels = #own, own[1], own, {}
+    local first
+    for i, w in ipairs(own) do
+        local want = mult == 1 and w or with_f32(with_f32(w, FRICTION_AT, f32(w, FRICTION_AT) * mult), MAX_FRICTION_AT, f32(w, MAX_FRICTION_AT) * mult)
+        t.want_wheels[i] = want                -- (3.4.0 review: put back at shutdown where the wheel still holds it)
+        local now = get_wheel(h, i - 1)
+        if not now then return false, 'wheel unreadable' end
+        if now ~= want then
+            if not set_wheel(h, i - 1, want) then return false, 'wheel write not found' end
+            state.writes = state.writes + 1
+            now = get_wheel(h, i - 1)
+            if now ~= want then fail(string.format('%s 0x%X: wheel %d did not take the new values', t.name, t.vehicle, i - 1)) end
+        end
+        first = first or now
+    end
+    local ok, why = apply_tilt(t, idx, comp)
+    describe(t, first)
+    if not ok then return false, why end
+    return true
+end
+apply_part.shift = function(t, h)
+    local now = get_trans(h)
+    if not now or not is_trans(now) then return false, 'transmission unreadable' end
+    t.own = own_trans(t.key, now)
+    local want = with_f32(t.own, CLUTCH_AT, f32(t.own, CLUTCH_AT) * mult)
+    t.want_trans = want
+    if now ~= want then
+        if not set_trans(h, want) then return false, 'transmission write not found' end
+        state.writes = state.writes + 1
+        now = get_trans(h)
+        if now ~= want then fail(string.format('%s 0x%X: the transmission did not take the new values', t.name, t.vehicle)) end
+    end
+    describe(t, now or want)
+    return true
+end
+apply_part.stability = function(t, h, idx, comp)
+    local now = get_aero(h)
+    if not is_aero(now) then return false, 'aerodynamics unreadable' end
+    local o = OWN[t.key] or {}
+    OWN[t.key] = o
+    local known = timestamp == KNOWN_TIMESTAMP
+    if o.lift == nil then o.lift = known and VANILLA_LIFT or now[3] end
+    -- (3.4.0 review) density and drag: the tank's own (the resource's, as the read gives them), the density times the
+    -- tank's air factor as the game's own call sends it (the read's density was sent back unscaled before)
+    if o.density == nil then o.density, o.drag = known and VANILLA_DENSITY or now[1], known and VANILLA_DRAG or now[2] end
+    t.aero_factor = air_factor(comp, idx)
+    t.aero_own, t.aero_drag, t.aero_density = o.lift, o.drag, o.density * t.aero_factor
+    local want = wanted_lift(t.aero_own, t.aero_density, mult)
+    -- (Test 30) Test 29: the read after the write still gives the old lift (160 times); Test 36 showed the call reaches
+    -- the physics (a positive lift lifted the tank). (3.4.0 review) Where the read doesn't follow the write, a lift the
+    -- game put back can't be seen: the lift is sent at every look (one call each ~2 s); where it does, only when the read
+    -- shows something else, as the other parts do
+    if not t.aero_echo or math.abs(now[3] - want) > 1e-3 or math.abs(now[1] - t.aero_density) > 1e-3 then
+        if not set_aero(h, t.aero_density, t.aero_drag, want) then return false, 'aerodynamics write not found' end
+        state.writes = state.writes + 1
+        t.aero_sent = want
+        -- (the read follows the write when it showed another lift before and shows the new one now: checked once)
+        if t.aero_echo == nil and math.abs(now[3] - want) > 1e-3 then
+            local back = get_aero(h)
+            if is_aero(back) then t.aero_echo = math.abs(back[3] - want) < 1e-3; now = back end
+        end
+    end
+    t.aero_held = t.aero_sent or now[3]
+    local ok, why = apply_tilt(t, idx, comp)
+    describe(t, now)
+    if not ok then return false, why end
+    return true
+end
+local function apply_engine(t, h, idx, comp)
+    local now = get_engine(h)
+    if not now then return false, 'engine unreadable' end
+    -- (3.4.0 review) nothing is worked from, or written over, a block that doesn't look like an engine's
+    if not is_engine(now) then return false, 'engine values out of range' end
+    t.own, t.note = own_engine(t.key, now)
+    local want = wanted_engine(t.own)
+    if not is_engine(t.own) or not is_engine(want) then return false, 'engine values out of range' end
+    t.want = want                          -- (put back at shutdown where the engine still holds it)
+    if now ~= want then
+        if not set_engine(h, want) then return false, 'engine write not found' end
+        state.writes = state.writes + 1
+        now = get_engine(h)
+        if now ~= want then fail(string.format('%s 0x%X: the engine did not take the new values', t.name, t.vehicle)) end
+    end
+    local ok, why = apply_tilt(t, idx, comp)
+    describe(t, now or want)
+    if not ok then return false, why end
+    return true
+end
+apply_part.speed, apply_part.torque = apply_engine, apply_engine
+-- one tank: found again, its values read; written when they aren't what this part wants
+local function apply(vehicle, name)
+    local h, idx, comp = handle_of(vehicle)
+    if not h then return false, idx end
+    return apply_part[PART](remember(vehicle, h, name), h, idx, comp)
 end
 
--- ---------------------------------------------------------------- main loop
-local phase = 'gate'
-local next_check = 0
--- ---------------------------------------------------------------- Mod Options Menu (3.0)
--- With CowboyBingus's Mod Options Menu installed, these settings show in the game's MODS tab under ARMORED OVERHAUL
--- and the menu keeps their values; without it nothing changes (the mod manager's picks and the defaults are used).
--- (Its API, from the menu's own source: register_option(id, spec), get(id), on_change(id, fn), api = 1.)
--- The menu lists rows in the order they are added, and the addons load in no set order, so every addon publishes
--- its rows in _G.ArmoredOverhaulMenu and the first one to find the menu adds them all, in the mod manager's option
--- order (MENU_ORDER). The menu may load after the addons: it is looked for once a second until found.
--- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
+-- ---------------------------------------------------------------- Mod Options Menu (3.0) - as the other options
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
-    for _, g in ipairs({'grip'}) do
-        hub.groups[g] = {status = state,
-            rows = function() local r = menu_rows[g]; if type(r) == 'function' then r = r() end; return r or {} end,
-            set = function(key, value) return menu_set(key, value) end}
-    end
+    if P.menu then hub.groups[P.menu] = {status = state,
+        rows = function() local r = menu_rows[P.menu]; if type(r) == 'function' then r = r() end; return r or {} end,
+        set = function(key, value) return menu_set(key, value) end} end
     local function add(M, g)
         local e = hub.groups[g]
         if not e or hub.done[g] then return end
@@ -538,56 +726,75 @@ do
     end
     local at = 0
     menu_link = function(frame)
-        if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
+        if frame ~= true and frame < at then return end
         at = (frame == true and 0 or frame) + 60
-        local mine = true
-        for _, g in ipairs({'grip'}) do if not hub.done[g] then mine = false end end
-        if mine then at = math.huge; return end
+        if not P.menu or hub.done[P.menu] then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
-        -- (3.0.1 review) each group on its own pcall: a malformed group from another (older) copy can't stop this addon
         for _, g in ipairs(MENU_ORDER) do pcall(add, M, g) end
-        for g in pairs(hub.groups) do pcall(add, M, g) end   -- (a group not in MENU_ORDER: last)
+        for g in pairs(hub.groups) do pcall(add, M, g) end
     end
-end
-
--- (3.3.0) Bingus Shared Loader v19: the menus are linked as soon as every addon has loaded (after_startup); the
--- once-a-second look stays for older loaders and for a menu that turns up later
-do
     local L = rawget(_G, 'CowboyBingusModLoader')
     if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
--- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
--- mod manager's order; it fine-tunes what is installed.
-local MENU_CHOICES, MENU_MULTS = {'Off', 'Moderate (x1.25)', 'Strong (x1.5)', 'Maximum (x2)'}, {1, 1.25, 1.5, 2}
+-- (3.4.0 Test 7, the tester: "2x is too fast") Top Speed's Fastest was x1.5; (Test 22, the tester: "50% is a little excessive") it is
+-- x1.25 on both tanks, with Fast x1.1 and Faster x1.15; (Test 28, the tester: "fastest can be 1.3") Fastest x1.3
+local MENU_CHOICES, MENU_MULTS = P.choices, P.mults
 local MENU_PICK = 2
 for i, m in ipairs(MENU_MULTS) do if i > 1 and math.abs(m - PRESET) < 1e-6 then MENU_PICK = i end end
--- One row, the option as the mod manager shows it; it starts at the pick (the id carries it, so another pick in the
--- mod manager starts from its own). Off = the game's own values. Tanks called in after a change use it.
-menu_rows.grip = {
-    {'armored_overhaul.' .. PART .. '.' .. PRESET_NAME:lower(), {type = 'choice', label = 'Tank Grip', choices = MENU_CHOICES,
-        default = MENU_PICK, description = 'More track grip for the Bastion and Maelstrom: less sliding on slopes and in turns. Tanks called in after a change use it.'}, 'mult'},
-}
+if P.menu then menu_rows[P.menu] = {
+    {'armored_overhaul.' .. P.menu .. '.' .. PRESET_NAME:lower(), {type = 'choice', label = P.title, choices = MENU_CHOICES,
+        default = MENU_PICK, description = P.description}, 'mult'},
+} else state.options_menu = 'follows ' .. P.follow:gsub('^ArmoredOverhaul', '') .. ' (no row of its own)' end
+local function preset_text(v)
+    if P.follow and v == 1 then return string.format('off: the tanks\' own %s (Tank Throttle Response off)', P.what) end
+    if P.follow then return string.format('%s (%g times the %s, from Tank Throttle Response)', MENU_CHOICES[v], MENU_MULTS[v], P.what) end
+    if v == MENU_PICK then return string.format('%s (%s times the %s, picked in the mod manager)', PRESET_NAME, tostring(PRESET), P.what) end
+    if v == 1 then return string.format('off: the tanks\' own %s (Mod Options Menu)', P.what) end
+    return string.format('%s (%g times the %s, Mod Options Menu)', MENU_CHOICES[v], MENU_MULTS[v], P.what)
+end
+state.preset = preset_text(MENU_PICK)
+local next_check = 0
+local log_if_changed
 menu_set = function(key, v)
     if key ~= 'mult' or not MENU_MULTS[v] then return end
     mult = MENU_MULTS[v]
-    for k, o in pairs(originals) do
-        local w = wants[k] or {}
-        for _, f in ipairs(FIELD_NAMES) do w[f] = o[f] * mult end
-        wants[k] = w
+    state.live_mult = mult
+    state.preset = preset_text(v)
+    -- every tank this addon has changed gets the new value now (Off: its own engine back)
+    if G.api then
+        for _, vehicle in ipairs(order) do
+            local t = tanks[vehicle]
+            if t then local ok, why = pcall(apply, vehicle, t.name); if not ok then fail(tostring(why)) end end
+        end
     end
-    -- (3.0.1 review) a pick is a new decision: a tank given up on (another mod changing it back, or failed writes) is
-    -- tried again (before, later picks, Off too, were silently ignored for it while the log said they applied)
-    tries = {}; fight = {set = {}, backs = {}}
-    state.preset = v == MENU_PICK and string.format('%s (%s times the game\'s %s, picked in the mod manager)', PRESET_NAME, tostring(PRESET), P.what)
-        or (v == 1 and string.format('off: the game\'s own %s (Mod Options Menu)', P.what)
-        or string.format('%s (%g times the game\'s %s, Mod Options Menu)', MENU_CHOICES[v], mult, P.what))
-    next_check = 0
+    -- the tank you are in at the next frame, unless it was just changed above (3.4.0 review: it was changed twice)
+    local seat = rawget(_G, 'ArmoredOverhaulSeat')
+    local sv = type(seat) == 'table' and tonumber(seat.vehicle)
+    if not (G.api and sv and tanks[sv]) then next_check = 0 end
+    log_if_changed()
 end
-local shown
+
+-- ---------------------------------------------------------------- each frame
+local phase = 'gate'
+local last_summary
+-- the log is written when what it says changes (not every look)
+log_if_changed = function()
+    local parts = {state.status, state.preset, state.errors, state.options_menu}
+    for _, vehicle in ipairs(order) do parts[#parts + 1] = state.tanks[vehicle] end
+    local summary = table.concat(parts, '|')
+    if summary ~= last_summary then last_summary = summary; log() end
+end
+local followed                    -- (shift) the pick last taken from the option it follows
+local last_problem
 local function tick()
     state.frames = state.frames + 1
     menu_link(state.frames)
+    if P.follow then
+        local st = rawget(_G, P.follow)
+        local c = type(st) == 'table' and tonumber(st.choice)
+        if c and MENU_MULTS[c] and c ~= followed then followed = c; menu_set('mult', c) end
+    end
     if state.frames < next_check then return end
     if phase == 'gate' then
         local m = GetModuleHandleA('game.dll')
@@ -597,111 +804,110 @@ local function tick()
         local pe = dos and u32(dos, 0x3C)
         local hdr = pe and read(game + pe, 0x60)
         image_size, timestamp = hdr and u32(hdr, 0x50), hdr and u32(hdr, 8)
-        if image_size and timestamp then state.game = string.format('%08X-%X', timestamp, image_size) end
-        if not image_size then state.status = 'game.dll header unreadable'; phase = 'off'; log(); return end
-        phase = timestamp == KNOWN_TIMESTAMP and 'known' or 'scan'
-        state.how = phase == 'known' and 'known build' or 'searching game code'
-        if phase == 'scan' then
-            local rva = cache_load()
-            if rva and rva < image_size and accessor_at(rva) then
-                scan.hits = {rva}; phase = 'scanned'; state.how = 'saved from an earlier search'
-            end
-        end
+        if not image_size then next_check = state.frames + 60; return end
+        state.game = string.format('%08X-%X', timestamp, image_size)
+        phase, state.status = 'find', 'looking for the vehicle physics'
     end
-    if phase == 'known' then
-        if accessor_at(KNOWN_RVA) then scan.hits = {KNOWN_RVA}; phase = 'scanned'
-        else phase = 'scan'; state.how = 'searching game code' end
-    end
-    if phase == 'scan' then
-        local tag = build_tag()
-        if shared.tag == tag and shared.done then
-            scan.hits = {}
-            for i, h in ipairs(shared.hits) do scan.hits[i] = h end
-            phase = 'scanned'
-        elseif shared.tag == tag and shared.owner ~= PART
-            and (shared.beat ~= wait.beat or state.frames - wait.since <= SHARED_STALL) then
-            -- the other option is searching: wait for it (it moves `beat` every step)
-            if shared.beat ~= wait.beat then wait.beat, wait.since = shared.beat, state.frames end
-            return
-        else
-            if shared.owner ~= PART or shared.tag ~= tag then
-                shared.owner, shared.tag, shared.done, shared.hits = PART, tag, false, nil
-            end
-            shared.beat = (shared.beat or 0) + 1
-            if scan_step() then phase = 'scanned'; shared.hits, shared.done = scan.hits, true end
-            if phase ~= 'scanned' then return end
+    if phase == 'find' then
+        local how = find_step()
+        if how == nil then return end                     -- (still looking: next frame)
+        if not how then
+            phase, state.status, state.found = 'off', 'off: the vehicle physics was not found in this game version', 'not found'
+            log(); return
         end
+        state.found = string.format('%s (game.dll+0x%X)', how, G.site)
+        -- (3.4.0 review) shared with the other parts on this build (they check the code there instead of searching)
+        PLACES[state.game] = {site = G.site, info = G.info, api = G.api, component = G.component}
+        phase, state.status = 'run', 'ready'
+        log()
     end
-    if phase == 'scanned' then
-        local rva
-        acc, base, rva = resolve(scan.hits)
-        if not acc then
-            state.status = string.format('waiting for the vehicle settings (%d candidate accessors)', #scan.hits)
-            next_check = state.frames + 120
-            if state.status ~= shown then shown = state.status; log() end     -- (2.0.1 review: not every 2 s while waiting)
-            return
-        end
-        if state.how == 'searching game code' then
-            state.how = string.format('found by search at game.dll+0x%X', rva); cache_save(rva)
-        end
-        phase = 'ready'
-    end
-    if phase == 'ready' then
-        state.table = string.format('0x%X', num(base))
-        state.slots = acc.slots
-        local okA, changed = pcall(apply)
-        if not okA then state.errors = state.errors + 1; state.last_error = tostring(changed); state.status = 'error: ' .. tostring(changed)
-        else
-            -- (2.0.1 review) 'active' only says so when every tank was found
-            local missing = 0
-            for _, t in ipairs(TANKS) do if state.tanks[t.key] == 'not found' then missing = missing + 1 end end
-            state.status = missing == 0 and 'active' or string.format('active, %d tank(s) not found (see below)', missing)
-        end
-        -- (3.0.1 review) the options menu and the preset are in it: a menu linked late (with the pick's value) is logged
-        local summary = state.status .. state.errors .. state.options_menu .. state.preset
-        for _, t in ipairs(TANKS) do summary = summary .. (state.tanks[t.key] or '') end
-        if summary ~= shown then shown = summary; log() end
-        next_check = state.frames + ((okA and settled) and SETTLED_EVERY or CHECK_EVERY)
-    end
+    if phase ~= 'run' then return end
+    next_check = state.frames + CHECK_EVERY
+    local seat = rawget(_G, 'ArmoredOverhaulSeat')
+    if type(seat) ~= 'table' then state.status = 'ready (Tank Core not loaded: no tank to change)'; return end
+    local vehicle, kind = tonumber(seat.vehicle) or 0, tonumber(seat.kind) or 0
+    local name = TANK_KINDS[kind]
+    if vehicle == 0 or not name then log_if_changed(); return end
+    local ok, done, why = pcall(apply, vehicle, name)
+    local problem = not ok and tostring(done) or (not done and name .. ': ' .. tostring(why)) or nil
+    -- (Test 20) a problem that stays is counted once, not every look
+    if problem and problem ~= last_problem then fail(problem) end
+    last_problem = problem
+    state.status = problem and ('running; ' .. problem) or 'running'
+    log_if_changed()
 end
 
 local previous_update = update
 if type(previous_update) ~= 'function' then return end
-local function after(ok, ...)
-    if not ok then error((...), 0) end
-    local okT, err = pcall(tick)
-    if not okT then state.errors = state.errors + 1; state.last_error = tostring(err); state.status = 'error: ' .. tostring(err); phase = 'off'; log() end
-    return ...
-end
+-- (3.4.0 review) an error that repeats every frame is counted, but written to the log only when it changes or every 5 s
+local tick_error, tick_error_quiet = nil, 0
 update = function(dt, ...)
-    state.clock = state.clock + ((type(dt) == 'number' and dt > 0 and dt < 0.5) and dt or 1 / 60)   -- (3.1.1 review: seconds)
-    return after(pcall(previous_update, dt, ...))
-end
--- (3.0.1 review) the game closing (or this Lua being rebuilt): the game's own values are put back, so a new copy of
--- this addon never reads already-scaled values as the game's (x1.5 became x2.25). Only values this addon holds are
--- written back (another mod's are left to it), through the same page-checked write; the previous shutdown is called.
-do
-    local previous_shutdown = shutdown
-    shutdown = function(...)
-        pcall(function()
-            if not acc or not base or phase == 'closed' then return end
-            phase = 'closed'                                -- (nothing is written after this)
-            local b = table_base(acc) or base
-            for _, t in ipairs(TANKS) do
-                -- (3.1.1 review) put back where the tank holds what this addon wrote last (3.1.0 compared with the wanted
-                -- values, which a menu pick changes a frame before they are written: then nothing was put back)
-                local o, h = originals[t.key], held[t.key]
-                local rec = o and h and find_record(b, acc, t)
-                local current = rec and sane(rec)
-                if current and differs(current, o) and not differs(current, h) then
-                    local ok, how = write_floats(rec, SPAN, FIELD, o)
-                    if not ok then state.errors = state.errors + 1; state.last_error = t.name .. ': putting the game\'s values back failed: ' .. tostring(how) end
-                end
-            end
-            state.status = 'stopped (game closing): the game\'s own values put back'
-            log()
-        end)
-        if type(previous_shutdown) == 'function' then return previous_shutdown(...) end
+    local ok, err = pcall(tick)
+    if not ok then
+        err = tostring(err)
+        fail(err)
+        tick_error_quiet = tick_error_quiet - (tonumber(dt) or 1 / 60)
+        if err ~= tick_error or tick_error_quiet <= 0 then tick_error, tick_error_quiet = err, 5; log() end
     end
+    return previous_update(dt, ...)
 end
-log()
+-- (Test 20) the game closing or this Lua being rebuilt puts each tank's own values back where it still holds what this
+-- part wrote (the first part to shut down does it; the others then find them changed and leave them). (3.4.0 review)
+-- Every value this part changes (engine, wheels, gearbox, lift and the torque factors, not the torque factors alone);
+-- the tank found again first (one destroyed since, or its handle reused, is left alone: no call on a stale handle);
+-- each tank on its own (one failing doesn't stop the others); the log says what was left.
+-- one value: put back when it still holds what this part wanted; nil when done or already its own, else why not
+local function put_back(now, want, own, put)
+    if want == nil or own == nil or want == own then return nil end
+    if now == nil then return 'unreadable' end
+    if now == want then put(own); return nil end
+    if now ~= own then return 'changed since' end
+    return nil
+end
+local function restore_tank(vehicle, t)
+    local h, idx, comp = handle_of(vehicle)
+    if not h or h ~= t.h then return 'gone' end
+    local left
+    -- the torque factors first (game data in the tank's record, no call: only where the record is still this tank's)
+    local row = t.at and t.held and t.tilt_own and row_of(comp, idx)
+    if row and num(row + ROLL_AT) == num(t.at) and far(t.held, t.tilt_own) then
+        local v = read(t.at, 8)
+        local a, b = f32(v, 0), f32(v, 4)
+        if not (a and b) then left = left or 'unreadable'
+        elseif not far({a, b}, t.held) then if writable(t.at, 8) then poke(t.at, t.tilt_own) else left = left or 'not writable' end
+        elseif far({a, b}, t.tilt_own) then left = left or 'changed since' end
+    end
+    if PART == 'speed' or PART == 'torque' then
+        left = put_back(get_engine(h), t.want, t.own, function(s) set_engine(h, s) end) or left
+    elseif PART == 'grip' and t.want_wheels and t.own_wheels then
+        for i, want in ipairs(t.want_wheels) do
+            left = put_back(get_wheel(h, i - 1), want, t.own_wheels[i], function(s) set_wheel(h, i - 1, s) end) or left
+        end
+    elseif PART == 'shift' then
+        left = put_back(get_trans(h), t.want_trans, t.own, function(s) set_trans(h, s) end) or left
+    elseif PART == 'stability' and t.aero_held and t.aero_own and math.abs(t.aero_held - t.aero_own) > 1e-3 then   -- (Test 29) the lift
+        local a = get_aero(h)
+        if not is_aero(a) then left = 'unreadable'
+        elseif math.abs(a[3] - t.aero_held) < 1e-3 or not t.aero_echo then set_aero(h, t.aero_density, t.aero_drag, t.aero_own)
+        elseif math.abs(a[3] - t.aero_own) > 1e-3 then left = 'changed since' end
+    end
+    return left
+end
+local previous_shutdown = shutdown
+shutdown = function(...)
+    local back, left = 0, {}
+    if G.api then
+        for _, vehicle in ipairs(order) do
+            local t = tanks[vehicle]
+            if t then
+                local ok, why = pcall(restore_tank, vehicle, t)
+                if not ok then why = 'error: ' .. tostring(why) end
+                if why then left[#left + 1] = string.format('%s 0x%X %s', t.name, vehicle, why) else back = back + 1 end
+            end
+        end
+    end
+    state.status = #left == 0 and 'stopped (game closing): the tanks\' own values put back'
+        or string.format('stopped (game closing): own values put back on %d tank(s); left as they are: %s', back, table.concat(left, ', '))
+    log()
+    if type(previous_shutdown) == 'function' then return previous_shutdown(...) end
+end

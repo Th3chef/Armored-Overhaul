@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.3.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.4.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -13,7 +13,7 @@
 -- ships as TurretComponentData: a 16-byte {entity hash, index} slot array followed by 0x4C-byte records). The
 -- game reads it through a small generated accessor (hash % slot count, linear probe). This addon finds that
 -- accessor by its code shape, takes the table and slot count from its immediates, looks the four tank guns up
--- by entity hash and widens each gun's left/right arc. Tanks called in afterwards use it.
+-- by entity hash and widens each gun's left/right arc (and the copies of the tanks already out: see below).
 -- Record: +0x08 yaw speed (deg/s), +0x0C pitch speed, +0x14/+0x18 pitch min/max, +0x1C/+0x20 yaw min/max.
 -- The game seals that table read-only after loading, so a record's page is opened for the write and sealed again.
 --
@@ -21,9 +21,14 @@
 -- its preset in the game's camera preset table (0x90-byte records numbered by id; +0x4C/+0x50 pitch min/max,
 -- +0x54/+0x58 yaw min/max). The addon widens that one preset's left/right range to all the way round.
 -- (3.1.0 Test 26) The game takes a turret's turn speed when the tank is called in: Test 22 raised it while the hull turned
--- (written up to +95 deg/s) and the turret never turned faster than the option's speed. So no live changes; instead the
--- traverse presets are faster (Test 25: Quick x1.5, Fast x2, Very fast x3 = 75 deg/s). Settings changed in the
--- menu reach the tanks called in afterwards.
+-- (written up to +95 deg/s) and the turret never turned faster than the option's speed. (3.4.0 Test 26, the tester: "lets adjust
+-- all of the tank settings so they can be tweaked mid-game") Each turret in the world has its own copy of its record,
+-- made when it is called in: the game's runtime TurretComponent (pointer at game.dll+0x3326D70: +0x68 entity map, 8-byte
+-- {entity, index} entries, +0x70 slot count, +0x74 empty key; +0xA8 the 0x4C-byte records by index), read every frame
+-- through its accessor (game.dll+0x50B8B0, which falls back to the static table). The tank guns' copies are told by their
+-- record (the bytes this addon never changes equal their gun's static record, and the six fields - the two speeds and the
+-- four limits - hold the game's own values or a set this addon wrote; 3.4.0 review: never another mod's), and get the same
+-- values as the static table: a menu change reaches the tanks already out.
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 if rawget(_G, 'ArmoredOverhaulMBTTurrets') then return end
 local TESTER = false
@@ -54,6 +59,20 @@ local ARC = 180
 -- Maelstrom's laser designator sit) to the main gun's heading, so those two keep their own left/right locked straight
 -- (a sliver either way: the game wants a range) and point where the main gun does.
 local SECOND_LOCK = 0.01
+-- (3.4.0 Test 14) the tester: "when you aim a rocket laser at the ground in the maelstrom, the targeting laser bugs out and aims
+-- into the air". With MBT Turrets the designator was held to +-0.01 left/right and to the guns' angles up/down, while
+-- the gunner view looks 5 degrees lower than the guns and the laser sits beside the barrel: aimed at the ground close
+-- by, what it had to point at was out of its reach. The designator (meshless: only its laser shows) got some left/right
+-- either way round its turned mount (locked again since Test 18, below) and DESIG_DOWN below / 10 above the guns' angles.
+-- (Test 15, the tester: "the laser is better, but when you set the aim range to widest, it will continue to bug out") Close
+-- ground lies far steeper below the laser than the view's own angle, so the designator now reaches down to DESIG_LOW
+-- whatever the Aim Range, and a little further round.
+-- (Test 18, the tester: "Maelstrom laser works, but it needs to follow the turret, its detached and can be aimed in a direction
+-- that doesnt match the barrel") Left/right is locked again (+-SECOND_LOCK, as before Test 14: its mount turns with the
+-- turret), keeping only the wider up/down reach.
+-- (3.4.0 review) Up, it reaches as far above the guns' highest angle as the gunner view does (VIEW_ABOVE, never past
+-- VIEW_TOP; it was 10 while the view went 15 above since Test 38).
+local DESIG_DOWN, DESIG_LOW = 15, -60
 -- The picked options (set by their flag addons when the game loads; read again at every check)
 local menu_opts = {}            -- (3.0) set from the Mod Options Menu
 local function options()
@@ -92,6 +111,14 @@ local ACCESSOR_ANCHOR_AT = 32                       -- 0-based offset of the anc
 local TAIL = '8B 48 08 48 6B C1 ?? 48 05 ?? ?? ?? ??'  -- mov ecx,[rax+8] / imul rax,rcx,stride / add rax,data
 local KNOWN_RVA = 0x50B430
 local KNOWN_TIMESTAMP = 0x6AB3B43F
+-- (Test 26) the runtime accessor: push / null check / mov eax,[rcx+8] / cmp / je / mov r11,[rip+COMPONENT] / ... map lookup
+-- through [r11+70h] [r11+78h] [r11+68h] [r11+74h] ... imul rax,rax,4Ch / add rax,[r11+0A8h] ... jmp (the static accessor)
+local LIVE = '48 83 EC 28 4C 8B D1 48 85 C9 75 ?? 33 C0 48 83 C4 28 C3 8B 41 08 3B 05 ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? '
+    .. '4C 8B 1D ?? ?? ?? ?? 45 33 C0 48 89 5C 24 30 48 89 6C 24 38 48 89 74 24 40 45 8B 4B 70 41 8B 5B 78'
+local LIVE_ANCHOR, LIVE_ANCHOR_AT = '\x48\x6B\xC0\x4C\x49\x03\x83\xA8\x00\x00\x00', 0xA2
+local LIVE_COMP_DISP, LIVE_JMP_AT = 0x25, 0xB9          -- (mov r11 ends at +0x29; jmp rel32 ends at +0xBE)
+local LIVE_KNOWN_RVA = 0x50B8B0
+local LIVE_MAP, LIVE_RECORDS = 0x68, 0xA8               -- component: entity map {entries, slots, empty key}; records
 
 -- Gunner camera preset. Known build: table at game.dll+0x32F9990, tank gunner preset id 26. Other builds: the
 -- preset is found in the game's writable data by its vanilla limits, then checked against its numbered neighbours.
@@ -112,7 +139,7 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.3.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.4.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -225,7 +252,7 @@ local function parse(text)
     for t in text:gmatch('%S+') do out[#out + 1] = t == '??' and -1 or tonumber(t, 16) end
     return out
 end
-local ACC_MASK, TAIL_MASK = parse(ACCESSOR), parse(TAIL)
+local ACC_MASK, TAIL_MASK, LIVE_MASK = parse(ACCESSOR), parse(TAIL), parse(LIVE)
 local function matches(s, start, mask)
     if start < 1 or start + #mask - 1 > #s then return false end
     for i = 1, #mask do
@@ -235,6 +262,13 @@ local function matches(s, start, mask)
     return true
 end
 
+-- (3.4.0 Tests 34-38) Aiming on slopes. Test 34 moved the gunner view's up/down limits by the slope the turret faced (915
+-- limit changes, rough over bumps, and the problem stayed); Tests 35-37 only measured. What they found: the view's top
+-- stop is hull-relative (about +84 at every slope with the view opened to -60..80), so the slope never needed following;
+-- the view just stopped short of the gun. Test 38's fix is a wider view range (VIEW_BELOW under the gun's lowest angle,
+-- VIEW_ABOVE over its highest, never above VIEW_TOP): near straight up the turret spins round (the tester: "the tank will spin
+-- around when you look all the way up"). (3.4.0 review) the slope code (measure-only since Test 35) is gone.
+local VIEW_BELOW, VIEW_ABOVE, VIEW_TOP = 20, 15, 60     -- (Test 38) degrees beyond the gun's range; the highest view
 -- ---------------------------------------------------------------- logging
 local function log()
     pcall(function()
@@ -245,7 +279,9 @@ local function log()
             'version: ', state.version, '\n', 'status: ', state.status, '\n', 'game: ', state.game, '\n', 'found: ', state.how,
             '\n', 'options: ', state.options, '\n', 'options menu: ', state.options_menu, '\n')
         for _, g in ipairs(GUNS) do f:write(g.name, ': ', state.guns[g.name] or 'not found', '\n') end
-        f:write('gunner view: ', state.camera, '\n', 'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
+        f:write('tanks already out: ', state.live or 'not looked at yet', '\n')
+        f:write('gunner view: ', state.camera, '\n')
+        f:write('errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
         if TESTER then
             f:write('-- tester details --\n', 'table: ', state.table, ' (', state.slots, ' slots)\n', 'writes: ', state.applied,
                 '\n', 'frames: ', state.frames, '\n')
@@ -275,6 +311,8 @@ local function cache_load()
     if head ~= CACHE_HEADER or tag ~= build_tag() then return {} end
     local out = {}
     for k, v in text:gmatch('(%a+)=(%x+)') do out[k] = tonumber(v, 16) end
+    -- (3.4.0 review) the runtime accessor searched for and not found in this build: not searched for again
+    if not out.live and text:find('\nlive=none\n', 1, true) then out.live_none = true end
     return out
 end
 local saved = {}                -- what the cache file held at start-up
@@ -285,10 +323,11 @@ local function cache_save()
     f:write(CACHE_HEADER, '\n', build_tag(), '\n')
     -- (3.0 review) a place taken from the file is written back too: 2.1 kept only what this session searched for, so
     -- after a game patch the two places could take turns being searched for again at every start
-    for _, k in ipairs({'accessor', 'camera'}) do
+    for _, k in ipairs({'accessor', 'camera', 'live'}) do
         local v = found_rvas[k] or saved[k]
         if v then f:write(k, '=', string.format('%X', v), '\n') end
     end
+    if not (found_rvas.live or saved.live) and (found_rvas.live_none or saved.live_none) then f:write('live=none\n') end
     f:close()
 end
 
@@ -432,6 +471,157 @@ local function resolve(rvas)
     end
 end
 
+local function differs(fields, a, b)
+    for k in pairs(fields) do if math.abs(a[k] - b[k]) > 1e-3 then return true end end
+    return false
+end
+-- ---------------------------------------------------------------- (Test 26) the turrets already out
+-- the runtime accessor at rva, checked: its shape, its records' stride and that it falls back to the static accessor
+local acc_rva
+local function live_at(rva)
+    local s = read(game + rva, 0xC0)
+    if not s or not matches(s, 1, LIVE_MASK) or s:sub(LIVE_ANCHOR_AT + 1, LIVE_ANCHOR_AT + #LIVE_ANCHOR) ~= LIVE_ANCHOR then return nil end
+    if byte(s, LIVE_JMP_AT + 1) ~= 0xE9 or rva + LIVE_JMP_AT + 5 + i32(s, LIVE_JMP_AT + 1) ~= acc_rva then return nil end
+    return rva + LIVE_COMP_DISP + 4 + i32(s, LIVE_COMP_DISP)
+end
+local live = {phase = 'find', at = 0x1000, comp = nil, text = 'not looked for yet', hist = {}, matched = {}}
+-- after a game update: one look through game code for it (after the static table is found)
+-- (3.4.0 review) one piece of up to 256 KB a frame, in game code only, as the static accessor's search (scan_step) does
+-- (3.4.0 read 4 pieces a frame across the whole image); not found is saved for the build too (live=none in the cache)
+local function live_find_step()
+    if live.at >= image_size then
+        live.phase = 'none'; live.text = 'not found in this game version (the tanks already out keep their values until called in again)'
+        found_rvas.live_none = true; cache_save(); return
+    end
+    if VirtualQuery(game + live.at, region, ffi.sizeof('TtRegion')) == 0 then live.at = live.at + 0x1000; return end
+    local r = region[0]
+    local region_end = num(r.base) + tonumber(r.size) - num(game)
+    local exec = r.state == 0x1000 and (r.protection == 0x20 or r.protection == 0x40 or r.protection == 0x10)
+    if not exec then live.at = max(live.at + 0x1000, region_end); return end
+    local n = min(0x40000 + 0x100, image_size - live.at, region_end - live.at)
+    local s = n > 0 and read(game + live.at, n)
+    local from = 1
+    while s do
+        local k = s:find(LIVE_ANCHOR, from, true)
+        if not k then break end
+        local rva = live.at + k - 1 - LIVE_ANCHOR_AT
+        local comp = rva > 0 and live_at(rva)
+        if comp then live.comp, live.phase = comp, 'ready'; found_rvas.live = rva; cache_save(); return end
+        from = k + 1
+    end
+    live.at = live.at + max(0x1000, min(0x40000, n))
+end
+local FIELD_MASKS = {{0x08, 8}, {0x14, 16}}               -- the six fields' bytes (yaw/pitch speed; pitch and yaw limits)
+local ZEROS = string.rep('\0', 16)
+local function masked(r)
+    for _, m in ipairs(FIELD_MASKS) do r = r:sub(1, m[1]) .. ZEROS:sub(1, m[2]) .. r:sub(m[1] + m[2] + 1) end
+    return r
+end
+local function values_of(r)
+    local v = {}
+    for k, off in pairs(FIELD) do v[k] = f32(r, off) end
+    return v
+end
+-- what a gun's static record held (its game values and every set this addon wanted there this session): a copy made from it
+local function remember_values(name, v)
+    local h = live.hist[name]
+    if not h then h = {}; live.hist[name] = h end
+    for _, x in ipairs(h) do if not differs(FIELD, x, v) then return end end
+    if #h >= 16 then table.remove(h, 2) end              -- (the first one, the game's own, is kept)
+    h[#h + 1] = v
+end
+-- (3.4.0 review) the most map slots read (3.4.0 took up to 0x100000: 8 MB of reads at every check)
+local LIVE_MAX_SLOTS = 0x4000
+-- the runtime component's map now: {recs, slots, idxs, top, listed = {[idx] = true}}, or nil and why
+local function live_map()
+    local comp = ptr(read(game + live.comp, 8))
+    local hdr = comp and read(comp + LIVE_MAP, LIVE_RECORDS - LIVE_MAP + 8)
+    local entries, slots, empty = ptr(hdr, 0), u32(hdr, 8), u32(hdr, 12)
+    local recs = hdr and ptr(hdr, LIVE_RECORDS - LIVE_MAP)
+    -- (Test 27) Test 26 said "no turrets out" with a Bastion out: each check now says what it found
+    if not comp then return nil, 'no turret component (game.dll+0x' .. string.format('%X', live.comp) .. ' empty)' end
+    if not (entries and recs and slots and slots > 0) then
+        return nil, string.format('turret component 0x%X: entries %s, slots %s, records %s', num(comp), entries and 'ok' or 'none',
+            tostring(slots), recs and 'ok' or 'none')
+    end
+    if slots > LIVE_MAX_SLOTS then return nil, string.format('turret map too large (%d slots): left alone', slots) end
+    local es = read(entries, slots * 8)
+    if not es then return nil, string.format('turret list unreadable (%d slots)', slots) end
+    local idxs, listed, top = {}, {}, -1
+    for i = 0, slots - 1 do
+        if u32(es, i * 8) ~= empty then
+            local idx = u32(es, i * 8 + 4)
+            if idx < 0x100000 and not listed[idx] then idxs[#idxs + 1] = idx; listed[idx] = true; if idx > top then top = idx end end
+        end
+    end
+    if top < 0 then return nil, string.format('no turrets out (%d slots, empty key 0x%X)', slots, empty) end
+    return {recs = recs, slots = slots, idxs = idxs, top = top, listed = listed}
+end
+local function live_apply(statics)
+    -- (3.4.0 review) forgotten first: 3.4.0 kept the last mission's list through the early returns, and the shutdown
+    -- could write to records freed since
+    live.matched = {}
+    if live.phase ~= 'ready' then return 0 end
+    local map, why = live_map()
+    if not map then live.text = why; return 0 end
+    local recs, idxs, top = map.recs, map.idxs, map.top
+    -- the records, in pieces that fit the read buffer (only the pieces that hold a used index)
+    local PER = math.floor(BUF_SIZE / RECORD_SIZE)
+    local pieces = {}
+    local function record(idx)
+        local k = math.floor(idx / PER)
+        if pieces[k] == nil then
+            local n = min(PER, top + 1 - k * PER)
+            pieces[k] = read(recs + k * PER * RECORD_SIZE, n * RECORD_SIZE) or false
+        end
+        local blk = pieces[k]
+        if not blk then return nil end
+        local o = (idx - k * PER) * RECORD_SIZE
+        return blk:sub(o + 1, o + RECORD_SIZE)
+    end
+    local found, changed, unsure, held = 0, 0, 0, 0
+    for _, idx in ipairs(idxs) do
+        local r = record(idx)
+        -- (3.4.0 review) the first 8 bytes (never changed here) are compared before the whole masked record is built
+        local pre = r and #r == RECORD_SIZE and r:sub(1, 8)
+        local m, cur, hit, want, mixed, left = nil, nil, nil, nil, false, false
+        for _, st in ipairs(pre and statics or {}) do
+            if pre == st.pre then
+                m = m or masked(r)
+                if m == st.sig and not st.want then left = true          -- (could be a gun left to another mod)
+                elseif m == st.sig then
+                    cur = cur or values_of(r)
+                    local mine = not differs(FIELD, cur, st.want)
+                    for _, h in ipairs(mine and {} or live.hist[st.g.name] or {}) do if not differs(FIELD, cur, h) then mine = true; break end end
+                    if mine then
+                        -- (two guns with the same record, e.g. the Bastion's second gun and the Maelstrom's designator as the game
+                        -- has them, wanting different values: which one this is can't be told, so it is left as it is)
+                        if want and differs(FIELD, want, st.want) then mixed = true end
+                        hit, want = hit or st, want or st.want
+                    end
+                end
+            end
+        end
+        if left then held = held + 1
+        elseif hit and mixed then unsure = unsure + 1
+        elseif hit then
+            found = found + 1
+            -- (3.4.0 review) the index and the record's own bytes, checked again at shutdown before anything is put back
+            live.matched[#live.matched + 1] = {idx = idx, sig = m, name = hit.g.name, want = want}
+            if differs(FIELD, cur, want) then
+                local ok, how = write_floats(recs + idx * RECORD_SIZE, RECORD_SIZE, FIELD, want)
+                if ok then changed = changed + 1
+                else state.errors = state.errors + 1; state.last_error = hit.g.name .. ' (out): write failed: ' .. tostring(how) end
+            end
+        end
+    end
+    live.text = string.format('%d tank gun(s) out (of %d turrets, %d map slots)%s%s%s', found, #idxs, map.slots,
+        changed > 0 and string.format(', %d changed now', changed) or ', all as set',
+        unsure > 0 and string.format('; %d left as called in (could be either second gun)', unsure) or '',
+        held > 0 and string.format('; %d left as they are (could be a gun left to another mod)', held) or '')
+    return changed
+end
+
 -- ---------------------------------------------------------------- gunner camera preset
 local function camera_limits(s, o)
     local v = {pitch_min = f32(s, o + 0x4C), pitch_max = f32(s, o + 0x50), yaw_min = f32(s, o + 0x54), yaw_max = f32(s, o + 0x58)}
@@ -524,15 +714,27 @@ local function wanted_for(gun)
                yaw_max = opts.mbt and (gun.second and SECOND_LOCK or (opts.mbt_arc or ARC)) or o.yaw_max,
                pitch_min = o.pitch_min, pitch_max = o.pitch_max}
     if opts.range then w.pitch_min, w.pitch_max = opts.range[1], opts.range[2] end
+    if opts.mbt and gun.second and gun.tank == 'maelstrom' then      -- (left/right: +-SECOND_LOCK, above)
+        -- (3.4.0 review) up as far as the gunner view goes (camera_wanted: VIEW_ABOVE, never past VIEW_TOP)
+        w.pitch_min, w.pitch_max = min(w.pitch_min - DESIG_DOWN, DESIG_LOW), max(w.pitch_max, min(w.pitch_max + VIEW_ABOVE, VIEW_TOP))
+    end
     return w
 end
 
--- The gunner view turns all the way round with MBT Turrets, looks at least 5 degrees lower than the lowest gun
--- angle and as high as the highest one (the gun only goes where the view looks).
+-- (3.4.0 Test 34) A user: on a slope "the camera's vertical aiming restrictions are calculated relative to the world
+-- horizon rather than the tank's local orientation" (see VIEW_BELOW at the top for what Tests 34-38 found).
+-- The gunner view turns all the way round with MBT Turrets (the gun only goes where the view looks); with Tank Turret
+-- Aim Range it looks VIEW_BELOW lower than the lowest gun angle and VIEW_ABOVE higher than the highest (at most
+-- VIEW_TOP), never less than the game's own view.
 local function camera_wanted()
     local o = originals.camera
     local lo, hi = o.pitch_min, o.pitch_max
-    if opts.range then lo, hi = min(lo, opts.range[1] - 5), max(hi, opts.range[2]) end
+    -- (3.4.0 Test 38) On slopes the view stopped short of the gun (a user; Test 35's measurements). With the view opened
+    -- to -60..80 (Test 37) the view went well past the gun's range on every slope the tester tried, and its top stop measured
+    -- against the hull (about +84 at every slope); but near straight up the turret spun round (the tester: "the tank will spin around
+    -- when you look all the way up"). So the view now goes VIEW_BELOW lower than the lowest gun angle and VIEW_ABOVE
+    -- higher than the highest, never above VIEW_TOP: room for the ground's tilt without reaching the spin.
+    if opts.range then lo, hi = min(lo, opts.range[1] - VIEW_BELOW), max(hi, min(opts.range[2] + VIEW_ABOVE, VIEW_TOP)) end
     -- (Test 26) with the 180 choice the view stops where the gun does, so the gun never fires off to the side of where
     -- it points (the game's own view goes 20 degrees past its gun)
     local arc = opts.mbt and (opts.mbt_arc or 180)
@@ -561,10 +763,6 @@ local function camera_speed_wanted()
     return {yaw = o.yaw * (opts.traverse or 1), pitch = o.pitch * (opts.elevation or 1)}
 end
 
-local function differs(fields, a, b)
-    for k in pairs(fields) do if math.abs(a[k] - b[k]) > 1e-3 then return true end end
-    return false
-end
 
 -- Writes one item if it differs from what the settings ask for. Returns 1 when something was written.
 local function put(name, address, size, fields, current, want, reread)
@@ -606,6 +804,7 @@ local function apply()
         -- read or written this round, it is looked up again in ~2 s (3.0.1 kept reading, and could write, the old one,
         -- which may have been freed by then)
         base = nil; settled = false
+        live.matched = {}                                -- (3.4.0 review) the tanks out then are gone too
         for _, g in ipairs(GUNS) do state.guns[g.name] = 'not found' end
         return 0
     end
@@ -614,6 +813,7 @@ local function apply()
     state.options = options_text(opts)
     state.traverse_now = opts.traverse or 1          -- (Test 31) for the turret turner's mount help (its target speed)
     local changed, open = 0, 0
+    local statics = {}                                   -- (Test 26) for the copies of the turrets already out
     for _, g in ipairs(GUNS) do
         local rec = find_record(base, acc, g)
         local current = rec and sane(rec)
@@ -621,8 +821,17 @@ local function apply()
             state.guns[g.name] = 'not found'; open = open + 1
         else
             originals[g.name] = originals[g.name] or game_values(string.format('%08X%08X', g.hi, g.lo), FIELD_ORDER, current)
-            local n, now, problem = put(g.name, rec, RECORD_SIZE, FIELD, current, wanted_for(g),
+            local want = wanted_for(g)
+            -- (3.4.0 review) only the game's own values and this addon's own sets are taken as this addon's in a copy
+            -- (3.4.0 also took whatever the record held, another mod's values too, and set the copies holding them)
+            remember_values(g.name, originals[g.name]); remember_values(g.name, want)
+            local n, now, problem = put(g.name, rec, RECORD_SIZE, FIELD, current, want,
                 function() return sane(rec) end)
+            local full = read(rec, RECORD_SIZE)
+            -- (3.4.0 review) a gun left to another mod (FOUGHT) is left to it in the tanks out too (3.4.0 set their copies,
+            -- a tank called in under the other mod's values among them): it is listed with no values wanted, so a copy that
+            -- could be its (the Bastion and Maelstrom main guns have the same record) is left alone
+            if full then statics[#statics + 1] = {g = g, sig = masked(full), pre = full:sub(1, 8), want = problem ~= FOUGHT and want or nil} end
             changed = changed + n
             if problem and problem ~= FOUGHT then open = open + 1 end
             state.guns[g.name] = string.format('turn %.0f deg/s, elevation %.0f deg/s, arc %.0f..%.0f, angle %.0f..%.0f',
@@ -630,6 +839,10 @@ local function apply()
                 .. (problem and ' [' .. problem .. ']' or '')
         end
     end
+    local okL, nl = pcall(live_apply, statics)
+    if not okL then state.errors = state.errors + 1; state.last_error = 'tanks out: ' .. tostring(nl)
+    else changed = changed + nl end
+    state.live = live.text
     if camera_phase ~= 'done' then open = open + 1 end
     if camera then
         local current = camera_check(camera)
@@ -677,7 +890,7 @@ local next_check = 0
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'power', 'grip', 'steering', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'turret'}) do
@@ -741,8 +954,7 @@ local function pick_of(list, v)
     return 2
 end
 -- The turret options installed, as the mod manager shows them, each starting at its pick (the id carries it).
--- Off = the game's own. A change is written within a frame (the gunner view with it); the game takes a turret's
--- speeds when the tank is called in.
+-- Off = the game's own. A change is written within a frame (the gunner view with it), to the tanks already out too.
 menu_rows.turret = function()
     local o, rows = rawget(_G, 'ArmoredOverhaulTurretOptions'), {}
     if type(o) ~= 'table' then return rows end
@@ -760,18 +972,18 @@ menu_rows.turret = function()
     if type(o.traverse) == 'number' then
         rows[#rows + 1] = {'armored_overhaul.turret.traverse.' .. tag(o.traverse), {type = 'choice', label = 'Tank Turret Traverse',
             choices = {'Off', 'Quick (x1.5)', 'Fast (x2)', 'Very fast (x3)'}, default = pick_of(TRAVERSE_SPEEDS, o.traverse),
-            description = 'How fast the Bastion and Maelstrom turrets turn (the game: 25 degrees a second), and the gunner view left/right with them. Very fast is 75. With MBT Turrets all the way round a change applies at once; otherwise tanks called in after a change use it. The view: from the next time you sit in the gunner seat.'}, 'traverse'}
+            description = 'How fast the Bastion and Maelstrom turrets turn (the game: 25 degrees a second), and the gunner view left/right with them. Very fast is 75. Changes every tank at once; the view from the next time you sit in the gunner seat.'}, 'traverse'}
     end
     if type(o.elevation) == 'number' then
         rows[#rows + 1] = {'armored_overhaul.turret.elevation.' .. tag(o.elevation), {type = 'choice', label = 'Tank Turret Elevation',
             choices = {'Off', 'Quick (x1.25)', 'Fast (x1.5)', 'Very fast (x2)'}, default = pick_of(SPEEDS, o.elevation),
-            description = 'How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second), and the gunner view up/down with them. Tanks called in after a change use it.'}, 'elevation'}
+            description = 'How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second), and the gunner view up/down with them. Changes every tank at once; the view from the next time you sit in the gunner seat.'}, 'elevation'}
     end
     if type(o.range) == 'table' then
         local pick = pick_of(RANGES, o.range)
         rows[#rows + 1] = {'armored_overhaul.turret.aim_range.' .. (pick - 1), {type = 'choice', label = 'Tank Turret Aim Range',
             choices = {'Off', 'Wide (-6..+30 deg)', 'Wider (-10..+35 deg)', 'Widest (-15..+45 deg)'}, default = pick,
-            description = 'How far down and up the Bastion and Maelstrom guns aim (the game: 3 below to 25 above). Tanks called in after a change use it.'}, 'range'}
+            description = 'How far down and up the Bastion and Maelstrom guns aim (the game: 3 below to 25 above), and the gunner view up/down with them. Changes every tank at once; the view from the next time you sit in the gunner seat.'}, 'range'}
     end
     return rows
 end
@@ -792,6 +1004,10 @@ local function tick()
     state.frames = state.frames + 1
     menu_link(state.frames)
     if phase ~= 'gate' and phase ~= 'off' then camera_step() end
+    if live.phase == 'search' and phase == 'ready' then
+        live_find_step()
+        if live.phase == 'ready' then next_check = 0 end
+    end
     if state.frames < next_check then return end
     if phase == 'gate' then
         local m = GetModuleHandleA('game.dll')
@@ -837,6 +1053,15 @@ local function tick()
             state.how = string.format('found by search at game.dll+0x%X', rva)
             found_rvas.accessor = rva; cache_save()
         end
+        acc_rva = rva
+        -- (Test 26) the runtime accessor: at its known place, at the saved one, or looked for (live_find_step, each frame)
+        local comp = (timestamp == KNOWN_TIMESTAMP and live_at(LIVE_KNOWN_RVA))
+            or (saved.live and saved.live < image_size and live_at(saved.live))
+        if comp then live.comp, live.phase = comp, 'ready'
+        elseif saved.live_none and not saved.live then
+            -- (3.4.0 review) an earlier launch of this build searched all of it: not searched for again
+            live.phase, live.text = 'none', 'not found in this game version (saved from an earlier search; the tanks already out keep their values until called in again)'
+        else live.phase, live.text = 'search', 'looking for it' end
         phase = 'ready'
     end
     if phase == 'ready' then
@@ -852,7 +1077,7 @@ local function tick()
                 for _, g in ipairs(GUNS) do if state.guns[g.name] == 'not found' then missing = missing + 1 end end
                 state.status = missing == 0 and 'active' or string.format('active, %d gun(s) not found (see below)', missing)
             end
-            local summary = state.status .. state.camera .. state.errors .. state.options
+            local summary = state.status .. state.camera .. state.errors .. state.options .. (state.live or '')   -- (Test 28) the tanks-out line too
             for _, g in ipairs(GUNS) do summary = summary .. (state.guns[g.name] or '') end
             if summary ~= shown then shown = summary; log() end
         end
@@ -892,6 +1117,21 @@ do
                     if not ok then state.errors = state.errors + 1; state.last_error = g.name .. ': putting the game\'s values back failed: ' .. tostring(how) end
                 end
             end
+            -- (Test 26) the tanks already out: their guns' game values back where they still hold what this addon wrote
+            -- (3.4.0 review) the component and its map read again: only an index still listed, whose record still has the
+            -- bytes it had (3.4.0 wrote to the addresses of the last check, which may have been freed or reused since)
+            pcall(function()
+                if live.phase ~= 'ready' or #live.matched == 0 then return end
+                local map = live_map()
+                for _, mt in ipairs(map and live.matched or {}) do
+                    local at = map.listed[mt.idx] and map.recs + mt.idx * RECORD_SIZE
+                    local r = at and read(at, RECORD_SIZE)
+                    local o = originals[mt.name]
+                    if r and o and masked(r) == mt.sig and not differs(FIELD, values_of(r), mt.want) and differs(FIELD, mt.want, o) then
+                        write_floats(at, RECORD_SIZE, FIELD, o)
+                    end
+                end
+            end)
             if camera then
                 local current, o, w = camera_check(camera), originals.camera, fight.set.camera
                 if current and o and w and not differs(CAMERA_LIMIT_FIELDS, current, w) and differs(CAMERA_LIMIT_FIELDS, current, o) then
