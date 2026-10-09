@@ -11,7 +11,7 @@ body:
     attributes:
       label: Mod version
       description: Shown at the top of each log and in your mod manager.
-      placeholder: "3.0.0"
+      placeholder: "3.4.0"
     validations:
       required: true
   - type: input
@@ -24,10 +24,13 @@ body:
     attributes:
       label: Options you have turned on
       options:
-        - label: Tank Power
+        - label: Tank Top Speed
+        - label: Tank Engine Torque
         - label: Tank Grip
         - label: Tank Steering
+        - label: Tank Throttle Response
         - label: Tank Suspension
+        - label: Tank Stability
         - label: Tank MBT Turrets
         - label: Tank Turret Traverse
         - label: Tank Turret Elevation
@@ -35,9 +38,11 @@ body:
         - label: Tank Autoloader
         - label: Gunner Drive (Tanks)
         - label: Gunner Drive (FRV)
+        - label: Driver Panel
         - label: Tank Gunner Camera
         - label: FRV Stability
         - label: Vehicle Indicator
+        - label: Vehicle Loadout
         - label: Mod Options Menu installed
   - type: dropdown
     id: vehicle
