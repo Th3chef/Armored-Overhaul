@@ -1,4 +1,4 @@
-"""Armored Overhaul 3.3 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
+"""Armored Overhaul 3.4 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
 gallery photo, the Nexus header and the 2:1 GitHub social picture.
   python3 art3_compose.py [square] [wide] [header] [social]   (needs R/sq.png, R/mask_sq.png, R/mist_sq_0001.png, the same for wd and hd)
 Outputs: thumbnail_1254.png, thumbnail_512.png (Arsenal), gallery_1920x1080.png, clean_square.png (no text, for icons)."""
@@ -10,14 +10,14 @@ ART = '.'
 R = '../final'
 FONT = ART + '/Oswald-VF.ttf'
 YELLOW = (255, 196, 0)
-VERSION = '3.3'
+VERSION = '3.4'
 TAG1, TAG2 = 'DRIVE  \u2022  FIGHT  \u2022  RELOAD', 'COMMAND YOUR ARMOR'
 VEHICLES = 'TD-220 BASTION  \u2022  TD-110 MAELSTROM  \u2022  M-102 FRV'
-FEATURES_SQUARE = ['TANK POWER  •  GRIP  •  STEERING  •  SUSPENSION',
-                   '360° MBT TURRETS  •  TRAVERSE  •  ELEVATION  •  AIM RANGE',
+FEATURES_SQUARE = ['TOP SPEED  •  ENGINE TORQUE  •  GRIP  •  STEERING  •  THROTTLE',
+                   'SUSPENSION  •  STABILITY  •  360° MBT TURRETS  •  TRAVERSE  •  ELEVATION  •  AIM RANGE',
                    'AUTOLOADER  •  GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA',
-                   'FRV STABILITY  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT  •  MOD OPTIONS MENU']   # (3.0) Arsenal option order, then the menu
-FEATURES = ['TANK POWER  •  GRIP  •  STEERING  •  SUSPENSION  •  360° MBT TURRETS  •  TRAVERSE  •  ELEVATION  •  AIM RANGE',
+                   'FRV STABILITY  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT  •  MOD OPTIONS MENU']   # (3.4) Arsenal option order, then the menu
+FEATURES = ['TOP SPEED  •  ENGINE TORQUE  •  GRIP  •  STEERING  •  THROTTLE  •  SUSPENSION  •  STABILITY  •  360° MBT TURRETS  •  TRAVERSE  •  ELEVATION  •  AIM RANGE',
             'AUTOLOADER  •  GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA  •  FRV STABILITY  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT  •  MOD OPTIONS MENU']
 
 

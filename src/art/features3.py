@@ -1,4 +1,4 @@
-"""'What's in 3.3' page photo (features_1920x1080.png): the fifteen Arsenal options with their icons and one line each, over the darkened 16:9 art. python3 features3.py (needs clean_wide.png and options/)."""
+"""'What's in 3.4' page photo (features_1920x1080.png): the eighteen Arsenal options with their icons and one line each, over the darkened 16:9 art. python3 features3.py (needs clean_wide.png and options/)."""
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageEnhance
 
 ART = '.'
@@ -13,23 +13,26 @@ def font(size, weight):
     return f
 
 
-# Arsenal order (3.3); tag = group, badge = what changed since 3.2.0
+# Arsenal order (3.4); tag = group, badge = what changed since 3.3.0
 CARDS = [
-    ('tank_power', 'TANK POWER', 'HANDLING', 'More pulling power: quicker off the line and up slopes.', None),
-    ('tank_grip', 'TANK GRIP', 'HANDLING', 'Tracks hold their line on slopes and in turns.', None),
+    ('tank_speed', 'TANK TOP SPEED', 'HANDLING', 'Faster forward and in reverse, up to x1.3.', 'NEW'),
+    ('tank_power', 'ENGINE TORQUE', 'HANDLING', 'More pull off the line and up slopes, live.', 'UPDATED'),
+    ('tank_grip', 'TANK GRIP', 'HANDLING', 'Tracks hold their line, changed live.', 'UPDATED'),
     ('tank_steering', 'TANK STEERING', 'HANDLING', 'Quicker to start and stop turning.', None),
-    ('tank_suspension', 'TANK SUSPENSION', 'HANDLING', 'A calm ride, a little higher and hard to tip.', None),
-    ('mbt_turrets', 'TANK MBT TURRETS', 'TURRET', 'Rebuilt 360 or 180 turrets with your camo, in place or centered.', 'UPDATED'),
-    ('turret_traverse', 'TURRET TRAVERSE', 'TURRET', 'Turns side to side up to three times as fast.', None),
-    ('turret_elevation', 'TURRET ELEVATION', 'TURRET', 'Moves up and down up to twice as fast.', None),
-    ('turret_aim_range', 'TURRET AIM RANGE', 'TURRET', 'Aims lower and higher: up to -15° / +45°.', None),
-    ('autoloader', 'TANK AUTOLOADER', 'TURRET', 'The main gun reloads by itself when it runs dry.', None),
-    ('gunner_drive', 'GUNNER DRIVE', 'GUNNER SEAT', 'Drive tanks and the FRV from the gunner seat. Every key bindable.', 'UPDATED'),
-    ('driver_panel', 'DRIVER PANEL', 'GUNNER SEAT', 'Gear, rpm, speed and fuel while you drive from the gunner seat.', None),
-    ('gunner_camera', 'TANK GUNNER CAMERA', 'GUNNER SEAT', 'Scroll it in and out, then zoom on the crosshair to 10x.', None),
-    ('frv_stability', 'FRV STABILITY', 'FRV', 'Retuned with more grip: Stable, Mild or Planted.', None),
-    ('turret_indicator', 'VEHICLE INDICATOR', 'ANY SEAT', 'Your vehicle and gun at a glance, in tanks and FRVs, tire by tire.', None),
-    ('vehicle_loadout', 'VEHICLE LOADOUT', 'LOADOUT', 'Take more than one tank, exosuit or FRV into a mission.', 'NEW'),
+    ('tank_throttle', 'THROTTLE RESPONSE', 'HANDLING', 'Snappier throttle, brake and gear changes.', 'NEW'),
+    ('tank_suspension', 'TANK SUSPENSION', 'HANDLING', 'A calm ride, tighter turns at speed.', 'UPDATED'),
+    ('tank_stability', 'TANK STABILITY', 'HANDLING', 'Downforce keeps the tank on the ground.', 'NEW'),
+    ('mbt_turrets', 'TANK MBT TURRETS', 'TURRET', 'Rebuilt 360 or 180 turrets with your camo.', 'UPDATED'),
+    ('turret_traverse', 'TURRET TRAVERSE', 'TURRET', 'Up to three times as fast, tanks out too.', None),
+    ('turret_elevation', 'TURRET ELEVATION', 'TURRET', 'Up and down up to twice as fast.', None),
+    ('turret_aim_range', 'TURRET AIM RANGE', 'TURRET', 'Aims -15° / +45°, on slopes too.', 'UPDATED'),
+    ('autoloader', 'TANK AUTOLOADER', 'TURRET', 'The main gun reloads by itself.', None),
+    ('gunner_drive', 'GUNNER DRIVE', 'GUNNER SEAT', 'Drive tanks and the FRV from the gunner seat.', None),
+    ('driver_panel', 'DRIVER PANEL', 'GUNNER SEAT', 'Gear, rpm, speed and fuel while you drive.', None),
+    ('gunner_camera', 'GUNNER CAMERA', 'GUNNER SEAT', 'Farther, steadier, and zoom in the FRV too.', 'UPDATED'),
+    ('frv_stability', 'FRV STABILITY', 'FRV', 'Retuned with more grip.', None),
+    ('turret_indicator', 'VEHICLE INDICATOR', 'ANY SEAT', 'Your vehicle and gun at a glance.', None),
+    ('vehicle_loadout', 'VEHICLE LOADOUT', 'LOADOUT', 'More than one vehicle per mission.', None),
 ]
 
 
@@ -64,18 +67,18 @@ def main():
     im = bg.convert('RGBA')
     d = ImageDraw.Draw(im)
     d.rectangle([60, 56, 290, 166], fill=YELLOW)
-    d.text((175, 111), '3.3', font=font(104, 700), fill=(14, 14, 16), anchor='mm')
+    d.text((175, 111), '3.4', font=font(104, 700), fill=(14, 14, 16), anchor='mm')
     d.text((326, 106), 'ARMORED ', font=font(84, 700), fill=(255, 255, 255), anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
     x = 326 + d.textlength('ARMORED ', font=font(84, 700))
     d.text((x, 106), 'OVERHAUL', font=font(84, 700), fill=YELLOW, anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
-    d.text((330, 160), 'FIFTEEN OPTIONS  •  NEW: VEHICLE LOADOUT', font=font(32, 500), fill=(215, 215, 215), anchor='ls')
-    d.text((1860, 106), "WHAT'S IN 3.3", font=font(64, 700), fill=YELLOW, anchor='rs', stroke_width=2, stroke_fill=(10, 10, 12))
+    d.text((330, 160), 'EIGHTEEN OPTIONS  •  NEW: TOP SPEED, THROTTLE, STABILITY', font=font(32, 500), fill=(215, 215, 215), anchor='ls')
+    d.text((1860, 106), "WHAT'S IN 3.4", font=font(64, 700), fill=YELLOW, anchor='rs', stroke_width=2, stroke_fill=(10, 10, 12))
     d.text((1860, 158), 'TD-220 BASTION  •  TD-110 MAELSTROM  •  FRVS', font=font(30, 600), fill=(255, 255, 255), anchor='rs')
-    cols, x0, y0, gx, gy = 5, 60, 214, 18, 22
+    cols, x0, y0, gx, gy = 6, 60, 214, 16, 22
     cw = (1800 - gx * (cols - 1)) // cols
     ch = (1050 - y0 - gy * 2) // 3
-    icon = 104
-    fd, ft, fb = font(23, 500), font(18, 600), font(19, 700)
+    icon = 88
+    fd, ft, fb = font(21, 500), font(17, 600), font(18, 700)
     for i, (key, name, tag, desc, badge) in enumerate(CARDS):
         r, c = divmod(i, cols)
         span = 1
