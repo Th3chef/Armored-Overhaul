@@ -1,6 +1,6 @@
 """Unpacks the game-derived parts of an Armored Overhaul release zip into this folder, so build.py can rebuild it:
-the Turret Models patch (models/), the Tank Suspension and FRV Stability presets (physics/<preset>/) and the Turret
-Skull (skull/).
+the Turret Models patch (models/), the Tank Suspension and FRV Stability presets and the Turret Hit Areas
+(physics/<folder>/) and the Turret Skull (skull/).
   python tools/unpack_release.py Armored-Overhaul-<version>.zip"""
 import os, sys, zipfile
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
