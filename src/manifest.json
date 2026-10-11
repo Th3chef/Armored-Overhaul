@@ -1,9 +1,9 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.5.0",
+  "Name": "Armored Overhaul 3.5.1",
   "IconPath": "thumbnail.png",
-  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
+  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; a collision damage boost for ramming; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
   "Options": [
     {
       "Name": "Tank Top Speed",
@@ -211,9 +211,10 @@
     },
     {
       "Name": "Tank Collision Damage Boost",
-      "Description": "The faster the Bastion and Maelstrom drive into things, the harder they hit: walls, fences and small buildings break when you ram them at speed instead of stopping the tank dead (the game lets a tank break only what a car breaks). Demolition force 30 when crawling, 35 at half speed, 40 from three-quarter speed up, never more (the game: 25 to 35). Changes every tank at once, the ones already out too. Can be turned off in game with the Mod Options Menu.",
+      "Description": "The faster the Bastion and Maelstrom drive into things, the harder they hit: walls, fences and small buildings break when you ram them at speed instead of stopping the tank dead (the game lets a tank break only what a car breaks). Demolition force 30 when crawling, 35 at half speed, 40 from three-quarter speed up, never more (the game: 25 to 35). Works for the tank you drive (the driver's seat, or the gunner seat with Gunner Drive); nothing runs while you aren't driving one. Can be turned off in game with the Mod Options Menu.",
       "Image": "options/tank_collision_damage.png",
       "Include": [
+        "Tank Core",
         "Collision Damage"
       ]
     },
