@@ -26,17 +26,13 @@ jobs:
   nexus:
     runs-on: ubuntu-latest
     steps:
-      # (3.5.1 review) Armored Overhaul is not on Nexus Mods: with no IDs set the run ends here as a success with a note
-      # (it failed on every GitHub release before); every step below runs only once both IDs are filled in
       - name: Check the API key and the Nexus IDs are set
-        id: ids
         env:
           KEY: ${{ secrets.NEXUSMODS }}
         run: |
           if [ -z "$NEXUS_MOD_ID" ] || [ -z "$NEXUS_FILE_ID" ]; then
-            echo "::notice::Armored Overhaul is not on Nexus Mods (no NEXUS_MOD_ID / NEXUS_FILE_ID set): nothing uploaded."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::error::Armored Overhaul has no Nexus Mods page yet: set NEXUS_MOD_ID and NEXUS_FILE_ID in this workflow."
+            exit 1
           fi
           if [ -z "$KEY" ]; then
             echo "::error::Add the NEXUSMODS repository secret (Settings, Secrets and variables, Actions) first."
@@ -44,7 +40,6 @@ jobs:
           fi
 
       - name: Download the mod zip from the release
-        if: steps.ids.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -64,7 +59,6 @@ jobs:
           echo "FILE=$FILE" >> "$GITHUB_ENV"
 
       - name: Changelog from the release notes
-        if: steps.ids.outputs.skip != 'true'
         id: notes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -82,7 +76,6 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: File description from the changelog
-        if: steps.ids.outputs.skip != 'true'
         id: desc
         run: |
           # a hidden <!-- nexus: ... --> line in the release notes is used as the file description when present;
@@ -123,7 +116,6 @@ jobs:
           PY
 
       - name: Upload to Nexus Mods
-        if: steps.ids.outputs.skip != 'true'
         uses: Nexus-Mods/upload-action@v1.0.0-beta.10
         with:
           api_key: ${{ secrets.NEXUSMODS }}

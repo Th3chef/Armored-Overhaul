@@ -1,10 +1,9 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.5.1 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
+-- Armored Overhaul 3.5.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
 -- FRV or M-103 Supply FRV (any seat), a small outline on your screen shows which way the turret points compared to the
 -- hull, like a real tank's display, colored by the vehicle's health (the FRV's tires too). The turret always points
 -- up; the hull outline turns around it, with a notch at its front. Drawn only on your screen. Written from scratch.
--- (The Turret indicator and the driver panel share their drawing code; each file is edited directly - (3.5.1 review) the old
--- indicator.lua.in template is gone.)
+-- (Built from indicator.lua.in, which holds the Turret indicator and the driver panel: they share the drawing code.)
 --
 -- Drawn the way HD2 HUD+ puts its widgets on screen: a retained screen GUI created in the game's overlay
 -- world (the world in Application.worlds() that is not the main game world; Test 3 drew into the main world, which
@@ -27,13 +26,13 @@ local CORE_STALL = 60                -- frames without a Tank Core update before
 
 local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.log'
 -- (3.0.0) no settings file (2.0-2.1 wrote and read ArmoredOverhaul-TurretIndicator.cfg; a file an older version
--- wrote is left alone and not read). (3.0) The Mod Options Menu can turn it off (see menu_rows). x, y: the outline's center as shares of the screen (0 = left / bottom edge);
+-- wrote is left alone and not read). (3.0) The Mod Options Menu can turn it off (see menu_rows). x, y: the outline's centre as shares of the screen (0 = left / bottom edge);
 -- size: the hull's length as a share of the screen height; dock: just left of the driver panel when its addon runs.
--- (Test 6: moved off the bottom center, where it covered the game's kill chain counter; thinner and see-through)
+-- (Test 6: moved off the bottom centre, where it covered the game's kill chain counter; thinner and see-through)
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
 local PANEL_DEFAULT = {x = 0.5, y = 0.1, size = 0.022}   -- (3.1.0 Test 26) the Driver Panel's default place (its SETTINGS)
 
-local S = {version = '3.5.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.5.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
@@ -318,7 +317,7 @@ local function tri(g, a, b, c, color)
     if id ~= nil then local sink = ov.sink or ov.ids; sink[#sink + 1] = id end
 end
 
--- ---------------------------------------------------------------- turret tracker (the same code in the Camera, Driver Panel and Turret Indicator files)
+-- ---------------------------------------------------------------- turret tracker (shared source: turret_tracker.lua.inc)
 -- Finds the tank you sit in and reads which way its turret points compared to the hull, through the engine's Lua
 -- API: the hull by its unit resource (World.units_by_resource), the gun by its unit or by its turning bone
 -- ('traverse') near the hull, and the angle as the gun's forward direction measured in the hull's own frame.
@@ -335,7 +334,7 @@ local TT = {
     HULLS = {[0x1A] = {name = 'FRV', hull = 'content/fac_helldivers/vehicles/frv/frv',
                        gun = 'content/fac_helldivers/vehicles/frv/armaments/frv_mg/frv_mg', gun_node = 'horizontal_axis'}},
     GUN_NODE = 'traverse',       -- the gun's turning bone (the whole turret turns with it)
-    GUN_REACH = 5.0,             -- meters: a gun must be this close to the hull to belong to it
+    GUN_REACH = 5.0,             -- metres: a gun must be this close to the hull to belong to it
     FIND_EVERY = 30,             -- frames between searches while seated and not yet found
     FIND_SLOW = 300,             -- ... after FIND_MISSES misses in a row (a search can go through every unit)
     FIND_MISSES = 5,
@@ -665,11 +664,8 @@ local function skull_material(g, set)
         if sk.watch then skull_proven(); if sk.watch then skullcheck('interrupted\n') end end
         sk = {gui = g}
         local last = skullcheck()
-        -- ((3.5.1 review) skipped for the rest of this start, not just this GUI: the next mission's GUI found the marker
-        -- at 'skipped once', tried the skull again and could crash again)
-        if S.skull_skip or (last and last:find('^trying')) then
-            if not S.skull_skip then skullcheck('skipped once\n'); S.skull_skip = true end
-            S.skull = 'octagon for now (the last try ended with the game closing; tried again next start)'
+        if last and last:find('^trying') then
+            skullcheck('skipped once\n'); S.skull = 'octagon for now (the last try ended with the game closing; tried again next start)'
             sk.off = true; sk.why = S.skull; return nil
         end
         local ID, M = SR.IdString64, SR.Material
@@ -711,7 +707,7 @@ local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place)
     local HULL = b and C(floor(245 * set.opacity + 0.5), b[3], b[4], b[5]) or GREY
     local cx, cy = set.x * sw, set.y * sh
     local L = set.size * sh                          -- hull length in pixels
-    -- (2.0) docked: just left of the driver panel (its left edge is 6.3 letter heights left of its center, and its
+    -- (2.0) docked: just left of the driver panel (its left edge is 6.3 letter heights left of its centre, and its
     -- middle 0.5 below it), with room for the outline turned any way (0.6 hull lengths) and a gap. (3.0.1 review)
     -- `place`: the panel's place when tick found the panel can show in this vehicle, else nil (its own spot)
     if place then
@@ -719,16 +715,16 @@ local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place)
         cx, cy = place.x * sw - 6.3 * u - 1.2 * u - 0.6 * L, place.y * sh - 0.5 * u
     end
     local Wd = L * 0.62
-    -- (2.0) the hull outline is drawn thick, like the tank's armor, so its health color reads at a glance; the
+    -- (2.0) the hull outline is drawn thick, like the tank's armour, so its health color reads at a glance; the
     -- corners are filled so the thick sides join cleanly (1.1-1.3: thin lines, max(1.2, L x 0.018))
     local th = max(3, L * 0.065)
     -- the turret always points up, so the hull turns the other way round: a turret turned right leaves the hull's
-    -- front to the left. Screen y goes up, so a positive angle here turns the hull counterclockwise.
+    -- front to the left. Screen y goes up, so a positive angle here turns the hull anticlockwise.
     local a = angle
     local ca, sa = cos(a), sin(a)
     local function R(x, y) return cx + x * ca - y * sa, cy + x * sa + y * ca end
     local hx, hy = Wd / 2, L / 2
-    -- the armor: four mitred quads between the outer and the inner edge (no overlaps, so the see-through color is
+    -- the armour: four mitred quads between the outer and the inner edge (no overlaps, so the see-through color is
     -- even all round), and the front marker as a filled wedge inside the front edge
     local function quad(ax, ay, bx, by, cx2, cy2, dx, dy, col)
         local x1, y1 = R(ax, ay); local x2, y2 = R(bx, by); local x3, y3 = R(cx2, cy2); local x4, y4 = R(dx, dy)
@@ -1044,7 +1040,6 @@ local function tick()
     -- (3.0 review) the FRV in 2-degree steps: its outline (wheels too) costs about 1.7 times a tank's, it shows in
     -- every seat, and its gun turns fast
     local step = FRV_KINDS[seat.kind] and floor(angle * 90 / pi + 0.5) * 2 or floor(angle * 180 / pi + 0.5)
-    step = step % 360                    -- ((3.5.1 review) 180 and -180 are the same step: pointing straight back redrew every frame)
     local band = settings.health >= 0.5 and health_band(seat.health) or nil
     -- (2.0) docked next to the driver panel: redrawn when the panel moves, is resized, shown or hidden
     -- (compared as numbers: no text made every frame)
@@ -1071,9 +1066,6 @@ local function tick()
     if (not ov.key or step ~= ov.step or sw ~= ov.sw or sh ~= ov.sh or settings.sig ~= ov.sig or band ~= ov.band
         or dock ~= ov.dock or px ~= ov.px or py ~= ov.py or ps ~= ov.ps or ov.kind ~= seat.kind or ov.nogun ~= nogun
         or (tires and tires ~= ov.tires)) and S.frames >= (ov.retry_at or 0) then
-        -- ((3.5.1 review) a frame that draws checks the GUI's world first: the cached GUI was only checked once a second,
-        -- so a world that died during a mission load could be drawn into until then)
-        if not gui_alive() then ov.next_check = 0; return end
         clear_shapes(true)
         ov.kind = seat.kind
         ov.frv, ov.nogun = FRV_KINDS[seat.kind] ~= nil, nogun
