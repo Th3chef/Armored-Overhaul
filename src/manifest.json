@@ -1,9 +1,9 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.4.0",
+  "Name": "Armored Overhaul 3.5.0",
   "IconPath": "thumbnail.png",
-  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; 360-degree MBT turrets with traverse, elevation and aim range; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
+  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
   "Options": [
     {
       "Name": "Tank Top Speed",
@@ -176,29 +176,6 @@
       ]
     },
     {
-      "Name": "Tank Suspension",
-      "Description": "Longer road wheel travel for the Bastion and Maelstrom: the wheels drop into dips so the tracks stay on the ground, firmer damping settles the hull quickly after rocks and bumps, and a lower center of gravity makes them harder to tip. The tanks ride 0.1 m higher than in the game, keep their full steering angle up to a slightly higher speed for tighter turns when driving fast, and damp the hull's turning so a lean builds more slowly (tanks called in after a change).",
-      "Image": "options/tank_suspension.png",
-      "SubOptions": [
-        {
-          "Name": "Balanced",
-          "Description": "Half a meter of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game. Light turn damping.",
-          "Include": [
-            "Suspension Balanced"
-          ],
-          "Image": "options/sub/suspension_firm.png"
-        },
-        {
-          "Name": "Planted",
-          "Description": "A little less travel, slightly firmer springs, about twice the game's damping and the lowest center of gravity: the calmest ride, very hard to tip. Firmer turn damping.",
-          "Include": [
-            "Suspension Planted"
-          ],
-          "Image": "options/sub/suspension_heavy.png"
-        }
-      ]
-    },
-    {
       "Name": "Tank Stability",
       "Description": "Keeps the Bastion and Maelstrom flat on the ground: downforce presses the tank down harder the faster it goes, so it feels heavy and stays planted over crests and bumps instead of floating. The roll and lean are the game's own. Changes the tank you are in, at once.",
       "Image": "options/tank_stability.png",
@@ -233,6 +210,14 @@
       ]
     },
     {
+      "Name": "Tank Collision Damage Boost",
+      "Description": "The faster the Bastion and Maelstrom drive into things, the harder they hit: walls, fences and small buildings break when you ram them at speed instead of stopping the tank dead (the game lets a tank break only what a car breaks). Demolition force 30 when crawling, 35 at half speed, 40 from three-quarter speed up, never more (the game: 25 to 35). Changes every tank at once, the ones already out too. Can be turned off in game with the Mod Options Menu.",
+      "Image": "options/tank_collision_damage.png",
+      "Include": [
+        "Collision Damage"
+      ]
+    },
+    {
       "Name": "Tank MBT Turrets",
       "Description": "The Bastion and Maelstrom turrets turn like a main battle tank's: all the way round, or half way. The Maelstrom's missile pods and smoke launchers turn with it. The turret sits where the game has it; Tank Turret Position in the Mod Options Menu can center it on the hull. The turret wears your camo and shows damage like the rest of the tank. Only you see the turning turrets.",
       "Image": "options/mbt_turrets.png",
@@ -243,7 +228,8 @@
           "Include": [
             "Turret Core",
             "MBT Turrets",
-            "Turret Models"
+            "Turret Models",
+            "Turret Hit Areas"
           ],
           "Image": "options/sub/mbt_360.png"
         },
@@ -253,9 +239,33 @@
           "Include": [
             "Turret Core",
             "MBT Turrets 180",
-            "Turret Models"
+            "Turret Models",
+            "Turret Hit Areas"
           ],
           "Image": "options/sub/mbt_180.png"
+        }
+      ]
+    },
+    {
+      "Name": "Tank Suspension",
+      "Description": "Longer road wheel travel for the Bastion and Maelstrom: the wheels drop into dips so the tracks stay on the ground, firmer damping settles the hull quickly after rocks and bumps, and a lower center of gravity makes them harder to tip. The tanks ride 0.1 m higher than in the game, keep their full steering angle up to a slightly higher speed for tighter turns when driving fast, and damp the hull's turning so a lean builds more slowly (tanks called in after a change).",
+      "Image": "options/tank_suspension.png",
+      "SubOptions": [
+        {
+          "Name": "Balanced",
+          "Description": "Half a meter of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game. Light turn damping.",
+          "Include": [
+            "Suspension Balanced"
+          ],
+          "Image": "options/sub/suspension_firm.png"
+        },
+        {
+          "Name": "Planted",
+          "Description": "A little less travel, slightly firmer springs, about twice the game's damping and the lowest center of gravity: the calmest ride, very hard to tip. Firmer turn damping.",
+          "Include": [
+            "Suspension Planted"
+          ],
+          "Image": "options/sub/suspension_heavy.png"
         }
       ]
     },
@@ -328,36 +338,70 @@
       ]
     },
     {
-      "Name": "Tank Turret Aim Range",
-      "Description": "How far down and up the Bastion and Maelstrom guns aim (the game: 3 below to 25 above).",
-      "Image": "options/turret_aim_range.png",
+      "Name": "Tank Gun Depression",
+      "Description": "How far down the Bastion and Maelstrom guns aim (the game: 3 degrees below level).",
+      "Image": "options/gun_depression.png",
       "SubOptions": [
         {
-          "Name": "Wide (-6..+30 deg)",
-          "Description": "6 degrees below to 30 above.",
+          "Name": "Low (6 deg below)",
+          "Description": "6 degrees below level.",
           "Include": [
-            "Aim Range Wide",
+            "Depression Low",
             "Turret Core"
           ],
-          "Image": "options/sub/aim_range_wide.png"
+          "Image": "options/sub/depression_low.png"
         },
         {
-          "Name": "Wider (-10..+35 deg)",
-          "Description": "10 degrees below to 35 above.",
+          "Name": "Lower (10 deg below)",
+          "Description": "10 degrees below level.",
           "Include": [
-            "Aim Range Wider",
+            "Depression Lower",
             "Turret Core"
           ],
-          "Image": "options/sub/aim_range_wider.png"
+          "Image": "options/sub/depression_lower.png"
         },
         {
-          "Name": "Widest (-15..+45 deg)",
-          "Description": "15 degrees below to 45 above.",
+          "Name": "Lowest (15 deg below)",
+          "Description": "15 degrees below level.",
           "Include": [
-            "Aim Range Widest",
+            "Depression Lowest",
             "Turret Core"
           ],
-          "Image": "options/sub/aim_range_widest.png"
+          "Image": "options/sub/depression_lowest.png"
+        }
+      ]
+    },
+    {
+      "Name": "Tank Gun Raise",
+      "Description": "How far up the Bastion and Maelstrom guns aim (the game: 25 degrees above level).",
+      "Image": "options/gun_raise.png",
+      "SubOptions": [
+        {
+          "Name": "High (30 deg above)",
+          "Description": "30 degrees above level.",
+          "Include": [
+            "Raise High",
+            "Turret Core"
+          ],
+          "Image": "options/sub/raise_high.png"
+        },
+        {
+          "Name": "Higher (45 deg above)",
+          "Description": "45 degrees above level.",
+          "Include": [
+            "Raise Higher",
+            "Turret Core"
+          ],
+          "Image": "options/sub/raise_higher.png"
+        },
+        {
+          "Name": "Highest (60 deg above)",
+          "Description": "60 degrees above level.",
+          "Include": [
+            "Raise Highest",
+            "Turret Core"
+          ],
+          "Image": "options/sub/raise_highest.png"
         }
       ]
     },
