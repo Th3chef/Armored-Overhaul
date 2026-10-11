@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_throttle
--- Armored Overhaul 3.5.1 - Tank Steering and Tank Throttle Response options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.5.0 - Tank Steering and Tank Throttle Response options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'throttle' option, Instant). Written from scratch.
 --
 -- How it works: every frame the game moves each vehicle's driving input (steering, throttle, brake) towards what the
@@ -65,7 +65,7 @@ local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.5.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.5.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0, clock = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
@@ -675,19 +675,10 @@ end
 
 local previous_update = update
 if type(previous_update) ~= 'function' then return end
--- ((3.5.1 review) once running, an error is counted and the part keeps running (written to the log when it changes or
--- every 300 frames), as in the Top Speed source: before, any error turned it off for the session while the Mod Options
--- Menu still took picks - Off said off and left the tanks boosted. An error before it runs still stops it)
-local tick_error, tick_error_next = nil, 0
 local function after(ok, ...)
     if not ok then error((...), 0) end
     local okT, err = pcall(tick)
-    if not okT then
-        err = tostring(err)
-        state.errors = state.errors + 1; state.last_error = err; state.status = 'error: ' .. err
-        if phase ~= 'ready' then phase = 'off'; log()
-        elseif err ~= tick_error or state.frames >= tick_error_next then tick_error, tick_error_next = err, state.frames + 300; log() end
-    end
+    if not okT then state.errors = state.errors + 1; state.last_error = tostring(err); state.status = 'error: ' .. tostring(err); phase = 'off'; log() end
     return ...
 end
 update = function(dt, ...)

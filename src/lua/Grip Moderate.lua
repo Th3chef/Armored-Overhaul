@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_handling
--- Armored Overhaul 3.5.1 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
+-- Armored Overhaul 3.5.0 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
 -- Throttle Response, for the TD-220 Bastion and TD-110 Maelstrom (one source, built once per option and strength;
 -- this copy is the 'grip' option, Moderate). Written from scratch.
 --
@@ -18,7 +18,7 @@
 -- floats at +0x654 / +0x658 of the tank's record below; the read gives the resource's density, so the part scales it
 -- the same way before it sends it - 3.4.0 review). A
 -- negative lift coefficient presses the hull down with 0.5 x density x area x lift x speed squared (Havok's convention:
--- its vehicle demo uses -0.3 for downforce); it acts at the center of mass, so it adds weight without leaning the hull.
+-- its vehicle demo uses -0.3 for downforce); it acts at the centre of mass, so it adds weight without leaning the hull.
 -- The pick is the tank's weight at 45 km/h: Stable x1.5, Steady x2, Planted x3 (half that extra at 32 km/h, a tenth at
 -- 14 km/h). (Test 36's lift test, lift raised by 15.7: the tester "felt lighter than usual, but the vanilla tank already feels
 -- light": the call reaches the physics and a positive lift lifts, so the negative one presses down; Test 32's x1.15 to
@@ -31,7 +31,7 @@
 --   pitch = the tank's own / (Top Speed x Engine Torque)
 -- so the extra pulling power tips the hull back no more than the game's own (all parts agree on it). (Test 24) The roll
 -- factor is no longer lowered: Test 23 (roll 0.2) still leaned 43 deg outward in a 38 km/h, 40 deg/s turn, and in 3.1.0
--- cutting the hull's roll factor in the physics file made the tanks tippier (the game's center of mass sits below the
+-- cutting the hull's roll factor in the physics file made the tanks tippier (the game's centre of mass sits below the
 -- ground, so the tracks' grip leans the hull into a turn). Grip and Stability leave it alone.
 -- (Tank Turn Radius, Tests 20-22, is gone: the tank's Havok steering object couldn't be found from game.dll's data; the
 -- wider turns at speed were fixed in Tank Suspension's physics instead.)
@@ -108,7 +108,7 @@ local TANK_KINDS = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
 local CHECK_EVERY = 120
 local MAX_TANKS = 8
 
-local state = {version = '3.5.1', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
+local state = {version = '3.5.0', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
                tanks = {}, errors = 0, last_error = 'none', frames = 0, writes = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
 state.part, state.live_mult = PART, 1            -- (Test 20: what this part multiplies now, for the other parts)
@@ -272,26 +272,6 @@ local function site_at(base_rva, s, i)
         end
     end
     return false
-end
--- ((3.5.1 review) the place a search found, saved per game build (build tag and site), so a later start of the same build
--- checks it instead of searching; read once, written by the part that searched)
-local function cache_path()
-    local dir = rawget(_G, 'ArmoredOverhaulLogsDir')
-    local root = type(dir) == 'function' and dir() or nil
-    return root and root ~= '' and (root .. '\\ArmoredOverhaul-LiveParts.cache') or nil
-end
-local function cache_read(tag)
-    local p = cache_path()
-    local fh = p and io and io.open and io.open(p, 'r')
-    if not fh then return nil end
-    local line = fh:read('*l'); fh:close()
-    local t, site = (line or ''):match('^armored overhaul live parts 1 (%S+) (%x+)$')
-    return t == tag and tonumber(site, 16) or nil
-end
-local function cache_write(tag, site)
-    local p = cache_path()
-    local fh = p and io and io.open and io.open(p, 'w')
-    if fh then fh:write(string.format('armored overhaul live parts 1 %s %X\n', tag, site)); fh:close() end
 end
 local function find_step()
     -- first the known place (this build), then the place another part found on this build (its code checked as the
@@ -829,37 +809,8 @@ local function tick()
         phase, state.status = 'find', 'looking for the vehicle physics'
     end
     if phase == 'find' then
-        local how
-        -- ((3.5.1 review) the place saved by an earlier search on this build: checked, no search (unless another part
-        -- already found it this start: find_step takes that place first)
-        if not scan.cache_tried and type(PLACES[state.game]) ~= 'table' then
-            scan.cache_tried = true
-            local at = cache_read(state.game)
-            if at and at >= 0x1000 and at + #SITE_MASK <= image_size then
-                local s = read(game + at, #SITE_MASK)
-                if s and site_at(at, s, 1) then how = 'saved from an earlier search' end
-            end
-        end
-        if not how then
-            -- ((3.5.1 review) one part searches at a time; the others wait for its find (shared in PLACES) and take the
-            -- search over if it stops for 120 frames. Before, every live part picked searched game.dll at once, each
-            -- reading 4 MB a frame, after every game update and on every start of that build)
-            local lock = PLACES.search
-            if type(lock) ~= 'table' or lock.game ~= state.game then lock = {game = state.game}; PLACES.search = lock end
-            if lock.failed then how = false
-            elseif type(PLACES[state.game]) ~= 'table' and lock.owner and lock.owner ~= PART
-                and (lock.beat ~= scan.seen_beat or state.frames - (scan.seen_at or 0) <= 120) then
-                if lock.beat ~= scan.seen_beat then scan.seen_beat, scan.seen_at = lock.beat, state.frames end
-                state.status = 'waiting for another part\'s search'
-                return
-            else
-                if type(PLACES[state.game]) ~= 'table' then lock.owner, lock.beat = PART, (lock.beat or 0) + 1 end
-                how = find_step()
-                if how == nil then return end                 -- (still looking: next frame)
-                if not how then lock.failed = true end
-                if how == 'by its code pattern' then cache_write(state.game, G.site) end
-            end
-        end
+        local how = find_step()
+        if how == nil then return end                     -- (still looking: next frame)
         if not how then
             phase, state.status, state.found = 'off', 'off: the vehicle physics was not found in this game version', 'not found'
             log(); return

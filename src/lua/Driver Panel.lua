@@ -1,10 +1,9 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.5.1 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.5.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
--- (The Turret indicator and the driver panel share their drawing code; each file is edited directly - (3.5.1 review) the old
--- indicator.lua.in template is gone.)
+-- (Built from indicator.lua.in, which holds the Turret indicator and the driver panel: they share the drawing code.)
 --
 -- Drawn the way HD2 HUD+ puts its widgets on screen: a retained screen GUI created in the game's overlay
 -- world (the world in Application.worlds() that is not the main game world; Test 3 drew into the main world, which
@@ -27,12 +26,12 @@ local CORE_STALL = 60                -- frames without a Tank Core update before
 
 local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- (3.0.0) no settings file (1.2.2-2.1 wrote and read ArmoredOverhaul-DriverPanel.cfg; a file an older version
--- wrote is left alone and not read); these are fixed. x, y: the panel's center as shares of the screen (0 = left / bottom edge);
+-- wrote is left alone and not read); these are fixed. x, y: the panel's centre as shares of the screen (0 = left / bottom edge);
 -- size: the gear letters' height as a share of the screen height. (3.0.1 review: show and game_font, always on, went
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.5.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.5.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
            speed = 'not measured yet', fastest = 'not measured yet', speed_check = 'none', handling_check = 'not driven yet', options_menu = 'not installed (the defaults are used)'}
@@ -342,7 +341,7 @@ local function tri(g, a, b, c, color)
     if id ~= nil and ov.sink then local sink = ov.sink; sink[#sink + 1] = id end
 end
 
--- ---------------------------------------------------------------- turret tracker (the same code in the Camera, Driver Panel and Turret Indicator files)
+-- ---------------------------------------------------------------- turret tracker (shared source: turret_tracker.lua.inc)
 -- Finds the tank you sit in and reads which way its turret points compared to the hull, through the engine's Lua
 -- API: the hull by its unit resource (World.units_by_resource), the gun by its unit or by its turning bone
 -- ('traverse') near the hull, and the angle as the gun's forward direction measured in the hull's own frame.
@@ -610,10 +609,8 @@ local function font_ready(g, set)
     ft = {gui = g}
     local key = pub.font .. ' ' .. pub.material .. ' ' .. pub.atlas
     local last = fontcheck()
-    -- ((3.5.1 review) skipped for the rest of this start, not just this GUI: the next mission's GUI found the marker at
-    -- 'skipped once', tried the font again and could crash again)
-    if S.font_skip == key or (last and last:find('^trying') and last:find(key, 1, true) and last:find(MARK_TAG, 1, true)) then
-        if S.font_skip ~= key then fontcheck('skipped once ' .. key .. ' ' .. MARK_TAG .. '\n'); S.font_skip = key end
+    if last and last:find('^trying') and last:find(key, 1, true) and last:find(MARK_TAG, 1, true) then
+        fontcheck('skipped once ' .. key .. ' ' .. MARK_TAG .. '\n')
         S.font = 'stroke letters for now (the last drive in the game font ended with the game closing; the font is '
             .. 'tried again next start)'
         return false
@@ -781,8 +778,6 @@ local function draw_panel(g, sw, sh, set, d, part)
     local y1 = cy + 0.3 * u
     local step = 1.25 * u
     if part == 'live' then
-        local lab = rawget(_G, 'ArmoredOverhaulPhysicsLab')       -- (test build: the physics lab's experiment)
-        if type(lab) == 'table' then text(g, lab.label or ' ', cx, cy + 2.4 * u, 0.55 * u, th, YELLOW, 'c', 'lab') end
         -- row 1: the selector letters, the current one large and yellow
         local x = cx - step * 2
         for i, ch in ipairs(SELECTOR) do
@@ -964,7 +959,7 @@ end
 
 -- ---------------------------------------------------------------- speed
 -- (1.2.2) The speed is measured from how far the tank's hull moves, sampled every 6 frames against the game's clock
--- and smoothed. 1.2.0-1.2.1 showed the game's own speed figure times 3.6, taking it for meters a second, and a user saw
+-- and smoothed. 1.2.0-1.2.1 showed the game's own speed figure times 3.6, taking it for metres a second, and a user saw
 -- 112 km/h. Without the hull or a clock the game's figure is shown as it is (tester builds log both, to compare).
 local SPEED_EVERY = 0.1          -- (3.1.1 review) seconds (3.1.0: 6 frames, 25 ms at 240 fps)
 local spd = {hull = nil, x = nil, y = nil, z = nil, t = nil, kmh = nil, next = 0, src = nil, check_at = 0, top = {}}
@@ -1001,19 +996,15 @@ local function hc_mult(g)
 end
 local function handling_check(seat, hull, kmh, t)
     local vid = tonumber(seat.vehicle) or 0
-    local lab = rawget(_G, 'ArmoredOverhaulPhysicsLab')            -- (test build: one record per lab experiment)
-    local ltag = type(lab) == 'table' and lab.label or nil
-    local hkey = ltag and (vid .. ' ' .. ltag) or vid
-    local r = HC.list[hkey]
+    local r = HC.list[vid]
     if not r then
-        if #HC.order >= 16 then HC.list[table.remove(HC.order, 1)] = nil end
+        if #HC.order >= 6 then HC.list[table.remove(HC.order, 1)] = nil end
         r = {name = (tostring(TT.tank or '?')):match('^(%a+)') or '?', top = 0, flat = 0, max_rpm = 0, yaw = 0, pivot = 0, runs = 0,
              set = string.format('menu when first driven: engine torque %s, grip %s, steering %s, top speed %s, throttle %s, stability %s',
                 hc_mult('ArmoredOverhaulPower'), hc_mult('ArmoredOverhaulHandling'), hc_mult('ArmoredOverhaulSteering'),
                 hc_mult('ArmoredOverhaulTopSpeed'), hc_mult('ArmoredOverhaulThrottle'),
                 hc_mult('ArmoredOverhaulStability'))}
-        r.vid, r.set = vid, (ltag and ('[' .. ltag .. '] ') or '') .. r.set
-        HC.list[hkey] = r; HC.order[#HC.order + 1] = hkey
+        HC.list[vid] = r; HC.order[#HC.order + 1] = vid
     end
     -- (Test 12) the hull's slope and turn rate first: the standard runs only count on flat ground (one sample each in
     -- round 1 of the isolation test could not tell a setting from the ground it was driven on)
@@ -1037,7 +1028,6 @@ local function handling_check(seat, hull, kmh, t)
     local rpm, gear = tonumber(seat.rpm), tonumber(seat.gear)
     if rpm and rpm >= 0 and rpm < 100000 and rpm > r.max_rpm then r.max_rpm = rpm end
     if kmh > r.top + 0.5 then r.top = kmh end
-    if gear == -1 and kmh > (r.rev or 0) + 0.5 then r.rev = kmh end
     if flat and kmh > r.flat + 0.5 then r.flat, r.top_rpm, r.top_gear = kmh, rpm, gear end
     -- 0-30 km/h: from a stop, straight (turning under 15 deg/s) on flat ground the whole way; else counted as rough
     if kmh < 2 then r.t0, r.rough = t, not flat
@@ -1071,11 +1061,11 @@ local function handling_check(seat, hull, kmh, t)
     for _, id in ipairs(HC.order) do
         local e = HC.list[id]
         b[#b + 1] = string.format('%s 0x%X (%s): flat top %.0f km/h at %s rpm in gear %s (%s rpm per km/h), any top %.0f km/h, highest %.0f rpm, ' ..
-            '0-30 km/h straight on flat %s (%d runs; other ground %s), turn on the spot %s, fastest turn %.0f deg/s, reverse top %s',
-            e.name, e.vid or 0, e.set, e.flat, e.top_rpm and string.format('%.0f', e.top_rpm) or '?', e.top_gear and tostring(e.top_gear + 1) or '?',
+            '0-30 km/h straight on flat %s (%d runs; other ground %s), turn on the spot %s, fastest turn %.0f deg/s',
+            e.name, id, e.set, e.flat, e.top_rpm and string.format('%.0f', e.top_rpm) or '?', e.top_gear and tostring(e.top_gear + 1) or '?',
             (e.top_rpm and e.flat > 10) and string.format('%.0f', e.top_rpm / e.flat) or '?', e.top,
             e.max_rpm, e.acc and string.format('%.1f s', e.acc) or 'not yet', e.runs, e.acc_any and string.format('%.1f s', e.acc_any) or '-',
-            e.pivot > 0 and string.format('%.0f deg/s', e.pivot) or 'not yet', e.yaw, e.rev and string.format('%.0f km/h', e.rev) or 'not yet')
+            e.pivot > 0 and string.format('%.0f deg/s', e.pivot) or 'not yet', e.yaw)
     end
     S.handling_check = table.concat(b, ' | ')
 end
@@ -1252,9 +1242,6 @@ local function tick()
     local live_due = frame_due or (now >= (ov.lnext or 0) and (not ov.lkey or differs(Lv, live_was)))
     -- (3.1.1 review) after a failed drawing, half a second before the next try (see below)
     if now < (ov.retry_at or 0) then frame_due, live_due = false, false end
-    -- ((3.5.1 review) a frame that draws checks the GUI's world first: the cached GUI was only checked once a second, so
-    -- a world that died during a mission load could be drawn into until then)
-    if (frame_due or live_due) and not gui_alive() then ov.next_check = 0; return end
     -- (2.0.1 review) the font's ids are made only on frames that draw text (2.0: every frame)
     if font and (frame_due or live_due) and not font_frame(g) then
         font_refused('stroke letters (the game font ids could not be made)')

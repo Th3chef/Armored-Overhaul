@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.5.1 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.5.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -48,9 +48,7 @@ end
 -- The seat kinds whose rows are read: the tanks and the FRVs, in any seat (the Vehicle Indicator). (2.1 review) Test
 -- builds read every vehicle's seats, to log the kinds of vehicles the mod doesn't know yet (the M-104 FRV, when it
 -- is back in the game); release builds don't, so a teammate in an exosuit costs nothing while you're on foot.
--- ((3.5.1 review) and the HMG and Anti-Tank Emplacements (0x20, 0x01), whose zoom the Gunner Camera gets from the seat
--- published here: release builds didn't read them, so the zoom only worked while someone sat in a tank or FRV)
-local function watched(kind) return DRIVEN[kind] ~= nil or FRV_KINDS[kind] ~= nil or kind == 0x20 or kind == 0x01 or (TESTER and kind ~= nil and kind ~= 0) end
+local function watched(kind) return DRIVEN[kind] ~= nil or FRV_KINDS[kind] ~= nil or (TESTER and kind ~= nil and kind ~= 0) end
 
 local TUNING = {
     settle_polls = 2,        -- same seat seen this many polls in a row before driving starts
@@ -212,11 +210,13 @@ local PLAYERS = {map = 0xF8, controllers = 0x53D8B0, controller_size = 0x1238, i
                  input_size = 0xA7AEC, slots = 8, vstate = 0x468, entity = 0x2C, leaving = 0x11, tags = 0xFD0}
 local INPUT = {actions = 0x33A8, action_size = 32, forward = 2, reverse = 3, look_b = 0xA7AD4,
                buttons = {[0x2D] = 6, [0x2E] = 4, [0x2F] = 5}}
+local BUTTON_FIELDS, BUTTON_ACTIONS, button_values = {}, {}, {}   -- the same pairs as arrays (no per-frame tables)
+for field, action in pairs(INPUT.buttons) do BUTTON_FIELDS[#BUTTON_FIELDS + 1] = field; BUTTON_ACTIONS[#BUTTON_ACTIONS + 1] = action end
 local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-has-input tag
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.5.1', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.5.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -741,8 +741,6 @@ end
 -- Reads the seat table once: our row (by player entity) plus every other occupied row. The local player is
 -- only looked up when somebody sits in a supported vehicle. The result tables are reused from poll to poll
 -- (nothing keeps them past the poll), so reading the seats makes no garbage.
-local read_seats
-do   -- ((3.5.1 review) in a block: top-level locals)
 local seat_out, seat_others, seat_pool = {}, {}, {}
 -- (3.0 review) the rows are read into a buffer of their own (2.1: a new string of every row each poll); `mem` can't
 -- hold them, the player and map look-ups below read through it
@@ -756,7 +754,7 @@ local function seat_row(n, i)
     row.moving = SEATBUF[o + SEAT.moving] + SEATBUF[o + SEAT.moving + 1] * 256
     return row
 end
-read_seats = function()
+local function read_seats()
     local seats = manager('seats')
     if not seats then return nil, 'no seat table' end
     local hdr = fetch_str(seats, SEAT.rows + 8)
@@ -792,7 +790,6 @@ read_seats = function()
     end
     return out
 end
-end
 
 -- The vehicle's driver-input record (checked every frame: records move when vehicles come and go).
 -- Also returns the vehicle's index and the table header copy (for the gear, read from the same table).
@@ -800,13 +797,11 @@ end
 -- vehicle's map slot still say the same: one header read and one slot read a frame, and far fewer new Lua objects
 -- (3.1.0 made a 64-byte string and about 7 pointer objects every driving frame). When the slot changed (the game moved
 -- the vehicle in its table) the header is read again before the full look-up: the slot read has replaced it in `mem`.
-local driver_record
-do   -- ((3.5.1 review) in a block: top-level locals)
 local HDR_N = VEH.fuel - VEH.map + 8
 local DATA_AT, STATES_AT, FUEL_AT = VEH.data - VEH.map, VEH.states - VEH.map, VEH.fuel - VEH.map
 local HDR_WORDS = {0, 4, 8, DATA_AT, DATA_AT + 4, STATES_AT, STATES_AT + 4, FUEL_AT, FUEL_AT + 4}
 local dr = {h = {}}
-driver_record = function(vehicle)
+local function driver_record(vehicle)
     local vehicles = manager('vehicles')
     if not vehicles then return nil, 'no vehicle table' end
     if dr.mgr ~= vehicles then dr.mgr, dr.at, dr.record = vehicles, vehicles + VEH.map, nil end
@@ -840,7 +835,6 @@ driver_record = function(vehicle)
     end
     return record, index, hdr
 end
-end
 
 -- The driver's instruments, as the game's own driver HUD shows them (read every 4 frames while you drive from the
 -- gunner seat). Vehicle state (0xD28 bytes each at +0x68): +0xC1C gear (-1 reverse, 0 first), +0xC20 rpm, +0xC24
@@ -858,7 +852,7 @@ local function read_instruments(index, hdr, out)
     out.gear = (g >= -1 and g <= 8) and g or nil
     out.rpm = MEMF[1]                                    -- (3.0 review: the precast view of mem)
     if not (out.rpm >= 0 and out.rpm < 100000) then out.rpm = nil end   -- (3.1.1 review: NaN or an odd read, not published)
-    -- (published as it is: 1.2.0-1.2.1 took it for meters a second and multiplied it by 3.6, and a user saw 112 km/h;
+    -- (published as it is: 1.2.0-1.2.1 took it for metres a second and multiplied it by 3.6, and a user saw 112 km/h;
     -- the driver panel now measures the speed from the hull's movement and only falls back on this figure)
     out.speed = math.abs(MEMF[2])
     if not (out.speed < 1000) then out.speed = nil end
@@ -1321,16 +1315,12 @@ local function input_paused(me)
     return false
 end
 
-local last = {}
-local feed
-do   -- ((3.5.1 review) its helpers in a block: Tank Core was 6 top-level locals short of the limit of 200)
-local BUTTON_FIELDS, BUTTON_ACTIONS, button_values = {}, {}, {}   -- the same pairs as arrays (no per-frame tables)
-for field, action in pairs(INPUT.buttons) do BUTTON_FIELDS[#BUTTON_FIELDS + 1] = field; BUTTON_ACTIONS[#BUTTON_ACTIONS + 1] = action end
 local look = ffi.new('uint8_t[24]')
 local LF = ffi.cast(F32P, look)                 -- (3.0 review: cast once) look B at [0..2], look A at [3..5]
 local FWD_I = (INPUT.forward * INPUT.action_size + 4) / 4    -- the actions' values as float indexes into mem
 local REV_I = (INPUT.reverse * INPUT.action_size + 4) / 4
-feed = function(me, record)
+local last = {}
+local function feed(me, record)
     if record ~= last.record then last.record, last.f = record, ffi.cast(F32P, record) end   -- (cast once per record)
     local f = last.f
     -- what we wrote last frame should still be there; if the game replaced it, something else feeds this tank
@@ -1365,9 +1355,6 @@ feed = function(me, record)
     f[0], f[1], f[2], f[3], f[4], f[5] = LF[3], LF[4], LF[5], LF[0], LF[1], LF[2]
     f[6], f[7], f[8] = forward, reverse, LF[3]
     if (bd.left and f[0] < 0) or (bd.right and f[0] > 0) then f[0], f[8] = 0, 0 end   -- (3.3.0) A / D off when rebound
-    -- ((3.5.1 review) and W / S's push in look A's y (and its z) when Forward / Back are rebound: only +0x18/+0x1C were
-    -- zeroed, so W still nudged the tank through the look vector - the known issue)
-    if (bd.forward and f[1] > 0) or (bd.back and f[1] < 0) then f[1], f[2] = 0, 0 end
     record[0x2C] = 1
     for i = 1, #BUTTON_FIELDS do record[BUTTON_FIELDS[i]] = button_values[i] end
     if TESTER and S.frames % 5 == 0 then input_note('gunner seat, from the game', f) end
@@ -1402,7 +1389,6 @@ feed = function(me, record)
     -- (3.0 review) what is written, controller included (2.1: the keyboard's values only)
     if TESTER and S.frames % 30 == 0 then S.last_input = string.format('forward %.2f reverse %.2f steer %.2f%s', f[6], f[7], f[0], sx and ' (left stick)' or '') end
     return true
-end
 end
 
 local drive = nil      -- {vehicle, kind, me, ...} while we are feeding a vehicle
@@ -1868,9 +1854,6 @@ local function stop_driving(why)
         local okc, ok, err = pcall(engine_switch, drive.vehicle, false)
         S.engine = S.engine .. ((okc and ok) and '; switched off when you stopped'
             or ('; not switched off (' .. tostring(okc and err or ok) .. ')'))
-        -- ((3.5.1 review) a switch-off that failed leaves the engine Gunner Drive's: a later drive of this vehicle switches
-        -- it off when it ends; one that worked leaves nothing to own)
-        S.engine_owner = not (okc and ok) and drive.vehicle or nil
     end
     drive, last.forward, last.reverse = nil, nil, nil
     S.phase, S.status = 'watching', 'stopped: ' .. why
@@ -1883,16 +1866,12 @@ local function settle_engine(mine, verdict, others)
     if brake and brake.vehicle == pending_off.vehicle then return end     -- (3.0.1: after the braking)
     local v = pending_off.vehicle
     pending_off = nil
-    -- ((3.5.1 review) you drive it again from the gunner seat: the engine Gunner Drive started is still its own, so the
-    -- new drive switches it off when it ends - before, it found it running, took it for someone else's and left it idling)
-    if mine and mine.vehicle == v and verdict == 'drive' and not DRIVER_ROLES[mine.role] then S.engine_owner = v; return end
     if mine and mine.vehicle == v and (DRIVER_ROLES[mine.role] or verdict == 'has_driver' or verdict == 'drive') then return end
     for _, o in ipairs(others or {}) do
         if o.vehicle == v and DRIVER_ROLES[o.role] then return end    -- (someone drives it: left alone)
     end
     local okc, ok, why = pcall(engine_switch, v, false)
     if okc and ok then
-        if S.engine_owner == v then S.engine_owner = nil end
         S.engine = S.engine .. '; switched off (you got out or moved seats and nobody drives)'
         hist('engine switched off: you got out or moved seats and nobody drives')
     else
@@ -2063,10 +2042,7 @@ local function drive_frame()
                 if not okc then S.errors = S.errors + 1; S.last_error = 'engine switch: ' .. tostring(ok) end
             end
         elseif started and not drive.engine_on and not drive.engine_seen then
-            drive.engine_seen = true
-            if S.engine_owner == drive.vehicle then             -- ((3.5.1 review) still running from Gunner Drive's last drive)
-                drive.engine_on, S.engine_owner = true, nil; S.engine = 'still running from the last drive (switched off when this one ends)'
-            else S.engine = 'already running when Gunner Drive took over' end
+            drive.engine_seen = true; S.engine = 'already running when Gunner Drive took over'
         end
     end
     return true
@@ -2076,7 +2052,6 @@ end
 -- itself only happens when the Gunner Drive option's small flag addon is installed.
 local function publish(mine)
     SEAT_PUB.frame = S.frames
-    do local any = rawget(_G, 'ArmoredOverhaulSeatAny'); if type(any) == 'table' then any.kind = mine and mine.role ~= 0 and mine.kind or nil; any.role = mine and mine.role or 0 end end   -- (test build: camera probe)
     -- (3.4.0) every seat's kind and role (the emplacements too), for the Gunner Camera's zoom in other gunner seats;
     -- kind/role/vehicle below stay tanks and FRVs only
     SEAT_PUB.any_kind, SEAT_PUB.any_role = (mine and mine.role ~= 0) and mine.kind or nil, mine and mine.role or 0
@@ -2266,7 +2241,7 @@ do
         return min(1, cur / top), cur, top
     end
     publish_health = function(mine)
-        -- (2.0) read at once when you sit in another vehicle (Test 8 waited out the 15 frames: a gray outline meanwhile)
+        -- (2.0) read at once when you sit in another vehicle (Test 8 waited out the 15 frames: a grey outline meanwhile)
         if S.frames < health_at and mine.vehicle == health_for then return end
         health_at, health_for = S.frames + 15, mine.vehicle
         local frv = FRV_KINDS[mine.kind] ~= nil
@@ -2342,7 +2317,7 @@ local function poll()
         publish(nil); health_for = nil
         stop_driving(why); settle = nil
         do
-            cancel_brake(); pending_off = nil; tries = nil; S.engine_owner = nil      -- (3.0 review: tank ids are reused next mission)
+            cancel_brake(); pending_off = nil; tries = nil      -- (3.0 review: tank ids are reused next mission)
             -- (2.0.1 review) no seat table: out of the mission. Tank ids are reused by the next one, so what was
             -- remembered per tank (who drove it last, its full smoke count) goes.
             if last_driver_n > 0 then last_driver, last_driver_n = {}, 0 end
@@ -2418,7 +2393,7 @@ local function poll()
     end
     local verdict = seat_verdict(mine, seats.others)
     if brake then                               -- (3.0.1) a driver now, or you drive it again: braking ends
-        if verdict == 'drive' and mine.vehicle == brake.vehicle then cancel_brake()      -- (you drive it again: your keys fill it; (3.5.1 review) the brake's record cleared too - it was left set if the drive didn't start)
+        if verdict == 'drive' and mine.vehicle == brake.vehicle then brake = nil      -- (you drive it again: your keys fill it)
         else for _, o in ipairs(seats.others) do if o.vehicle == brake.vehicle and DRIVER_ROLES[o.role] then cancel_brake('a driver took the seat'); break end end end
     end
     settle_engine(mine, verdict, seats.others)
