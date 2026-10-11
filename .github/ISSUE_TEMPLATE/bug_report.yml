@@ -11,7 +11,7 @@ body:
     attributes:
       label: Mod version
       description: Shown at the top of each log and in your mod manager.
-      placeholder: "3.4.0"
+      placeholder: "3.5.0"
     validations:
       required: true
   - type: input
@@ -29,12 +29,14 @@ body:
         - label: Tank Grip
         - label: Tank Steering
         - label: Tank Throttle Response
-        - label: Tank Suspension
         - label: Tank Stability
+        - label: Tank Collision Damage Boost
         - label: Tank MBT Turrets
+        - label: Tank Suspension
         - label: Tank Turret Traverse
         - label: Tank Turret Elevation
-        - label: Tank Turret Aim Range
+        - label: Tank Gun Depression
+        - label: Tank Gun Raise
         - label: Tank Autoloader
         - label: Gunner Drive (Tanks)
         - label: Gunner Drive (FRV)
