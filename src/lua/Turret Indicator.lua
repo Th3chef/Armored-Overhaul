@@ -1,9 +1,10 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.5.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
+-- Armored Overhaul 3.5.1 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
 -- FRV or M-103 Supply FRV (any seat), a small outline on your screen shows which way the turret points compared to the
 -- hull, like a real tank's display, colored by the vehicle's health (the FRV's tires too). The turret always points
 -- up; the hull outline turns around it, with a notch at its front. Drawn only on your screen. Written from scratch.
--- (Built from indicator.lua.in, which holds the Turret indicator and the driver panel: they share the drawing code.)
+-- (The Turret indicator and the driver panel share their drawing code; each file is edited directly - (3.5.1 review) the old
+-- indicator.lua.in template is gone.)
 --
 -- Drawn the way HD2 HUD+ puts its widgets on screen: a retained screen GUI created in the game's overlay
 -- world (the world in Application.worlds() that is not the main game world; Test 3 drew into the main world, which
@@ -26,13 +27,13 @@ local CORE_STALL = 60                -- frames without a Tank Core update before
 
 local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.log'
 -- (3.0.0) no settings file (2.0-2.1 wrote and read ArmoredOverhaul-TurretIndicator.cfg; a file an older version
--- wrote is left alone and not read). (3.0) The Mod Options Menu can turn it off (see menu_rows). x, y: the outline's centre as shares of the screen (0 = left / bottom edge);
+-- wrote is left alone and not read). (3.0) The Mod Options Menu can turn it off (see menu_rows). x, y: the outline's center as shares of the screen (0 = left / bottom edge);
 -- size: the hull's length as a share of the screen height; dock: just left of the driver panel when its addon runs.
--- (Test 6: moved off the bottom centre, where it covered the game's kill chain counter; thinner and see-through)
+-- (Test 6: moved off the bottom center, where it covered the game's kill chain counter; thinner and see-through)
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
 local PANEL_DEFAULT = {x = 0.5, y = 0.1, size = 0.022}   -- (3.1.0 Test 26) the Driver Panel's default place (its SETTINGS)
 
-local S = {version = '3.5.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.5.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
@@ -317,7 +318,7 @@ local function tri(g, a, b, c, color)
     if id ~= nil then local sink = ov.sink or ov.ids; sink[#sink + 1] = id end
 end
 
--- ---------------------------------------------------------------- turret tracker (shared source: turret_tracker.lua.inc)
+-- ---------------------------------------------------------------- turret tracker (the same code in the Camera, Driver Panel and Turret Indicator files)
 -- Finds the tank you sit in and reads which way its turret points compared to the hull, through the engine's Lua
 -- API: the hull by its unit resource (World.units_by_resource), the gun by its unit or by its turning bone
 -- ('traverse') near the hull, and the angle as the gun's forward direction measured in the hull's own frame.
@@ -334,7 +335,7 @@ local TT = {
     HULLS = {[0x1A] = {name = 'FRV', hull = 'content/fac_helldivers/vehicles/frv/frv',
                        gun = 'content/fac_helldivers/vehicles/frv/armaments/frv_mg/frv_mg', gun_node = 'horizontal_axis'}},
     GUN_NODE = 'traverse',       -- the gun's turning bone (the whole turret turns with it)
-    GUN_REACH = 5.0,             -- metres: a gun must be this close to the hull to belong to it
+    GUN_REACH = 5.0,             -- meters: a gun must be this close to the hull to belong to it
     FIND_EVERY = 30,             -- frames between searches while seated and not yet found
     FIND_SLOW = 300,             -- ... after FIND_MISSES misses in a row (a search can go through every unit)
     FIND_MISSES = 5,
@@ -473,6 +474,72 @@ local function tt_find_tank(world, kind)
     TT.gen = TT.gen + 1
     return true
 end
+-- (3.5.1 Test 14) The barrel's pitch against the hull, for Turret Core's Freelook (the tester: "can it also freeze the
+-- tank turret elevation"), only while it asks (pub.want_pitch). The barrel's tip is the gun bone farthest out along the
+-- turning bone's forward (the bones are listed once per gun: the engine's count if it gives one, else up to the first
+-- that isn't a finite place within 12 m, as junk past the last bone isn't an error; 3.4.1 Test 6's aim probe), and the
+-- barrel is the tip bone's axis closest to turning bone -> tip (or, if none is, that line itself).
+TT.barrel = {gun = nil, tip = nil, axis = 0, sign = 1}
+local function tt_axis(Q, q, a)          -- one of a rotation's axes: 0 forward, 1 right, 2 up
+    if a == 0 then return tt_comps(Q.forward(q)) elseif a == 1 then return tt_comps(Q.right(q)) end
+    return tt_comps(Q.up(q))
+end
+local function tt_find_tip(U, Q, gun, trav)
+    local b = TT.barrel
+    b.gun, b.tip = gun, false
+    local tx, ty, tz = tt_comps(U.world_position(gun, trav))
+    local fx, fy, fz = tt_axis(Q, U.world_rotation(gun, trav), 0)
+    if not tx or not fx then return end
+    local count
+    if type(U.num_nodes) == 'function' then
+        local okc, c = pcall(U.num_nodes, gun)
+        if okc and type(c) == 'number' and c > 0 and c < 1000 then count = math.floor(c) end
+    end
+    local best, far = nil, 0.5
+    for i = 1, count or 128 do
+        local okp, p = pcall(U.world_position, gun, i)
+        local x, y, z
+        if okp then x, y, z = tt_comps(p) end
+        if not (x and x == x and y == y and z == z and (x - tx) ^ 2 + (y - ty) ^ 2 + (z - tz) ^ 2 <= 144) then
+            if not count then break end
+        else
+            local d = (x - tx) * fx + (y - ty) * fy + (z - tz) * fz
+            if d > far then best, far = i, d end
+        end
+    end
+    if not best then return end
+    local mx, my, mz = tt_comps(U.world_position(gun, best))
+    local n = math.sqrt((mx - tx) ^ 2 + (my - ty) ^ 2 + (mz - tz) ^ 2)
+    local bx, by, bz = (mx - tx) / n, (my - ty) / n, (mz - tz) / n
+    local qm = U.world_rotation(gun, best)
+    local axis, sign, bc = -1, 1, 0.9
+    for a = 0, 2 do
+        local ax, ay, az = tt_axis(Q, qm, a)
+        if ax then
+            local c = ax * bx + ay * by + az * bz
+            if math.abs(c) > bc then axis, sign, bc = a, c < 0 and -1 or 1, math.abs(c) end
+        end
+    end
+    b.tip, b.axis, b.sign, b.trav = best, axis, sign, trav
+end
+local function tt_pitch(U, Q, f, qh)
+    local b = TT.barrel
+    if b.gun ~= f.gun then tt_find_tip(U, Q, f.gun, f.gun_node) end
+    if not b.tip then return nil end
+    local vx, vy, vz
+    if b.axis >= 0 then vx, vy, vz = tt_axis(Q, U.world_rotation(f.gun, b.tip), b.axis)
+    else                                   -- (no axis along the barrel: the line from the turning bone to the tip)
+        local tx, ty, tz = tt_comps(U.world_position(f.gun, b.trav))
+        local mx, my, mz = tt_comps(U.world_position(f.gun, b.tip))
+        if tx and mx then vx, vy, vz = mx - tx, my - ty, mz - tz end
+    end
+    local ux, uy, uz = tt_comps(Q.up(qh))
+    if not vx or not ux then return nil end
+    local n = math.sqrt(vx * vx + vy * vy + vz * vz)
+    if n < 1e-6 then return nil end
+    local d = (b.axis >= 0 and b.sign or 1) * (vx * ux + vy * uy + vz * uz) / n
+    return math.deg(math.asin(math.max(-1, math.min(1, d))))
+end
 local function tt_read_angle()
     local U, _, Q = TT.api()
     local f = TT.found
@@ -494,6 +561,12 @@ local function tt_read_angle()
             ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz = fx, fy, fz, rx, ry, rz, ux, uy, uz
             ax.ok = true
         end
+    end
+    -- (3.5.1 Test 14) the barrel's pitch, while Freelook asks for it (pub.want_pitch, set by Turret Core)
+    TT.pitch = nil
+    if type(pub) == 'table' and pub.want_pitch and Q.up then
+        local okp, pd = pcall(tt_pitch, U, Q, TT.found, qh)
+        TT.pitch = okp and pd or nil
     end
     return math.atan2(gx * rx + gy * ry + gz * rz, gx * fx + gy * fy + gz * fz)
 end
@@ -551,6 +624,7 @@ function TT.shared_angle(world, kind, frame, key)
     if type(pub) ~= 'table' then pub = {}; rawset(_G, 'ArmoredOverhaulTurretAngle', pub) end
     pub.key, pub.kind, pub.angle, pub.why, pub.tank, pub.pick = key, kind, angle, why, TT.tank, TT.pick
     pub.hull = angle and TT.found.unit or nil
+    pub.pitch = angle and TT.pitch or nil                -- (3.5.1 Test 14) for Freelook (nil unless asked)
     -- (the hull's axes, numbers only, for this frame)
     local ax, pa = TT.axes, pub.axes
     if type(pa) ~= 'table' then pa = {}; pub.axes = pa end
@@ -664,8 +738,11 @@ local function skull_material(g, set)
         if sk.watch then skull_proven(); if sk.watch then skullcheck('interrupted\n') end end
         sk = {gui = g}
         local last = skullcheck()
-        if last and last:find('^trying') then
-            skullcheck('skipped once\n'); S.skull = 'octagon for now (the last try ended with the game closing; tried again next start)'
+        -- ((3.5.1 review) skipped for the rest of this start, not just this GUI: the next mission's GUI found the marker
+        -- at 'skipped once', tried the skull again and could crash again)
+        if S.skull_skip or (last and last:find('^trying')) then
+            if not S.skull_skip then skullcheck('skipped once\n'); S.skull_skip = true end
+            S.skull = 'octagon for now (the last try ended with the game closing; tried again next start)'
             sk.off = true; sk.why = S.skull; return nil
         end
         local ID, M = SR.IdString64, SR.Material
@@ -707,7 +784,7 @@ local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place)
     local HULL = b and C(floor(245 * set.opacity + 0.5), b[3], b[4], b[5]) or GREY
     local cx, cy = set.x * sw, set.y * sh
     local L = set.size * sh                          -- hull length in pixels
-    -- (2.0) docked: just left of the driver panel (its left edge is 6.3 letter heights left of its centre, and its
+    -- (2.0) docked: just left of the driver panel (its left edge is 6.3 letter heights left of its center, and its
     -- middle 0.5 below it), with room for the outline turned any way (0.6 hull lengths) and a gap. (3.0.1 review)
     -- `place`: the panel's place when tick found the panel can show in this vehicle, else nil (its own spot)
     if place then
@@ -715,16 +792,16 @@ local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place)
         cx, cy = place.x * sw - 6.3 * u - 1.2 * u - 0.6 * L, place.y * sh - 0.5 * u
     end
     local Wd = L * 0.62
-    -- (2.0) the hull outline is drawn thick, like the tank's armour, so its health color reads at a glance; the
+    -- (2.0) the hull outline is drawn thick, like the tank's armor, so its health color reads at a glance; the
     -- corners are filled so the thick sides join cleanly (1.1-1.3: thin lines, max(1.2, L x 0.018))
     local th = max(3, L * 0.065)
     -- the turret always points up, so the hull turns the other way round: a turret turned right leaves the hull's
-    -- front to the left. Screen y goes up, so a positive angle here turns the hull anticlockwise.
+    -- front to the left. Screen y goes up, so a positive angle here turns the hull counterclockwise.
     local a = angle
     local ca, sa = cos(a), sin(a)
     local function R(x, y) return cx + x * ca - y * sa, cy + x * sa + y * ca end
     local hx, hy = Wd / 2, L / 2
-    -- the armour: four mitred quads between the outer and the inner edge (no overlaps, so the see-through color is
+    -- the armor: four mitred quads between the outer and the inner edge (no overlaps, so the see-through color is
     -- even all round), and the front marker as a filled wedge inside the front edge
     local function quad(ax, ay, bx, by, cx2, cy2, dx, dy, col)
         local x1, y1 = R(ax, ay); local x2, y2 = R(bx, by); local x3, y3 = R(cx2, cy2); local x4, y4 = R(dx, dy)
@@ -1040,6 +1117,7 @@ local function tick()
     -- (3.0 review) the FRV in 2-degree steps: its outline (wheels too) costs about 1.7 times a tank's, it shows in
     -- every seat, and its gun turns fast
     local step = FRV_KINDS[seat.kind] and floor(angle * 90 / pi + 0.5) * 2 or floor(angle * 180 / pi + 0.5)
+    step = step % 360                    -- ((3.5.1 review) 180 and -180 are the same step: pointing straight back redrew every frame)
     local band = settings.health >= 0.5 and health_band(seat.health) or nil
     -- (2.0) docked next to the driver panel: redrawn when the panel moves, is resized, shown or hidden
     -- (compared as numbers: no text made every frame)
@@ -1066,6 +1144,9 @@ local function tick()
     if (not ov.key or step ~= ov.step or sw ~= ov.sw or sh ~= ov.sh or settings.sig ~= ov.sig or band ~= ov.band
         or dock ~= ov.dock or px ~= ov.px or py ~= ov.py or ps ~= ov.ps or ov.kind ~= seat.kind or ov.nogun ~= nogun
         or (tires and tires ~= ov.tires)) and S.frames >= (ov.retry_at or 0) then
+        -- ((3.5.1 review) a frame that draws checks the GUI's world first: the cached GUI was only checked once a second,
+        -- so a world that died during a mission load could be drawn into until then)
+        if not gui_alive() then ov.next_check = 0; return end
         clear_shapes(true)
         ov.kind = seat.kind
         ov.frv, ov.nogun = FRV_KINDS[seat.kind] ~= nil, nogun

@@ -1,11 +1,11 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.5.0 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.5.1 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
 -- mounts. Every frame, for every Bastion and Maelstrom out, this turns that mount to the main gun's heading and carries
--- the Maelstrom's pod and smoke launcher mounts round the turret's axis, so the turret armour, pods and launchers follow
--- the gun. Because the armour stays on the hull, the game's own camo and damage looks apply to it. The second gun on
+-- the Maelstrom's pod and smoke launcher mounts round the turret's axis, so the turret armor, pods and launchers follow
+-- the gun. Because the armor stays on the hull, the game's own camo and damage looks apply to it. The second gun on
 -- that mount (the Bastion's second gun, the Maelstrom's laser designator) has its own left/right locked by the turret
 -- core, so it points where the main gun does. Writes ArmoredOverhaul-TurretModels.log.
 -- (Test 21) The Bastion's gun search keeps the gun with a model (see find_gun).
@@ -24,12 +24,12 @@
 -- still turns, without it.
 -- (3.3.0 Test 4) Turret Position (the turret moved towards the middle like a real main battle tank, so it
 -- clips less with the wider aim ranges): the turret (its mount, the gun's mount, and everything carried round with it)
--- sits SHIFT metres further forward than the game's casemate (the hull's front is +y). The game's turret top spans
+-- sits SHIFT meters further forward than the game's casemate (the hull's front is +y). The game's turret top spans
 -- y -4.74..0.6 on hulls 9 m long (-4.85..4.13) whose deck stays at the roof line up to y 3.4, so up to 2.5 m forward
 -- the turret floor stays over the deck; 1.5 m puts it at the hull's middle. (Test 8) Default: the game's place. Set in the Mod Options Menu (Turret Core's
--- rows), read here every half second; o.mbt_shift is in metres.
+-- rows), read here every half second; o.mbt_shift is in meters.
 -- (3.4.1 Test 16) Working hatches. The turret's two roof hatches and the gunner's door slide open and shut again as in
--- the game (up to Test 15 they were part of the turret armour and never moved). The game slides them by animating its
+-- the game (up to Test 15 they were part of the turret armor and never moved). The game slides them by animating its
 -- hatch bones every frame, so they can't be carried round from here; the turret models tie each one to a node the game
 -- doesn't animate instead (the seat effect node beside it, see HATCHES), and every frame that node is put where the
 -- hatch is on the turned turret: its rest place plus the hatch's slide read from the game's bone, carried round the
@@ -39,7 +39,7 @@
 -- the gunner got in through the turret's door but out at the game's door place, behind the hull (the tester: "when you
 -- get out, you still use the old hatch location"). Where it lands over the hull's deck it is lifted onto the deck (it is
 -- 0.6 m under the roof line, at the ground behind the tank, where the game has it); off the hull it stays at its height.
--- (3.4.1 Test 21) The turret's hit areas (its armour blocks, side and rear boxes, radar and antenna) follow node b7e9b43d, the
+-- (3.4.1 Test 21) The turret's hit areas (its armor blocks, side and rear boxes, radar and antenna) follow node b7e9b43d, the
 -- mount this turns and moves, from the tank's physics files (Turret Hit Areas): nothing to do here. (3.4.1 Test 20 carried
 -- their own nodes from here; the game's animation put them back every frame.)
 -- (3.4.1 Test 18) The gunner's door swings up and out on its top edge (a hatchback) instead of sliding 0.94 m straight up: the
@@ -66,7 +66,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.5.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.5.1', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
 S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)
@@ -133,6 +133,12 @@ local WAY_STEP = math.rad(1)        -- (3.4.1 review) the ways in on the turret 
 
 local GUN_CAP = math.deg(0.8)        -- (Test 31) deg/s: a tank gun's own top turn (measured 46-49; 0.8 rad/s)
 local help_seen = {extra = 0, offset = 0, times = 0}     -- (Test 31) the most mount help given, for the log
+-- (3.5.1 review) each tank's mount turn now (degrees, + = left), by hull unit, for Turret Core's Freelook, which holds the
+-- gun by its stops measured from the mount; and while Freelook is on (Turret Core's freelook_on) the mount stays where it
+-- is: no help, no going back to straight (3.5.1 Test 14 let it go back, so a held gun drifted by the mount's turn, up to
+-- 30 degrees after long swings with Tank Turret Traverse Fast / Very fast)
+local MOUNTS = rawget(_G, 'ArmoredOverhaulMounts')
+if type(MOUNTS) ~= 'table' then MOUNTS = setmetatable({}, {__mode = 'k'}); rawset(_G, 'ArmoredOverhaulMounts', MOUNTS) end
 local function log()
     pcall(function()
         local f = loader.open_log and loader.open_log('ArmoredOverhaul-TurretModels.log')
@@ -415,8 +421,13 @@ local function help(u, e, a, t)
     local m = e.m or 0
     local lt, ltn = e.hl_t, e.hl_tn
     e.hl_t, e.hl_tn = t, a - m
+    if on and core.freelook_on then                    -- (3.5.1 review) Freelook: the mount held where it is
+        e.mr, e.helping, e.acc_d, e.acc_t = 0, false, 0, 0
+        return
+    end
     if not (lt and on) then
         if m ~= 0 then e.m, e.mr = 0, 0; set_mount(u, e, 0) end
+        MOUNTS[u] = nil
         e.acc_d, e.acc_t = 0, 0
         return
     end
@@ -451,7 +462,7 @@ local function help(u, e, a, t)
     m = wrap(m + math.rad(mr * dt))
     if math.abs(m) < 1e-5 and math.abs(mr) < 1e-3 then m = 0 end
     e.m = m
-    -- (3.1.1 review) e.hl_tn keeps the gun's own heading against its mount as read this frame (a - the mount it stood on);
+    MOUNTS[u] = m ~= 0 and math.deg(m) or nil    -- (3.1.1 review) e.hl_tn keeps the gun's own heading against its mount as read this frame (a - the mount it stood on);
     -- 3.1.0 reset it to a - the new mount here, so the next frame's "gun's own turn" included the mount's own push, and
     -- the help went on pushing until the gun slowed under ~12 deg/s instead of 41 (2 deg overshoot with a gun that eases in)
     set_mount(u, e, m)
@@ -637,7 +648,7 @@ local function tick()
                 if a then turn(u, e, a, d, S.clock < e.settle); turned = turned + 1; if e.no_seat then no_seat = no_seat + 1 end else no_gun = no_gun + 1 end
                 if #e.hatch > 0 then hatches(u, e, e.pa or 0, e.pd or 0) end          -- (3.4.1 Test 16)
                 if e.pa then passengers = passengers + (e.passengers or 0) end
-                if a then t_now = t_now or now_s(); rates(e, a, it.h, t_now, hy); help(u, e, a, t_now) else e.last_t, e.hl_t = nil, nil; if (e.m or 0) ~= 0 then e.m, e.mr = 0, 0; set_mount(u, e, 0) end end
+                if a then t_now = t_now or now_s(); rates(e, a, it.h, t_now, hy); help(u, e, a, t_now) else e.last_t, e.hl_t = nil, nil; if (e.m or 0) ~= 0 then e.m, e.mr = 0, 0; set_mount(u, e, 0) end; MOUNTS[u] = nil end
             end
         elseif oka then
             hulls[u] = nil                                       -- (3.1.1 review: a destroyed tank's entry goes at once)

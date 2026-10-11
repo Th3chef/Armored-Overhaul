@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_throttle
--- Armored Overhaul 3.5.0 - Tank Steering and Tank Throttle Response options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.5.1 - Tank Steering and Tank Throttle Response options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'throttle' option, Instant). Written from scratch.
 --
 -- How it works: every frame the game moves each vehicle's driving input (steering, throttle, brake) towards what the
@@ -65,7 +65,7 @@ local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.5.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.5.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0, clock = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
@@ -144,7 +144,7 @@ end
 -- write and restored straight after. Code, guard, no-access and reserved memory are never touched.
 local old_prot = ffi.new('uint32_t[1]')
 local function page_info(address, size)
-    if VirtualQuery(address, region, ffi.sizeof('TtRegion')) == 0 then return nil end
+    if VirtualQuery(ffi.cast('void *', address), ffi.cast('void *', region), ffi.sizeof('TtRegion')) == 0 then return nil end
     local r = region[0]
     if r.state ~= 0x1000 or num(address) + size > num(r.base) + tonumber(r.size) then return nil end
     return r.protection, r.type
@@ -162,13 +162,13 @@ local function write_floats(address, size, fields, values)
     -- this process's own copy, as any write by the game does)
     if prot == 4 or prot == 8 then poke(address, fields, values); return true, how end
     if prot ~= 2 then return false, how end
-    local opened = VirtualProtect(address, size, 4, old_prot) ~= 0
-    if not opened then opened = VirtualProtect(address, size, 8, old_prot) ~= 0 end
+    local opened = VirtualProtect(ffi.cast('void *', address), size, 4, ffi.cast('void *', old_prot)) ~= 0
+    if not opened then opened = VirtualProtect(ffi.cast('void *', address), size, 8, ffi.cast('void *', old_prot)) ~= 0 end
     if not opened then return false, how .. ', open refused' end
     local restore = old_prot[0]
     local ok = pcall(poke, address, fields, values)
     -- (3.0 review) the old protection put back, checked: a page left writable is said in the log
-    local back = VirtualProtect(address, size, restore, old_prot) ~= 0
+    local back = VirtualProtect(ffi.cast('void *', address), size, restore, ffi.cast('void *', old_prot)) ~= 0
     if not back then state.errors = state.errors + 1; state.last_error = how .. ': opened for a write, its protection could not be put back' end
     return ok, how .. (back and ' (opened for the write)' or ' (opened for the write; putting its protection back failed)')
 end
@@ -349,7 +349,7 @@ local function scan_step()
     local size = min(0x40000 + 0x100, image_size - scan.offset)
     if size <= 0 then return true end
     -- (3.0.1 review) a page that can't be queried is stepped over (it ended the search, with the rest unsearched)
-    if VirtualQuery(game + scan.offset, region, ffi.sizeof('TtRegion')) == 0 then
+    if VirtualQuery(ffi.cast('void *', game + scan.offset), ffi.cast('void *', region), ffi.sizeof('TtRegion')) == 0 then
         scan.offset = scan.offset + 0x1000; return scan.offset >= image_size
     end
     local r = region[0]
@@ -675,10 +675,19 @@ end
 
 local previous_update = update
 if type(previous_update) ~= 'function' then return end
+-- ((3.5.1 review) once running, an error is counted and the part keeps running (written to the log when it changes or
+-- every 300 frames), as in the Top Speed source: before, any error turned it off for the session while the Mod Options
+-- Menu still took picks - Off said off and left the tanks boosted. An error before it runs still stops it)
+local tick_error, tick_error_next = nil, 0
 local function after(ok, ...)
     if not ok then error((...), 0) end
     local okT, err = pcall(tick)
-    if not okT then state.errors = state.errors + 1; state.last_error = tostring(err); state.status = 'error: ' .. tostring(err); phase = 'off'; log() end
+    if not okT then
+        err = tostring(err)
+        state.errors = state.errors + 1; state.last_error = err; state.status = 'error: ' .. err
+        if phase ~= 'ready' then phase = 'off'; log()
+        elseif err ~= tick_error or state.frames >= tick_error_next then tick_error, tick_error_next = err, state.frames + 300; log() end
+    end
     return ...
 end
 update = function(dt, ...)

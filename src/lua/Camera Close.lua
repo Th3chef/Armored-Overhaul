@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.5.0 - Gunner camera option (Close): how far behind the turret the tank
+-- Armored Overhaul 3.5.1 - Gunner camera option (Close): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -8,7 +8,7 @@
 -- round that point at the view's three camera distances (+0x24 / +0x28 / +0x2C) along the line of sight.
 -- (3.4.0 Test 16 / Test 30; header brought up to date in the 3.4.0 review) This addon puts that point over the turret
 -- (forward 0) at Close's height (about 1.4 m), and the distance behind on the three camera distances: the game's own
--- 1 m back, half a metre more and the picked distance (x cos 10 degrees), so you see more of the tank and around it.
+-- 1 m back, half a meter more and the picked distance (x cos 10 degrees), so you see more of the tank and around it.
 -- The game turns the view with the turret itself; while you sit in a tank gunner seat this addon keeps the point level
 -- when the tank tilts (the turret angle and the hull's axes come from the shared turret tracker; your seat from Tank
 -- Core). A build whose distances can't be read gets the offset as before Test 16: the camera moved back along a
@@ -33,7 +33,7 @@ local PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F
 local MAX_TRIES = 5
 local confirmed, fight_backs = false, {}   -- (3.0 review) see apply
 local written = {side = 0, back = 0, up = 0}   -- what this addon wrote last (apply or the turning)
--- (1.2.2) Every preset sits half a metre lower and half a metre further back than the game's gunner view (1 m back,
+-- (1.2.2) Every preset sits half a meter lower and half a meter further back than the game's gunner view (1 m back,
 -- 2 m up), and moves back along a 10 degree rise (1.2.0-1.2.1: from the game's view, along 25 degrees): more behind the
 -- tank and less above it, for more of the surroundings in view. (3.4.0 review) Since Test 30 the height is Close's at
 -- every distance and the rise only sets the distance behind (BASE_BACK + the pick x cos 10 degrees); only the offset
@@ -44,15 +44,15 @@ local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
 -- addon a quarter degree at a time, which lagged and jumped at high traverse) but the view's three camera distances
 -- (+0x24 / +0x28 / +0x2C: the game circles the camera round a point at that distance, along the line of sight, as in
 -- the FRV gunner seat and on the emplacements since Test 15). The offset keeps only the height, over the turret
--- (back 0), and every metre behind (the game's own 1 m back included) goes on the three distances.
+-- (back 0), and every meter behind (the game's own 1 m back included) goes on the three distances.
 local TDIST, TDIST_NAMES = {n = 0x24, m = 0x28, f = 0x2C}, {'n', 'm', 'f'}
 local TANK_DIST = {n = 2, m = 1, f = 0.5}           -- (the gunner view's own, on the known build)
-local reach = 0                                     -- metres added to the three distances (0: the game's own)
+local reach = 0                                     -- meters added to the three distances (0: the game's own)
 local dist_own, dist_written                        -- the view's own distances; what this addon wrote last
-local distance = PRESET          -- (3.0) the pick in metres (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
+local distance = PRESET          -- (3.0) the pick in meters (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.5.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.5.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -124,7 +124,7 @@ end
 -- write and restored straight after. Code, guard, no-access and reserved memory are never touched.
 local old_prot = ffi.new('uint32_t[1]')
 local function page_info(address, size)
-    if VirtualQuery(address, region, ffi.sizeof('TtRegion')) == 0 then return nil end
+    if VirtualQuery(ffi.cast('void *', address), ffi.cast('void *', region), ffi.sizeof('TtRegion')) == 0 then return nil end
     local r = region[0]
     if r.state ~= 0x1000 or num(address) + size > num(r.base) + tonumber(r.size) then return nil end
     return r.protection, r.type
@@ -144,13 +144,13 @@ local function write_floats(address, size, values, fields)
     local how = string.format('page 0x%X/0x%X', prot, kind)
     if not data then return false, how end
     if prot ~= 2 then return false, how end
-    local opened = VirtualProtect(address, size, 4, old_prot) ~= 0
-    if not opened then opened = VirtualProtect(address, size, 8, old_prot) ~= 0 end
+    local opened = VirtualProtect(ffi.cast('void *', address), size, 4, ffi.cast('void *', old_prot)) ~= 0
+    if not opened then opened = VirtualProtect(ffi.cast('void *', address), size, 8, ffi.cast('void *', old_prot)) ~= 0 end
     if not opened then return false, how .. ', open refused' end
     local restore = old_prot[0]
     local ok = pcall(poke, address, values, fields)
     -- (3.0 review) the old protection put back, checked: a page left writable is said in the result
-    local back = VirtualProtect(address, size, restore, old_prot) ~= 0
+    local back = VirtualProtect(ffi.cast('void *', address), size, restore, ffi.cast('void *', old_prot)) ~= 0
     if not back then state.errors = state.errors + 1; state.last_error = how .. ': opened for a write, its protection could not be put back' end
     return ok, how .. (back and ' (opened for the write)' or ' (opened for the write; putting its protection back failed)')
 end
@@ -266,7 +266,7 @@ local function distances(s, o)
     end
     return v
 end
--- A preset is accepted only with its own prefix and between its numbered neighbours (id - 1 and id + 1).
+-- A preset is accepted only with its own prefix and between its numbered neighbors (id - 1 and id + 1).
 -- `loose` (the known game build, at the known place): the prefix may differ - another camera mod may have changed the
 -- gunner view's other values (1.2.2: 1.2.0-1.2.1 then switched themselves off, and a user saw no change on Far).
 -- (3.0.1 review) every re-check once the preset was found is loose too, on every build (see apply).
@@ -305,7 +305,7 @@ local scan = {offset = 0x1000, both = {}, one = {}}
 local function scan_step()
     local size = min(0x40000 + 0x40, image_size - scan.offset)
     if size <= 0 then return true end
-    if VirtualQuery(game + scan.offset, region, ffi.sizeof('TtRegion')) == 0 then return true end
+    if VirtualQuery(ffi.cast('void *', game + scan.offset), ffi.cast('void *', region), ffi.sizeof('TtRegion')) == 0 then return true end
     local r = region[0]
     local region_end = num(r.base) + tonumber(r.size) - num(game)
     if not (r.state == 0x1000 and (r.protection == 4 or r.protection == 8 or r.protection == 2)) then
@@ -336,7 +336,7 @@ local function scan_pick()
     return nil, #scan.both + #scan.one
 end
 
--- ---------------------------------------------------------------- turret tracker (shared source: turret_tracker.lua.inc)
+-- ---------------------------------------------------------------- turret tracker (the same code in the Camera, Driver Panel and Turret Indicator files)
 -- Finds the tank you sit in and reads which way its turret points compared to the hull, through the engine's Lua
 -- API: the hull by its unit resource (World.units_by_resource), the gun by its unit or by its turning bone
 -- ('traverse') near the hull, and the angle as the gun's forward direction measured in the hull's own frame.
@@ -351,7 +351,7 @@ local TT = {
     -- (2.1) the FRV is in the Turret indicator's and Driver panel's copies (HULLS); the Gunner camera is tanks only
     HULLS = {},
     GUN_NODE = 'traverse',       -- the gun's turning bone (the whole turret turns with it)
-    GUN_REACH = 5.0,             -- metres: a gun must be this close to the hull to belong to it
+    GUN_REACH = 5.0,             -- meters: a gun must be this close to the hull to belong to it
     FIND_EVERY = 30,             -- frames between searches while seated and not yet found
     FIND_SLOW = 300,             -- ... after FIND_MISSES misses in a row (a search can go through every unit)
     FIND_MISSES = 5,
@@ -490,6 +490,72 @@ local function tt_find_tank(world, kind)
     TT.gen = TT.gen + 1
     return true
 end
+-- (3.5.1 Test 14) The barrel's pitch against the hull, for Turret Core's Freelook (the tester: "can it also freeze the
+-- tank turret elevation"), only while it asks (pub.want_pitch). The barrel's tip is the gun bone farthest out along the
+-- turning bone's forward (the bones are listed once per gun: the engine's count if it gives one, else up to the first
+-- that isn't a finite place within 12 m, as junk past the last bone isn't an error; 3.4.1 Test 6's aim probe), and the
+-- barrel is the tip bone's axis closest to turning bone -> tip (or, if none is, that line itself).
+TT.barrel = {gun = nil, tip = nil, axis = 0, sign = 1}
+local function tt_axis(Q, q, a)          -- one of a rotation's axes: 0 forward, 1 right, 2 up
+    if a == 0 then return tt_comps(Q.forward(q)) elseif a == 1 then return tt_comps(Q.right(q)) end
+    return tt_comps(Q.up(q))
+end
+local function tt_find_tip(U, Q, gun, trav)
+    local b = TT.barrel
+    b.gun, b.tip = gun, false
+    local tx, ty, tz = tt_comps(U.world_position(gun, trav))
+    local fx, fy, fz = tt_axis(Q, U.world_rotation(gun, trav), 0)
+    if not tx or not fx then return end
+    local count
+    if type(U.num_nodes) == 'function' then
+        local okc, c = pcall(U.num_nodes, gun)
+        if okc and type(c) == 'number' and c > 0 and c < 1000 then count = math.floor(c) end
+    end
+    local best, far = nil, 0.5
+    for i = 1, count or 128 do
+        local okp, p = pcall(U.world_position, gun, i)
+        local x, y, z
+        if okp then x, y, z = tt_comps(p) end
+        if not (x and x == x and y == y and z == z and (x - tx) ^ 2 + (y - ty) ^ 2 + (z - tz) ^ 2 <= 144) then
+            if not count then break end
+        else
+            local d = (x - tx) * fx + (y - ty) * fy + (z - tz) * fz
+            if d > far then best, far = i, d end
+        end
+    end
+    if not best then return end
+    local mx, my, mz = tt_comps(U.world_position(gun, best))
+    local n = math.sqrt((mx - tx) ^ 2 + (my - ty) ^ 2 + (mz - tz) ^ 2)
+    local bx, by, bz = (mx - tx) / n, (my - ty) / n, (mz - tz) / n
+    local qm = U.world_rotation(gun, best)
+    local axis, sign, bc = -1, 1, 0.9
+    for a = 0, 2 do
+        local ax, ay, az = tt_axis(Q, qm, a)
+        if ax then
+            local c = ax * bx + ay * by + az * bz
+            if math.abs(c) > bc then axis, sign, bc = a, c < 0 and -1 or 1, math.abs(c) end
+        end
+    end
+    b.tip, b.axis, b.sign, b.trav = best, axis, sign, trav
+end
+local function tt_pitch(U, Q, f, qh)
+    local b = TT.barrel
+    if b.gun ~= f.gun then tt_find_tip(U, Q, f.gun, f.gun_node) end
+    if not b.tip then return nil end
+    local vx, vy, vz
+    if b.axis >= 0 then vx, vy, vz = tt_axis(Q, U.world_rotation(f.gun, b.tip), b.axis)
+    else                                   -- (no axis along the barrel: the line from the turning bone to the tip)
+        local tx, ty, tz = tt_comps(U.world_position(f.gun, b.trav))
+        local mx, my, mz = tt_comps(U.world_position(f.gun, b.tip))
+        if tx and mx then vx, vy, vz = mx - tx, my - ty, mz - tz end
+    end
+    local ux, uy, uz = tt_comps(Q.up(qh))
+    if not vx or not ux then return nil end
+    local n = math.sqrt(vx * vx + vy * vy + vz * vz)
+    if n < 1e-6 then return nil end
+    local d = (b.axis >= 0 and b.sign or 1) * (vx * ux + vy * uy + vz * uz) / n
+    return math.deg(math.asin(math.max(-1, math.min(1, d))))
+end
 local function tt_read_angle()
     local U, _, Q = TT.api()
     local f = TT.found
@@ -511,6 +577,12 @@ local function tt_read_angle()
             ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz = fx, fy, fz, rx, ry, rz, ux, uy, uz
             ax.ok = true
         end
+    end
+    -- (3.5.1 Test 14) the barrel's pitch, while Freelook asks for it (pub.want_pitch, set by Turret Core)
+    TT.pitch = nil
+    if type(pub) == 'table' and pub.want_pitch and Q.up then
+        local okp, pd = pcall(tt_pitch, U, Q, TT.found, qh)
+        TT.pitch = okp and pd or nil
     end
     return math.atan2(gx * rx + gy * ry + gz * rz, gx * fx + gy * fy + gz * fz)
 end
@@ -570,6 +642,7 @@ function TT.shared_angle(world, kind, frame, key)
     if type(pub) ~= 'table' then pub = {}; rawset(_G, 'ArmoredOverhaulTurretAngle', pub) end
     pub.key, pub.kind, pub.angle, pub.why, pub.tank, pub.pick = key, kind, angle, why, TT.tank, TT.pick
     pub.hull = angle and TT.found.unit or nil
+    pub.pitch = angle and TT.pitch or nil                -- (3.5.1 Test 14) for Freelook (nil unless asked)
     -- (the hull's axes, numbers only, for this frame)
     local ax, pa = TT.axes, pub.axes
     if type(pa) ~= 'table' then pa = {}; pub.axes = pa end
@@ -704,9 +777,20 @@ local function set_target_level(a, B)
     local px, py, pz = gx / l, gy / l, 0                             -- along the heading: level when climbing...
     if gz < 0 then local n = math.sqrt(l * l + gz * gz); px, py, pz = gx / n, gy / n, gz / n end   -- ...down the slope
     local ux, uy, uz = ry * pz, -rx * pz, rx * py - ry * px          -- up, square to both (straight up when level)
+    -- (3.5.1 Test 2) the tester: aiming down on a slope "blocks your view from aiming". Pointing downhill, the ground behind
+    -- the tank rises with the slope while the camera's arm back from the turret runs about level, so the farther cameras
+    -- went into the hill and the game pulled them in, low behind the turret, which then hid the ground below the
+    -- crosshair (Test 1 log: asked for 10.4 m back, measured 3.1 to 6.7). In the orbit the point over the turret is
+    -- lifted by what the hill rises over the camera's distance (distance x tan of the slope, the slope taken up to 30
+    -- degrees, in 10 cm steps so a changing slope writes little), so the camera keeps the clearance it has on flat ground
+    local lift = 0
+    if gz < 0 and dist_own then
+        local sn = math.min(0.5, -gz / math.sqrt(l * l + gz * gz))
+        lift = math.floor((dist_own.m + reach) * sn / math.sqrt(1 - sn * sn) * 10 + 0.5) / 10
+    end
     local wx = rx * want.side + px * want.back + ux * want.up
     local wy = ry * want.side + py * want.back + uy * want.up
-    local wz = pz * want.back + uz * want.up
+    local wz = pz * want.back + uz * want.up + lift
     target.side = wx * B.rx + wy * B.ry + wz * B.rz
     target.back = wx * B.fx + wy * B.fy + wz * B.fz
     target.up = wx * B.ux + wy * B.uy + wz * B.uz
@@ -719,12 +803,12 @@ local function note_written()               -- (the target was written and read 
     written.counted = false                 -- (3.0.1 review) a change after it may be counted as a fight-back again
 end
 local function apply()
-    -- (3.0.1 review) once found, the record is checked by its numbered neighbours only, on every build: another camera
+    -- (3.0.1 review) once found, the record is checked by its numbered neighbors only, on every build: another camera
     -- mod changing the gunner view's other values (+0x04..+0x1F) later no longer makes it 'no longer valid' (3.0.1:
     -- then it stopped turning and could leave the camera turned sideways for the session)
     local now, id = check(rec, true)
     if not now then
-        -- its neighbours still in place but its distances unreadable (NaN, out of range): straight behind is written
+        -- its neighbors still in place but its distances unreadable (NaN, out of range): straight behind is written
         -- once before it is left alone, so it is not left turned sideways
         if id and original and not state.rescued then
             state.rescued = true; set_target(0)
@@ -811,7 +895,7 @@ local function turning_text(found, tank, extra)
 end
 -- ---------------------------------------------------------------- scroll-wheel zoom (3.2.0)
 -- (3.2.0) In the gunner seat the mouse wheel moves the camera in and out: the picked distance (Close .. Farthest)
--- is where it starts each time you sit down, every notch moves the pick ZOOM.step metres (wheel up = closer; x cos 10
+-- is where it starts each time you sit down, every notch moves the pick ZOOM.step meters (wheel up = closer; x cos 10
 -- degrees behind, at Close's height since Test 30: 3.4.0 review), and it glides there (ZOOM.speed m/s) so it feels
 -- smooth. (3.4.0 review) The wheel reaches ZOOM.max in the tank's orbit and ZOOM.max_other (the 3.2.0-3.3.0 reach) in
 -- the offset fallback and in the other gunner seats, whose views were not tested further out. From the closest distance, more wheel
@@ -826,8 +910,11 @@ end
 -- the camera's field of view is read before and 0.6 s after: if it didn't narrow, the crosshair zoom is not used for
 -- the rest of the game and the wheel moves the camera only (Test 7: steps that don't show felt like a "buffer"
 -- before the camera moved back).
-local ZOOM = {step = 0.5, min = -0.5, max = 16, max_other = 7, speed = 8, fovs = {}, glide = 12}   -- (3.4.0 Test 28, the tester: "needs to go farther back": the wheel reaches 12, was 7; Test 31: "a bit more": 16)
-do local f = 1.25; while f < 10 do ZOOM.fovs[#ZOOM.fovs + 1] = f; f = f * 1.25 end; ZOOM.fovs[#ZOOM.fovs + 1] = 10 end
+local ZOOM = {step = 1.0, min = -0.5, max = 16, max_other = 7, speed = 16, fovs = {}, glide = 16}   -- (3.4.0 Test 28, the tester: "needs to go farther back": the wheel reaches 12, was 7; Test 31: "a bit more": 16)
+-- (3.5.1) the tester: the wheel was "slow to adjust": twice as fast, 1 m a notch (was 0.5), gliding there quicker (16 m/s,
+-- was 8). (Test 2, the tester: "the zoom in should zoom in by 1x each time") the crosshair zoom goes up 1x a notch: x2, x3 ..
+-- x10 (9 notches; Test 1: 1.5x steps, 3.5.0: 1.25x steps, 11 notches); it glides there at 16 (was 12)
+for f = 2, 10 do ZOOM.fovs[#ZOOM.fovs + 1] = f end
 local zoom = {seated = false, extra = 0, d = nil, t = nil, idx = nil, level = 0, f = 1, notches = 0}
 -- (3.4.0) the FRV gunner seat's and the emplacements' zoom (see 'other gunner seats')
 local OZ = {view = nil, extra = 0, d = 0, level = 0, f = 1, t = nil, ours_o = nil, ours_f = nil, checked = {}, writes = 0, reset = 0,
@@ -1312,7 +1399,7 @@ local function readout(seated, level)
     end
     local mh = G.material(g, m)
     if mh ~= nil then M.set_texture(mh, slot, a) end
-    local str = level > 0 and string.format(ZOOM.fovs[level] < 9.95 and 'x%.1f' or 'x%.0f', ZOOM.fovs[level]) or 'x1'
+    local str = level > 0 and string.format('x%d', math.floor(ZOOM.fovs[level] + 0.5)) or 'x1'   -- (3.5.1 Test 2: whole steps, x2 .. x10)
     local k = age <= RO.hold and 1 or math.max(0, 1 - (age - RO.hold) / RO.fade)
     if RO.texts then
         RO.frames = RO.frames + 1
@@ -1354,14 +1441,17 @@ local function zoom_frame(seated)
     local level_was = zoom.level
     -- (3.4.0 review) 16 m in the orbit only; the offset fallback keeps the 3.2.0-3.3.0 reach (or the pick, if further)
     local lo, hi = ZOOM.min - distance, (dist_own and ZOOM.max or math.max(ZOOM.max_other, distance)) - distance
+    -- (3.5.1) the camera keeps to whole steps from the pick (Close's -0.5 and the 16 m end are half a step off them): a
+    -- notch away from either end goes to the next whole step, so the wheel always comes back to the same places
+    local st = ZOOM.step
     while n > 0 do                                          -- wheel up: closer, then the crosshair zoom
-        if zoom.extra > lo + 1e-6 then zoom.extra = math.max(lo, zoom.extra - ZOOM.step)
+        if zoom.extra > lo + 1e-6 then zoom.extra = math.max(lo, st * math.ceil(zoom.extra / st - 1 - 1e-6))
         elseif zoom.level < #ZOOM.fovs and fov.works ~= false then zoom.level = zoom.level + 1 end
         n = n - 1
     end
     while n < 0 do                                          -- wheel down: the crosshair zoom out first, then back
         if zoom.level > 0 then zoom.level = zoom.level - 1
-        else zoom.extra = math.min(hi, zoom.extra + ZOOM.step) end
+        else zoom.extra = math.min(hi, st * math.floor(zoom.extra / st + 1 + 1e-6)) end
         n = n + 1
     end
     local goal = distance + zoom.extra
@@ -1592,7 +1682,7 @@ local function other_frame(v)
     local key = v.id * 100000 + OZ.level * 1000 + math.floor(OZ.extra * 10 + 0.5) + (aim and 0.5 or 0)
     if key ~= OZ.key then
         OZ.key = key
-        state.other_zoom = v.name .. ': ' .. string.format('camera %.1f m further back, crosshair zoom x%.1f when aiming', OZ.extra, goalf)
+        state.other_zoom = v.name .. ': ' .. string.format('camera %.1f m further back, crosshair zoom x%g when aiming', OZ.extra, goalf)
         if TESTER then pcall(other_detail, v, aim); OZ.detail_at = state.clock + 0.8 end     -- (and again once the zoom has glided)
     elseif TESTER and OZ.detail_at and state.clock >= OZ.detail_at then
         OZ.detail_at = nil; pcall(other_detail, v, aim)
@@ -1752,9 +1842,9 @@ end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
 local next_check = 0                                    -- (main loop: frame of the next check; set by the menu too)
--- (Test 32) the labels give where the camera really ends up from the turret, as measured, rounded to half a metre:
+-- (Test 32) the labels give where the camera really ends up from the turret, as measured, rounded to half a meter:
 -- (3.4.0 review: brought up to date) the picks ask for about 1.0 / 4.45 / 7.4 / 10.4 m behind (the game's own 1 m, half a
--- metre and the pick x cos 10 degrees) and give about 1.5 / 3.5 / 5 / 6.5 m (the game's view keeps less of a long distance)
+-- meter and the pick x cos 10 degrees) and give about 1.5 / 3.5 / 5 / 6.5 m (the game's view keeps less of a long distance)
 local MENU_PRESETS = {false, -0.5, 3, 6, 9}             -- Off (the game's own view), Close, Far, Farther, Farthest (Test 28: were 2, 4, 6)
 local MENU_PICK = 2
 for i, d in ipairs(MENU_PRESETS) do if d == PRESET then MENU_PICK = i end end
@@ -1800,6 +1890,11 @@ local function tick()
             local okw, wrote = true, false
             if not blocked then okw, wrote = pcall(write, target) end              -- (3.0 review: not after giving up)
             if okw and wrote then note_written() end
+            -- ((3.5.1 review) the zoom, the other seats' views and the wheel's distance go back too: before, a zoomed view
+            -- (up to x10) or a pushed-back FRV or emplacement view stayed so for the rest of the session)
+            pcall(apply_fov, 1); pcall(other_release); pcall(ro_clear)
+            zoom.level, zoom.f, zoom.seated, zoom.extra = 0, 1, false, 0
+            if distance then pcall(set_want, distance) end
             log()
         end
     end

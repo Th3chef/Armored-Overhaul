@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_collision_damage
--- Armored Overhaul 3.5.0 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
+-- Armored Overhaul 3.5.1 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
 -- buildings they drive into instead of stopping dead against them. Written from scratch. (Named Tank Wall Breaking until
 -- 3.5.0 Test 3: the tester named it Tank Collision Damage Boost, since it breaks small buildings too.)
 --
@@ -50,12 +50,12 @@ local REF_KMH = 35                             -- the tanks' full speed (the gam
 -- (3.5.0 release, the tester: "actually, lets do 30/35/40")
 local CURVE = {{0, 30}, {0.5, 35}, {0.75, 40}} -- {fraction of REF_KMH, demolition}; 40 from 3/4 up, never above 40
 local CAP = 40
-local PEAK_HOLD = 0.15             -- (Test 7, the tester: "it seems to stay on the high demo for a little long before its reduced
-                                   -- again": Test 6 held 0.4 s; 0.15 s still covers the hit in the frames the tank stops)
+local PEAK_HOLD = 0.25             -- (Test 7, the tester: "it seems to stay on the high demo for a little long before its reduced
+                                   -- again": Test 6 held 0.4 s, 3.5.0 0.15 s; 3.5.1 Test 3, the tester: "too short. .25 seconds is fine")
 local GAME = {25, 35}                          -- the game's own values for both tanks (Sept 2026 build)
-local RING = 64                                -- speed samples kept per tank (PEAK_HOLD at up to ~400 frames a second)
+local RING = 128                               -- speed samples kept per tank (PEAK_HOLD at up to ~500 frames a second; 3.5.0: 64)
 
-local S = {version = '3.5.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.5.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            tanks = 'not yet', writes = 0, reapplied = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (the mod manager\'s pick)', frames = 0}
 rawset(_G, 'ArmoredOverhaulCollisionDamage', S)
@@ -66,7 +66,7 @@ local function log()
         if not f then return end
         f:write('Armored Overhaul - Tank Collision Damage Boost\n', 'version: ', S.version, '\n', 'status: ', S.status, '\n',
             'game: ', S.game, '\n', 'found: ', S.found, ' (', S.how, ')\n',
-            'tanks: ', S.tanks, '\n', S.speed and ('speed: ' .. S.speed .. '\n') or '', 'put back after the game reset them: ', S.reapplied, '\n',
+            'tanks: ', S.tanks, '\n', S.speed and ('speed: ' .. S.speed .. '\n') or '', 'followed: ', tostring(S.driving or 'not driving yet'), '\n', 'put back after the game reset them: ', S.reapplied, '\n',
             'options menu: ', S.options_menu, '\n', 'errors: ', S.errors, '\n', 'last error: ', S.last_error, '\n')
         if TESTER then f:write('-- tester details --\n', 'frames: ', S.frames, '\n', 'writes: ', S.writes, '\n', tostring(S.detail or ''), '\n') end
         f:close()
@@ -92,7 +92,7 @@ local function readable(p, n)
     if a < 0x10000 or a > 0x7FFFFFFFFFFF then return false end
     local e = a + n
     while a < e do
-        if k32.VirtualQuery(ffi.cast('void *', a), mbi, ffi.sizeof(mbi)) == 0 then return false end
+        if k32.VirtualQuery(ffi.cast('void *', a), ffi.cast('void *', mbi), ffi.sizeof(mbi)) == 0 then return false end
         if mbi.state ~= 0x1000 or bit.band(mbi.prot, 0xEE) == 0 or bit.band(mbi.prot, 0x101) ~= 0 then return false end
         a = tonumber(ffi.cast('uintptr_t', mbi.base)) + tonumber(mbi.size)
     end
@@ -107,13 +107,13 @@ local function ptr(p)
 end
 -- writes two floats (a record's +0x14 and +0x18), opening a read-only page for the write only
 local function write_pair(p, a, b)
-    if k32.VirtualQuery(p, mbi, ffi.sizeof(mbi)) == 0 then return false end
+    if k32.VirtualQuery(ffi.cast('void *', p), ffi.cast('void *', mbi), ffi.sizeof(mbi)) == 0 then return false end
     if mbi.state ~= 0x1000 or bit.band(mbi.prot, 0x101) ~= 0 then return false end
     local writable = bit.band(mbi.prot, 0xCC) ~= 0
-    if not writable and k32.VirtualProtect(p, 8, 0x04, old) == 0 then return false end
+    if not writable and k32.VirtualProtect(ffi.cast('void *', p), 8, 0x04, ffi.cast('void *', old)) == 0 then return false end
     local f = ffi.cast('float *', p)
     f[0], f[1] = a, b
-    if not writable then local o2 = ffi.new('unsigned long[1]'); k32.VirtualProtect(p, 8, old[0], o2) end
+    if not writable then local o2 = ffi.new('unsigned long[1]'); k32.VirtualProtect(ffi.cast('void *', p), 8, old[0], ffi.cast('void *', o2)) end
     S.writes = S.writes + 1
     return true
 end
@@ -156,7 +156,7 @@ local scan = {at = 0x1000, hits = {}}
 local function scan_step()
     local a = scan.at
     if a >= image_size - 0xA0 then return true end
-    if k32.VirtualQuery(game + a, mbi, ffi.sizeof(mbi)) == 0 then scan.at = a + 0x1000; return false end
+    if k32.VirtualQuery(ffi.cast('void *', game + a), ffi.cast('void *', mbi), ffi.sizeof(mbi)) == 0 then scan.at = a + 0x1000; return false end
     local rb = tonumber(ffi.cast('uintptr_t', mbi.base)) - tonumber(ffi.cast('uintptr_t', game))
     local re = math.min(rb + tonumber(mbi.size), image_size - 0xA0)
     local code = mbi.state == 0x1000 and bit.band(mbi.prot, 0xF0) ~= 0 and bit.band(mbi.prot, 0x101) == 0
@@ -295,8 +295,12 @@ local function apply()
     return n, table.concat(parts, '; ')
 end
 local function restore()
+    -- ((3.5.1 review) only into the table the values were written to: a table the game loaded again since may be
+    -- somewhere else, and its old place reused)
+    local root = found and readable(found.root, 8) and ptr(found.root)
+    local tbl = root and readable(root + found.table_at, 8) and ptr(root + found.table_at)
     for _, hd in pairs(held) do
-        if hd.set and readable(hd.rec + 0x14, 8) and ours(f32(hd.rec + 0x14), f32(hd.rec + 0x18)) then
+        if hd.set and tbl and tbl == hd.tbl and readable(hd.rec + 0x14, 8) and ours(f32(hd.rec + 0x14), f32(hd.rec + 0x18)) then
             pcall(write_pair, hd.rec + 0x14, hd.game[1], hd.game[2])
             hd.set = false
         end
@@ -385,21 +389,45 @@ local next_list = 0
 local fastest_seen = {}     -- hull name -> highest km/h seen (Tester log)
 local out = {}              -- (3.5.0 review) reused each frame: name -> km/h of the fastest
 -- each tank's sideways speed this frame (km/h), the highest of the last PEAK_HOLD s; returns name -> km/h of the fastest
+-- (3.5.1 Test 15) the tester: "the collision boost should only apply while driving a tank. A tank that isnt being
+-- driven doesnt need it running". Tank Core (now part of this option) publishes your seat: only while you drive a
+-- Bastion or Maelstrom (the driver's seat, or its gunner seat with Gunner Drive driving) is a tank followed, only that
+-- kind, and only your own tank when the Turret indicator / Gunner camera say which it is. Otherwise nothing is looked
+-- up or followed and both tanks stay at the crawling value. Without Tank Core's seat (an old copy) every tank, as before.
+local KIND_NAME = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
+local drive = {kind = nil, was = nil}
+local function driving_kind()
+    local seat = rawget(_G, 'ArmoredOverhaulSeat')
+    if type(seat) ~= 'table' then return 'any' end
+    local name = KIND_NAME[seat.kind]
+    if name and (seat.role == 1 or seat.role == 4 or seat.driving == true) then return name end
+    return nil
+end
 local function speeds()
     out.Bastion, out.Maelstrom = nil, nil
+    local want = driving_kind()
+    if want ~= drive.was then                  -- (started or stopped driving, or another tank: looked up at once)
+        drive.was = want; next_list = 0
+        for u in pairs(tanks) do tanks[u] = nil end
+        S.driving = want == nil and 'not driving: nothing followed' or (want == 'any' and 'every tank (no seat from Tank Core)' or ('driving a ' .. want))
+    end
+    if not want then return out end
     if not speed_api_ok() then return out end
     local okn, now = pcall(A.time_since_launch)
     if not okn or type(now) ~= 'number' then return out end
-    local okw, world = pcall(A.main_world)
-    if not okw or not world then return out end
-    if now >= next_list then                       -- the tanks out, looked for twice a second
-        next_list = now + 0.5
+    if now >= next_list then                       -- the tanks out, looked for every 2 s
+        next_list = now + 2      -- ((3.5.1 Test 14) every 2 s, was 0.5: the tester, "taking up a lot of performance")
+        local okw, world = pcall(A.main_world)     -- ((Test 14) only here: 3.5.0-Test 13 asked for it every frame)
+        if not okw or not world then return out end
         local seen = {}
+        local pub = rawget(_G, 'ArmoredOverhaulTurretAngle')
+        local mine = want ~= 'any' and type(pub) == 'table' and KIND_NAME[pub.kind] == want and pub.hull or nil
         for name, res in pairs(HULL_RES) do
-            local ok, us = pcall(W.units_by_resource, world, res)
+            local ok, us = false, nil
+            if want == 'any' or want == name then ok, us = pcall(W.units_by_resource, world, res) end
             for _, u in ipairs(ok and type(us) == 'table' and us or {}) do
-                seen[u] = true
-                if not tanks[u] then
+                if mine == nil or u == mine then seen[u] = true end
+                if seen[u] and not tanks[u] then
                     local okh, has = pcall(U.has_node, u, 'root')
                     local okr, root = false, nil
                     if okh and has then okr, root = pcall(U.node, u, 'root') end
@@ -409,15 +437,20 @@ local function speeds()
                 end
             end
         end
-        for u in pairs(tanks) do if not seen[u] then tanks[u] = nil end end
+        for u in pairs(tanks) do
+            local oka, alive = pcall(U.alive, u)
+            if not seen[u] or not (oka and alive) then tanks[u] = nil end
+        end
     end
+    -- ((3.5.1 Test 14) a tank's 'alive' is asked at the 2 s list; every frame only its place: a unit gone since fails
+    -- the read and is dropped. Three engine calls a frame with one tank out, was five)
     for u, e in pairs(tanks) do
-        local oka, alive = pcall(U.alive, u)
-        if oka and alive then
+        do
             local okp, p = pcall(U.world_position, u, e.root)
             local okx, x, y = false, nil, nil
             if okp then okx, x, y = pcall(V3.to_elements, p) end
-            if okx and type(x) == 'number' and type(y) == 'number' then
+            if not okp then tanks[u] = nil
+            elseif okx and type(x) == 'number' and type(y) == 'number' then
                 if e.t and now > e.t then
                     local kmh = math.sqrt((x - e.x) ^ 2 + (y - e.y) ^ 2) / (now - e.t) * 3.6
                     if kmh < 200 then                                  -- (not a jump: a respawn or a teleport)
@@ -429,11 +462,16 @@ local function speeds()
                 e.x, e.y, e.t = x, y, now
                 local top, since = 0, now - PEAK_HOLD
                 local pt, pk = e.pt, e.pk
-                for k = 1, RING do if pt[k] >= since and pk[k] > top then top = pk[k] end end
+                -- (3.5.1 review) newest first, stopping at the first sample older than the hold: the samples are in time order
+                -- round the ring (about 15 a frame at 60 fps; 3.5.0 looked at all of them every frame)
+                local k = e.i
+                for _ = 1, RING do
+                    if k < 1 or pt[k] < since then break end
+                    if pk[k] > top then top = pk[k] end
+                    k = k > 1 and k - 1 or RING
+                end
                 out[e.kind] = math.max(out[e.kind] or 0, top)
             end
-        else
-            tanks[u] = nil
         end
     end
     return out
@@ -443,6 +481,22 @@ local function table_now()
     local root = readable(found.root, 8) and ptr(found.root)
     return root and readable(root + found.table_at, 8) and ptr(root + found.table_at)
 end
+-- (3.5.1 Test 14) the tester: "tank collision damage boost is taking up a lot of performance". Test 13 asked Windows
+-- (VirtualQuery) about 45 times a second just to see the table hadn't moved (every 6 frames, and before writes). The
+-- settings-root global is in game.dll's own data, always there, so it is read directly; the root object it points to
+-- is checked once each time that pointer changes, and its table pointer is then read directly too. Only compared with
+-- the table this addon wrote to (apply checked that one), never read through unless it is that one.
+local fast = {root = nil, ok = false}
+local function table_fast()
+    local g = tonumber(ffi.cast('uintptr_t', found.root)) - tonumber(ffi.cast('uintptr_t', game))
+    if g < 0x1000 or g + 8 > image_size then return table_now() end          -- (not in game.dll's image: the slow way)
+    local root = ffi.cast('uint8_t **', found.root)[0]
+    if root == nil then fast.root = nil; return nil end
+    if root ~= fast.root then fast.root, fast.ok = root, readable(root + found.table_at, 8) end
+    if not fast.ok then return nil end
+    local t = ffi.cast('uint8_t **', root + found.table_at)[0]
+    return t ~= nil and t or nil
+end
 local refused = 0
 -- every frame: each tank type's demolition from its fastest tank, written when it changes. (3.5.0 review) Before a
 -- write the table is checked to be where it was (a reloaded table goes to apply at once, nothing written to the old
@@ -450,17 +504,23 @@ local refused = 0
 local function follow_speed()
     local v = speeds()
     local verify = S.frames % 30 == 0
+    -- (3.5.1 Test 3) the game's settings loaded again into a new table: looked for every 6 frames (3.5.0 noticed it only at
+    -- the next change of value, which the longer hold now delays, or the half-second check)
+    if S.frames % 6 == 0 then
+        local hd0 = held[HULLS[1].name] or held[HULLS[2].name]
+        if hd0 and hd0.tbl and table_fast() ~= hd0.tbl then next_check = 0 end
+    end
     for _, h in ipairs(HULLS) do
         local d = demolition(v[h.name] or 0)
         wanted[h.name] = d
         local hd = held[h.name]
         if hd and want_on and refused < 5 then
             local w = math.min(CAP, math.max(d, hd.game[1]))
-            if verify and hd.now and readable(hd.rec + 0x14, 8) and math.abs(f32(hd.rec + 0x14) - hd.now) > 1e-3 then
+            if verify and hd.now and table_fast() == hd.tbl and math.abs(f32(hd.rec + 0x14) - hd.now) > 1e-3 then
                 hd.now = nil; next_check = 0                         -- (apply looks at it this frame)
             elseif hd.now ~= w then
-                if table_now() ~= hd.tbl then next_check = 0
-                elseif readable(hd.rec + 0x14, 8) then
+                if table_fast() ~= hd.tbl then next_check = 0
+                else
                     local a, b = f32(hd.rec + 0x14), f32(hd.rec + 0x18)
                     if ours(a, b) or (math.abs(a - hd.game[1]) < 1e-3 and math.abs(b - hd.game[2]) < 1e-3) then
                         if write_pair(hd.rec + 0x14, w, w) then hd.now = w; hd.set = true
@@ -499,6 +559,11 @@ local function tick()
     end
     if phase == 'scan' then
         if not scan_step() then return end
+        phase, scan.tries = 'choose', 0
+    end
+    -- ((3.5.1 review) the candidates are kept and looked at again every 2 s while the vehicle settings aren't loaded yet:
+    -- before, with more than one candidate, the option turned itself off for the session when the search ended first)
+    if phase == 'choose' then
         -- the one whose table lists both tank hulls (another component with the same record size would not)
         for _, acc in ipairs(scan.hits) do
             found = acc
@@ -508,6 +573,12 @@ local function tick()
             found = nil
         end
         if not found and #scan.hits == 1 then found = scan.hits[1] end      -- (settings not loaded yet: checked below)
+        if not found and #scan.hits > 1 and scan.tries < 150 then          -- (up to 5 minutes)
+            scan.tries = scan.tries + 1; next_check = S.frames + 120
+            local text = string.format('waiting for the vehicle settings to tell %d candidates apart', #scan.hits)
+            if S.status ~= text then S.status = text; log() end
+            return
+        end
         if not found then
             S.status = string.format('off: this game build\'s vehicle collision settings not recognized (%d candidate(s))', #scan.hits)
             phase = 'off'; log(); return
@@ -521,7 +592,7 @@ local function tick()
         S.tanks = line
         S.status = n == 0 and 'waiting for the vehicle settings' or (want_on and 'on' or 'off (Mod Options Menu): the game\'s own')
         if n == 0 then next_check = S.frames + 120 end
-        local text = S.status .. S.tanks .. S.reapplied .. S.options_menu
+        local text = S.status .. S.tanks .. S.reapplied .. S.options_menu .. tostring(S.driving)
         if text ~= shown then shown = text; log() end
     end
 end
