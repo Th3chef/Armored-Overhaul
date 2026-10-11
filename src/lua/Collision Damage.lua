@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_collision_damage
--- Armored Overhaul 3.5.0 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
+-- Armored Overhaul 3.5.1 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
 -- buildings they drive into instead of stopping dead against them. Written from scratch. (Named Tank Wall Breaking until
 -- 3.5.0 Test 3: the tester named it Tank Collision Damage Boost, since it breaks small buildings too.)
 --
@@ -50,12 +50,12 @@ local REF_KMH = 35                             -- the tanks' full speed (the gam
 -- (3.5.0 release, the tester: "actually, lets do 30/35/40")
 local CURVE = {{0, 30}, {0.5, 35}, {0.75, 40}} -- {fraction of REF_KMH, demolition}; 40 from 3/4 up, never above 40
 local CAP = 40
-local PEAK_HOLD = 0.15             -- (Test 7, the tester: "it seems to stay on the high demo for a little long before its reduced
-                                   -- again": Test 6 held 0.4 s; 0.15 s still covers the hit in the frames the tank stops)
+local PEAK_HOLD = 0.25             -- (Test 7, the tester: "it seems to stay on the high demo for a little long before its reduced
+                                   -- again": Test 6 held 0.4 s, 3.5.0 0.15 s; 3.5.1 Test 3, the tester: "too short. .25 seconds is fine")
 local GAME = {25, 35}                          -- the game's own values for both tanks (Sept 2026 build)
-local RING = 64                                -- speed samples kept per tank (PEAK_HOLD at up to ~400 frames a second)
+local RING = 128                               -- speed samples kept per tank (PEAK_HOLD at up to ~500 frames a second; 3.5.0: 64)
 
-local S = {version = '3.5.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.5.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            tanks = 'not yet', writes = 0, reapplied = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (the mod manager\'s pick)', frames = 0}
 rawset(_G, 'ArmoredOverhaulCollisionDamage', S)
@@ -295,8 +295,12 @@ local function apply()
     return n, table.concat(parts, '; ')
 end
 local function restore()
+    -- ((3.5.1 review) only into the table the values were written to: a table the game loaded again since may be
+    -- somewhere else, and its old place reused)
+    local root = found and readable(found.root, 8) and ptr(found.root)
+    local tbl = root and readable(root + found.table_at, 8) and ptr(root + found.table_at)
     for _, hd in pairs(held) do
-        if hd.set and readable(hd.rec + 0x14, 8) and ours(f32(hd.rec + 0x14), f32(hd.rec + 0x18)) then
+        if hd.set and tbl and tbl == hd.tbl and readable(hd.rec + 0x14, 8) and ours(f32(hd.rec + 0x14), f32(hd.rec + 0x18)) then
             pcall(write_pair, hd.rec + 0x14, hd.game[1], hd.game[2])
             hd.set = false
         end
@@ -429,7 +433,14 @@ local function speeds()
                 e.x, e.y, e.t = x, y, now
                 local top, since = 0, now - PEAK_HOLD
                 local pt, pk = e.pt, e.pk
-                for k = 1, RING do if pt[k] >= since and pk[k] > top then top = pk[k] end end
+                -- (3.5.1 review) newest first, stopping at the first sample older than the hold: the samples are in time order
+                -- round the ring (about 15 a frame at 60 fps; 3.5.0 looked at all of them every frame)
+                local k = e.i
+                for _ = 1, RING do
+                    if k < 1 or pt[k] < since then break end
+                    if pk[k] > top then top = pk[k] end
+                    k = k > 1 and k - 1 or RING
+                end
                 out[e.kind] = math.max(out[e.kind] or 0, top)
             end
         else
@@ -450,6 +461,12 @@ local refused = 0
 local function follow_speed()
     local v = speeds()
     local verify = S.frames % 30 == 0
+    -- (3.5.1 Test 3) the game's settings loaded again into a new table: looked for every 6 frames (3.5.0 noticed it only at
+    -- the next change of value, which the longer hold now delays, or the half-second check)
+    if S.frames % 6 == 0 then
+        local hd0 = held[HULLS[1].name] or held[HULLS[2].name]
+        if hd0 and hd0.tbl and table_now() ~= hd0.tbl then next_check = 0 end
+    end
     for _, h in ipairs(HULLS) do
         local d = demolition(v[h.name] or 0)
         wanted[h.name] = d
@@ -499,6 +516,11 @@ local function tick()
     end
     if phase == 'scan' then
         if not scan_step() then return end
+        phase, scan.tries = 'choose', 0
+    end
+    -- ((3.5.1 review) the candidates are kept and looked at again every 2 s while the vehicle settings aren't loaded yet:
+    -- before, with more than one candidate, the option turned itself off for the session when the search ended first)
+    if phase == 'choose' then
         -- the one whose table lists both tank hulls (another component with the same record size would not)
         for _, acc in ipairs(scan.hits) do
             found = acc
@@ -508,6 +530,12 @@ local function tick()
             found = nil
         end
         if not found and #scan.hits == 1 then found = scan.hits[1] end      -- (settings not loaded yet: checked below)
+        if not found and #scan.hits > 1 and scan.tries < 150 then          -- (up to 5 minutes)
+            scan.tries = scan.tries + 1; next_check = S.frames + 120
+            local text = string.format('waiting for the vehicle settings to tell %d candidates apart', #scan.hits)
+            if S.status ~= text then S.status = text; log() end
+            return
+        end
         if not found then
             S.status = string.format('off: this game build\'s vehicle collision settings not recognized (%d candidate(s))', #scan.hits)
             phase = 'off'; log(); return
