@@ -21,5 +21,4 @@ The thumbnail, gallery photo, header, social picture and the "What's in 3.5" and
    icons next to the scripts): `art3_compose.py square`, `wide`, `social` and `header` (one per run),
    `features3.py` and `options3_sheet.py`.
 
-`thumbnail.png` here is the Arsenal icon that goes into the mod zip. It still shows the 3.4 badge, so the 3.5.0 zip rebuilds
-exactly; the next release takes the new `thumbnail_512.png` from `art3_compose.py square`.
+`thumbnail.png` here is the Arsenal icon that goes into the mod zip: `thumbnail_512.png` from `art3_compose.py square`.
