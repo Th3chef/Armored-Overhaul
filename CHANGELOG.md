@@ -1,5 +1,38 @@
 # Changelog
 
+## 3.5.1
+
+New:
+- **Freelook for the tank gunner:** a new key in the controls (tab MODS, section ARMORED OVERHAUL), **"Tank Turret: Freelook"**, needs CowboyBingus's Mod Bindings Menu. Look around while the gun stays where it points, left/right and up/down; let go and the turret turns to where you look. The trigger you pick for the key in the controls decides how it works: *Hold* = Freelook while you hold it, *Press* / *Double tap* / *Long press* = on, and off the next time. Works with any of the turret options (MBT Turrets, Traverse, Elevation, Gun Depression, Gun Raise) and needs the Vehicle Indicator or the Tank Gunner Camera on (they measure where the gun points).
+
+Changed:
+- **Gunner camera zoom, faster:** each mouse wheel notch moves the camera 1 m (was 0.5 m), and the crosshair zoom goes up one whole step a notch: x2, x3 ... x10 (was 1.25x steps). Both glide into place quicker. Also in the M-102 FRV's gunner seat, on the HMG and Anti-Tank Emplacements, and for the Zoom In / Zoom Out keys.
+- **Aiming down a slope:** pointing downhill, the gunner camera rises with the hill behind it, so the turret no longer blocks your view of the ground below the crosshair.
+- **Aiming on slopes:** with MBT Turrets, the gun's up/down range follows the slope under the turret, so turned back up a steep hill the gun still aims down the slope (and up it when the nose points down). It only ever widens, never holds the gun up or down. The gunner view looks down to 80 degrees below the hull with MBT Turrets.
+- **Tank Collision Damage Boost:** only runs while you drive a tank (the driver seat, or the gunner seat with Gunner Drive) and only for the tank you drive; nothing runs on foot. It now includes Tank Core (which tells it your seat). After a hit the higher demolition is kept 0.25 s (was 0.15). Much lighter: about 1 call into Windows a second (was 45).
+- **Mod manager icon:** shows the 3.5 art.
+
+Fixes & code review:
+- **Corpse Cleanup and other mods:** Tank Collision Damage Boost and Vehicle Loadout could stop with an error when another mod (such as Corpse Cleanup) loaded first and described a Windows memory call its own way. Every option now works whatever loads first.
+- Holding W with a key set for Forward in the Mod Bindings Menu no longer nudges the tank (the known issue from 3.5.0).
+- Gunner Drive switches off the engine it started when you drive the same tank again and get out.
+- The HMG and Anti-Tank Emplacement zoom works in the release build too (it worked only while someone was in a tank or FRV).
+- The Vehicle Indicator and Driver Panel skip the game font or skull for the rest of a session after one made the game close, and never draw into a screen that went away during a mission load. The indicator no longer redraws every frame while the turret points straight back.
+- The live handling options (Top Speed, Engine Torque, Grip, Stability, the gear changes) search the game after an update one at a time instead of all at once, and remember what they found for that game version. Turning one Off in the Mod Options Menu after an error now puts the game's own value back.
+- Tank Collision Damage Boost only writes to the game settings it set before, and waits for the settings to load when a patched game has more than one candidate.
+- Vehicle Loadout checks a vehicle's entry is still that vehicle's before putting it back.
+- The gunner camera's crosshair zoom is undone at once if following the turret fails.
+
+Upgrading:
+- Install it over 3.5.0, then Purge & Deploy. Your options stay as they are.
+- For Freelook: set a key for "Tank Turret: Freelook" in the controls, tab MODS.
+
+Known issues:
+- The tank's body (what you stand on and what the tank drives into) is still the game's own shape, whose top is the old turret's roof: with the turret centered or turned you can stand at roof height where the old turret was, in thin air.
+- Smoke from the gunner seat doesn't work in a tank another player called in yet.
+- Tank Suspension still needs the tank to be called in again after a change; every other tank option changes mid-game.
+- Freelook in multiplayer: the game keeps one setting for both tanks' main guns, so while you hold Freelook as the host, another player's turret may stop turning too. Tell me if you see it.
+
 ## 3.5.0
 
 New option:
