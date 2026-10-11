@@ -21,11 +21,15 @@ What changes, read from each file itself:
     the wheels' friction rolls the hull at full strength), +0x34 chassis unit inertia roll (game 2, half its yaw and
     pitch 4), +0x3C friction equalizer (game 0: when one track unloads, its share of the grip lands on the other track
     in one step).
+(3.4.1 Test 21) Also writes 'Turret Hit Areas' (Tank MBT Turrets): the game's files with only the turret's hit areas
+moved (hit_areas.py), which every preset carries too.
 Usage: make_suspension.py VANILLA_DIR OUT_DIR
   (VANILLA_DIR: the two hull physics resources as <resource id>.physics; OUT_DIR gets one folder per preset)"""
 import struct, sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tools'))
 import patch_writer
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import hit_areas          # (3.4.1 Test 21) the turret's hit areas on the turret's mount (see hit_areas.py)
 PHYSICS = 0x5f7203c8f280dab8
 BASTION, MAELSTROM = 0x16474112801385b6, 0xb0c9faf4af8903f9      # TD-220 Bastion hull, TD-110 Maelstrom hull
 GAME = {'spring': 12.0, 'comp': 0.5, 'rebound': 3.7, 'roll_torque': 1.0, 'roll_inertia': 2.0, 'equalizer': 0.0,
@@ -177,5 +181,10 @@ if __name__ == '__main__':
     for fid, data in originals:
         assert struct.unpack_from('<Q', data, 8)[0] == fid, hex(fid)       # (the file names its own resource id)
     for folder, p in PRESETS.items():
-        write_patch(os.path.join(out, folder, '9ba626afa44a3aa3.patch_0'), [(fid, PHYSICS, retune(d, p)) for fid, d in originals])
+        # (3.4.1 Test 21) each preset carries the turret's hit areas too: it replaces the same files as Tank MBT Turrets'
+        # copy, and comes after it in the option list, so with both picked this one is used
+        write_patch(os.path.join(out, folder, '9ba626afa44a3aa3.patch_0'), [(fid, PHYSICS, hit_areas.retarget(retune(d, p))) for fid, d in originals])
         print(folder, p, 'rests %.3f m off its stops, rides %.2f m above the game, centre of mass z %.2f' % (rest_extension(p), rest_extension(p) - mount_shift(p), GAME['com_z'] - p.get('com_drop', 0)) if 'travel' in p else '')
+    # (3.4.1 Test 21) Tank MBT Turrets' copy: the game's physics with only the turret's hit areas moved onto the mount
+    write_patch(os.path.join(out, 'Turret Hit Areas', '9ba626afa44a3aa3.patch_0'), [(fid, PHYSICS, hit_areas.retarget(d)) for fid, d in originals])
+    print('Turret Hit Areas: the game\'s physics, %d of the turret\'s hit areas on the turret\'s mount' % len(hit_areas.moved()))
