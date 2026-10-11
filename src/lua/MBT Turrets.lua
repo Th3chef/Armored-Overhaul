@@ -1,11 +1,11 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.5.0 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.5.1 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
 -- mounts. Every frame, for every Bastion and Maelstrom out, this turns that mount to the main gun's heading and carries
--- the Maelstrom's pod and smoke launcher mounts round the turret's axis, so the turret armour, pods and launchers follow
--- the gun. Because the armour stays on the hull, the game's own camo and damage looks apply to it. The second gun on
+-- the Maelstrom's pod and smoke launcher mounts round the turret's axis, so the turret armor, pods and launchers follow
+-- the gun. Because the armor stays on the hull, the game's own camo and damage looks apply to it. The second gun on
 -- that mount (the Bastion's second gun, the Maelstrom's laser designator) has its own left/right locked by the turret
 -- core, so it points where the main gun does. Writes ArmoredOverhaul-TurretModels.log.
 -- (Test 21) The Bastion's gun search keeps the gun with a model (see find_gun).
@@ -24,12 +24,12 @@
 -- still turns, without it.
 -- (3.3.0 Test 4) Turret Position (the turret moved towards the middle like a real main battle tank, so it
 -- clips less with the wider aim ranges): the turret (its mount, the gun's mount, and everything carried round with it)
--- sits SHIFT metres further forward than the game's casemate (the hull's front is +y). The game's turret top spans
+-- sits SHIFT meters further forward than the game's casemate (the hull's front is +y). The game's turret top spans
 -- y -4.74..0.6 on hulls 9 m long (-4.85..4.13) whose deck stays at the roof line up to y 3.4, so up to 2.5 m forward
 -- the turret floor stays over the deck; 1.5 m puts it at the hull's middle. (Test 8) Default: the game's place. Set in the Mod Options Menu (Turret Core's
--- rows), read here every half second; o.mbt_shift is in metres.
+-- rows), read here every half second; o.mbt_shift is in meters.
 -- (3.4.1 Test 16) Working hatches. The turret's two roof hatches and the gunner's door slide open and shut again as in
--- the game (up to Test 15 they were part of the turret armour and never moved). The game slides them by animating its
+-- the game (up to Test 15 they were part of the turret armor and never moved). The game slides them by animating its
 -- hatch bones every frame, so they can't be carried round from here; the turret models tie each one to a node the game
 -- doesn't animate instead (the seat effect node beside it, see HATCHES), and every frame that node is put where the
 -- hatch is on the turned turret: its rest place plus the hatch's slide read from the game's bone, carried round the
@@ -39,7 +39,7 @@
 -- the gunner got in through the turret's door but out at the game's door place, behind the hull (the tester: "when you
 -- get out, you still use the old hatch location"). Where it lands over the hull's deck it is lifted onto the deck (it is
 -- 0.6 m under the roof line, at the ground behind the tank, where the game has it); off the hull it stays at its height.
--- (3.4.1 Test 21) The turret's hit areas (its armour blocks, side and rear boxes, radar and antenna) follow node b7e9b43d, the
+-- (3.4.1 Test 21) The turret's hit areas (its armor blocks, side and rear boxes, radar and antenna) follow node b7e9b43d, the
 -- mount this turns and moves, from the tank's physics files (Turret Hit Areas): nothing to do here. (3.4.1 Test 20 carried
 -- their own nodes from here; the game's animation put them back every frame.)
 -- (3.4.1 Test 18) The gunner's door swings up and out on its top edge (a hatchback) instead of sliding 0.94 m straight up: the
@@ -66,7 +66,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.5.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.5.1', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
 S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)

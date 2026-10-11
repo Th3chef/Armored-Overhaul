@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.5.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.5.1 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -124,7 +124,7 @@ local LIVE_KNOWN_RVA = 0x50B8B0
 local LIVE_MAP, LIVE_RECORDS = 0x68, 0xA8               -- component: entity map {entries, slots, empty key}; records
 
 -- Gunner camera preset. Known build: table at game.dll+0x32F9990, tank gunner preset id 26. Other builds: the
--- preset is found in the game's writable data by its vanilla limits, then checked against its numbered neighbours.
+-- preset is found in the game's writable data by its vanilla limits, then checked against its numbered neighbors.
 local CAMERA_KNOWN_RVA = 0x32F9990
 local CAMERA_KNOWN_ID = 26
 local CAMERA_STRIDE = 0x90
@@ -142,7 +142,7 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.5.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.5.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -272,6 +272,15 @@ end
 -- VIEW_ABOVE over its highest, never above VIEW_TOP): near straight up the turret spins round (the tester: "the tank will spin
 -- around when you look all the way up"). (3.4.0 review) the slope code (measure-only since Test 35) is gone.
 local VIEW_BELOW, VIEW_ABOVE, VIEW_TOP = 20, 15, 60     -- (Test 38) degrees beyond the gun's range; the highest view
+-- (3.5.1 Test 3) the tester: on an uphill with the turret turned back, the camera "is still locked upward". The view's low
+-- stop is measured from the hull's nose, whichever way the turret faces (Test 2 log: facing down a 30-35 degree slope with
+-- the turret turned back the view never went below +1..+4 against the horizon: nose up 35 with a -26 stop is +9), and the
+-- game takes the stops when you sit down, so they can't follow the slope (why Test 34's slope-following limits didn't help).
+-- With MBT Turrets (the turret faces any way) the low stop is VIEW_TURNED_LOW: room for a turned turret on a steep slope
+-- (Test 37 had -60 and only its top, +80, was a problem). (Test 4) Test 3's log fits the nose rule exactly (facing down 30 / 35 /
+-- 40 degrees the view stopped at -30 / -27 / -19 against the horizon: nose + -60) and the tester still couldn't look down
+-- far enough: -80 (a 40 degree hill still leaves 40 down)
+local VIEW_TURNED_LOW = -80
 -- ---------------------------------------------------------------- logging
 local function log()
     pcall(function()
@@ -284,6 +293,7 @@ local function log()
         for _, g in ipairs(GUNS) do f:write(g.name, ': ', state.guns[g.name] or 'not found', '\n') end
         f:write('tanks already out: ', state.live or 'not looked at yet', '\n')
         f:write('gunner view: ', state.camera, '\n')
+        f:write('aiming on slopes: ', state.slope or 'not used yet', '\n')   -- (3.5.1 Test 5)
         f:write('errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
         if TESTER then
             f:write('-- tester details --\n', 'table: ', state.table, ' (', state.slots, ' slots)\n', 'writes: ', state.applied,
@@ -632,7 +642,7 @@ local function camera_limits(s, o)
         and v.yaw_min >= -180 and v.yaw_max <= 180 and v.yaw_min < v.yaw_max) then return nil end
     return v
 end
--- A preset is accepted only between its numbered neighbours (id - 1 before it, id + 1 after it).
+-- A preset is accepted only between its numbered neighbors (id - 1 before it, id + 1 after it).
 local function camera_check(rec)
     local s = read(rec - CAMERA_STRIDE, CAMERA_STRIDE * 3)
     if not s then return nil end
@@ -710,6 +720,42 @@ local FOUGHT, FIGHT_BACKS, FIGHT_WINDOW = 'another mod keeps changing it: left a
 local fight = {set = {}, backs = {}, off = {}}
 -- What the picked options ask for; everything else stays the game's own.
 local opts = {}
+-- (3.5.1 Test 5) The tester: on a steep uphill with the turret turned back, "the cannon will rise up and cant aim lower". The
+-- guns' up/down stops are measured from the hull's nose, whichever way the turret faces (as the view's: Tests 2-4), so
+-- turned back up a 40 degree hill a -15 stop is +25 against the horizon. Unlike the view's, the guns' stops reach a tank
+-- already out, so with MBT Turrets they follow the slope: both stops move by the slope under the turret's heading minus
+-- the nose's (0 facing ahead, so nothing changes there; turned back up a 40 degree hill -80). From the angle and hull
+-- axes the Turret indicator or Gunner camera publish (ArmoredOverhaulTurretAngle), in the gunner seat only, in 2 degree
+-- steps looked at every 0.1 s and written at most 4 times a second; out of the seat, without them or stale: 0.
+local next_check = 0   -- (3.5.1 Test 5: declared before slope_step, which asks for an apply)
+local SLOPE = {shift = 0, next = 0, last_key = nil, key_at = 0, writes = 0, steepest = 0, wrote_at = -1e9}
+local SLOPE_STEP, SLOPE_LIMIT = 2, 89
+local function slope_step()
+    if state.frames < SLOPE.next then return end
+    SLOPE.next = state.frames + 6
+    local want = 0
+    local seat, pub = rawget(_G, 'ArmoredOverhaulSeat'), rawget(_G, 'ArmoredOverhaulTurretAngle')
+    if opts.mbt and type(seat) == 'table' and seat.role == 2 and (seat.kind == 0x2B or seat.kind == 0x2C)
+        and type(pub) == 'table' and pub.kind == seat.kind and type(pub.angle) == 'number' and type(pub.axes) == 'table' and pub.axes.ok then
+        if pub.key ~= SLOPE.last_key then SLOPE.last_key, SLOPE.key_at = pub.key, state.clock end
+        if state.clock - SLOPE.key_at < 0.3 then          -- (not stale: published within the last 0.3 s)
+            local ax, a = pub.axes, pub.angle
+            local function clamp1(x) return max(-1, min(1, x)) end
+            local nose = math.deg(math.asin(clamp1(ax.fz)))
+            local under = math.deg(math.asin(clamp1(math.cos(a) * ax.fz + math.sin(a) * ax.rz)))
+            local s = under - nose
+            -- (a full step from what is set before it moves, so a slope on a step's edge doesn't flip back and forth)
+            if s == s then want = math.abs(s - SLOPE.shift) < SLOPE_STEP and SLOPE.shift or math.floor(s / SLOPE_STEP + 0.5) * SLOPE_STEP end
+        end
+    end
+    if want ~= SLOPE.shift and state.clock - SLOPE.wrote_at >= 0.25 then
+        SLOPE.shift, SLOPE.wrote_at = want, state.clock
+        SLOPE.writes = SLOPE.writes + 1; state.slope_changes = SLOPE.writes
+        if math.abs(want) > math.abs(SLOPE.steepest) then SLOPE.steepest = want end
+        state.slope = string.format('gun stops moved by %+d deg now (the slope under the turret minus the nose; biggest %+d, %d changes)', want, SLOPE.steepest, SLOPE.writes)
+        next_check = 0                                    -- (applied this frame: the guns and the tanks already out)
+    end
+end
 local function wanted_for(gun)
     local o = originals[gun.name]
     local w = {yaw_speed = o.yaw_speed * (opts.traverse or 1), pitch_speed = o.pitch_speed * (opts.elevation or 1),
@@ -721,6 +767,10 @@ local function wanted_for(gun)
     if opts.mbt and gun.second and gun.tank == 'maelstrom' then      -- (left/right: +-SECOND_LOCK, above)
         -- (3.4.0 review) up as far as the gunner view goes (camera_wanted: VIEW_ABOVE, never past VIEW_TOP)
         w.pitch_min, w.pitch_max = min(w.pitch_min - DESIG_DOWN, DESIG_LOW), max(w.pitch_max, min(w.pitch_max + VIEW_ABOVE, VIEW_TOP))
+    end
+    if opts.mbt and SLOPE.shift ~= 0 then                        -- (3.5.1 Test 5) the stops follow the slope under the turret
+        w.pitch_min = max(-SLOPE_LIMIT, min(SLOPE_LIMIT, w.pitch_min + SLOPE.shift))
+        w.pitch_max = max(-SLOPE_LIMIT, min(SLOPE_LIMIT, w.pitch_max + SLOPE.shift))
     end
     return w
 end
@@ -741,6 +791,7 @@ local function camera_wanted()
     -- (3.4.1) per side: Gun Depression moves the low stop, Gun Raise the high one; a side not picked stays the game's
     if opts.lo then lo = min(lo, opts.lo - VIEW_BELOW) end
     if opts.hi then hi = max(hi, min(opts.hi + VIEW_ABOVE, VIEW_TOP)) end
+    if opts.mbt then lo = min(lo, VIEW_TURNED_LOW) end   -- (3.5.1 Test 3)
     -- (Test 26) with the 180 choice the view stops where the gun does, so the gun never fires off to the side of where
     -- it points (the game's own view goes 20 degrees past its gun)
     local arc = opts.mbt and (opts.mbt_arc or 180)
@@ -885,7 +936,6 @@ end
 
 -- ---------------------------------------------------------------- main loop
 local phase = 'gate'
-local next_check = 0
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
 -- With CowboyBingus's Mod Options Menu installed, these settings show in the game's MODS tab under ARMORED OVERHAUL
 -- and the menu keeps their values; without it nothing changes (the mod manager's picks and the defaults are used).
@@ -1019,6 +1069,7 @@ local shown
 local function tick()
     state.frames = state.frames + 1
     menu_link(state.frames)
+    if phase == 'ready' then slope_step() end                           -- (3.5.1 Test 5)
     if phase ~= 'gate' and phase ~= 'off' then camera_step() end
     if live.phase == 'search' and phase == 'ready' then
         live_find_step()
