@@ -1,15 +1,16 @@
-"""Armored Overhaul 3.4 - builds the Arsenal / HD2 Mod Manager zip from this folder.
+"""Armored Overhaul 3.5 - builds the Arsenal / HD2 Mod Manager zip from this folder.
 
-  python tools/unpack_release.py Armored-Overhaul-3.4.0.zip     (once: the game-derived parts, see below)
-  python build.py [--check Armored-Overhaul-3.4.0.zip]
+  python tools/unpack_release.py Armored-Overhaul-3.5.0.zip     (once: the game-derived parts, see below)
+  python build.py [--check Armored-Overhaul-3.5.0.zip]
 
 - lua/<folder>.lua: each option folder's Lua addon, as shipped (DERIVED folders are made from another folder's file). Its first line names the addon
   ("-- HD2-Addon: mods/chef/armored_overhaul_..."); the patch archive's resource id is that name's hash.
 - manifest.json, art/thumbnail.png and options/ (the option and sub-option icons) go into the zip as they are.
 - The game-derived parts are not stored here: the Turret Models patch (the two tank hulls, built from the game's own
   hull models with src_models/build_mbt_hull.py), the Tank Suspension and FRV Stability presets (the vehicles' own physics files, made by
-  src_physics/) and the Turret Skull (a copy of the game's own Helldivers skull icon). tools/unpack_release.py takes
-  them out of a release zip into models/, physics/<preset>/ and skull/.
+  src_physics/: make_suspension.py also writes 'Turret Hit Areas', the two hulls' physics with the turret's hit areas on
+  the turret, which Tank MBT Turrets includes) and the Turret Skull (a copy of the game's own Helldivers skull icon).
+  tools/unpack_release.py takes them out of a release zip into models/, physics/<folder>/ and skull/.
 - --check: compares the zip it made with a release zip, file by file and byte for byte (the order of the files in
   the zip may differ).
 Writes build/Armored-Overhaul-<version>.zip (the version from the manifest's Name)."""
@@ -24,30 +25,32 @@ PATCH = '9ba626afa44a3aa3.patch_0'
 LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV Gunner Drive', 'Turret Core', 'MBT Turrets',
                'MBT Turrets 180',
                'Traverse Quick', 'Traverse Fast', 'Traverse Very Fast', 'Elevation Quick', 'Elevation Fast',
-               'Elevation Very Fast', 'Aim Range Wide', 'Aim Range Wider', 'Aim Range Widest', 'Top Speed Fast', 'Top Speed Faster',
+               'Elevation Very Fast', 'Depression Low', 'Depression Lower', 'Depression Lowest', 'Raise High', 'Raise Higher',
+               'Raise Highest', 'Top Speed Fast', 'Top Speed Faster',
                'Top Speed Fastest', 'Grip Moderate',
                'Grip Strong', 'Grip Maximum', 'Steering Responsive', 'Steering Quick', 'Steering Sharp', 'Power Strong',
                'Power Stronger', 'Power Strongest', 'Throttle Quick', 'Throttle Quicker', 'Throttle Instant', 'Shift Quick',
                'Shift Quicker', 'Shift Instant', 'Stability Stable',
-               'Stability Steady', 'Stability Planted', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
+               'Stability Steady', 'Stability Planted', 'Collision Damage', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
                'Turret Indicator', 'Vehicle Loadout']
 # (3.1.0 Test 26) folders made from another folder's Lua: the MBT Turrets 180 choice is the MBT Turrets addon with one line
 # more (its flag asks the turret core for 90 degrees each side), so the two can't drift apart
 DERIVED = {'MBT Turrets 180': ('MBT Turrets', b'o.mbt = true\n',
                                b'o.mbt = true\no.mbt_arc = 90                    -- (3.1.0 Test 26) the 180 choice: 90 degrees each side\n')}
-GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Suspension Balanced', 'physics/Suspension Balanced'),
+GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Turret Hit Areas', 'physics/Turret Hit Areas'),
+                ('Suspension Balanced', 'physics/Suspension Balanced'),
                 ('Suspension Planted', 'physics/Suspension Planted'), ('FRV Mild', 'physics/FRV Mild'),
                 ('FRV Stable', 'physics/FRV Stable'), ('FRV Planted', 'physics/FRV Planted')]
 # icons in the zip, in Arsenal order (each option's icon, then its choices')
 IMAGES = ['tank_speed', 'sub/speed_fast', 'sub/speed_faster', 'sub/speed_fastest', 'tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_strongest', 'tank_grip', 'sub/grip_moderate',
           'sub/grip_strong', 'sub/grip_maximum', 'tank_steering', 'sub/steering_responsive', 'sub/steering_quick',
           'sub/steering_sharp', 'tank_throttle', 'sub/throttle_quick', 'sub/throttle_quicker', 'sub/throttle_instant',
-          'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy',
-          'tank_stability', 'sub/stability_stable', 'sub/stability_steady', 'sub/stability_planted', 'mbt_turrets', 'sub/mbt_360',
-          'sub/mbt_180',
+          'tank_stability', 'sub/stability_stable', 'sub/stability_steady', 'sub/stability_planted', 'tank_collision_damage', 'mbt_turrets', 'sub/mbt_360',
+          'sub/mbt_180', 'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy',
           'turret_traverse', 'sub/traverse_quick', 'sub/traverse_fast', 'sub/traverse_very_fast', 'turret_elevation',
-          'sub/elevation_quick', 'sub/elevation_fast', 'sub/elevation_very_fast', 'turret_aim_range', 'sub/aim_range_wide',
-          'sub/aim_range_wider', 'sub/aim_range_widest', 'autoloader', 'gunner_drive', 'sub/gunner_drive_tanks',
+          'sub/elevation_quick', 'sub/elevation_fast', 'sub/elevation_very_fast', 'gun_depression', 'sub/depression_low',
+          'sub/depression_lower', 'sub/depression_lowest', 'gun_raise', 'sub/raise_high', 'sub/raise_higher', 'sub/raise_highest',
+          'autoloader', 'gunner_drive', 'sub/gunner_drive_tanks',
           'sub/gunner_drive_both', 'driver_panel', 'gunner_camera', 'sub/camera_close', 'sub/camera_far', 'sub/camera_farther',
           'sub/camera_farthest', 'frv_gunner_drive', 'frv_stability', 'sub/frv_mild', 'sub/frv_stable', 'sub/frv_planted',
           'turret_indicator', 'vehicle_loadout']
