@@ -1,12 +1,15 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.4.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.5.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
 --                                          turns with the gun)
 --   Turret traverse   (traverse = x):      the left/right turn speed times x
 --   Turret elevation  (elevation = x):     the up/down speed times x
---   Turret aim range  (range = {lo, hi}):  how far down and up the guns aim (degrees)
+--   Gun depression    (range_lo = lo):     how far down the guns aim (degrees, below 0)
+--   Gun raise         (range_hi = hi):     how far up the guns aim (degrees)
+--   (3.4.1, the tester: "lets separate the Turret Aim Range in an upper and lower option, so folks can customize how
+--   each works") Tank Turret Aim Range (range = {lo, hi}) became these two options; the side not picked stays the game's.
 -- Whatever no picked option asks for stays the game's own. Written from scratch.
 --
 -- How it works: every turret's settings live in the game's static TurretComponent table (the same data Filediver
@@ -51,7 +54,7 @@ local FIELD_ORDER = {'yaw_speed', 'pitch_speed', 'pitch_min', 'pitch_max', 'yaw_
 -- that was not it and +0x10 is left alone again.
 
 -- MBT Turrets: the left/right arc goes all the way round (the game's is +/-20 degrees). How far down the gun aims
--- is the Tank Turret Aim Range option's (2.1 Test 7: MBT Turrets no longer lowers it to 6 below).
+-- is the Tank Gun Depression option's (2.1 Test 7: MBT Turrets no longer lowers it to 6 below).
 local ARC = 180
 -- (3.1.0 Test 26) MBT Turrets has two choices: all the way round (360, the default) and 180 (the MBT Turrets 180 folder,
 -- whose flag sets mbt_arc = 90: the guns, and the gunner view with them, turn 90 degrees either side of straight ahead)
@@ -66,7 +69,7 @@ local SECOND_LOCK = 0.01
 -- either way round its turned mount (locked again since Test 18, below) and DESIG_DOWN below / 10 above the guns' angles.
 -- (Test 15, the tester: "the laser is better, but when you set the aim range to widest, it will continue to bug out") Close
 -- ground lies far steeper below the laser than the view's own angle, so the designator now reaches down to DESIG_LOW
--- whatever the Aim Range, and a little further round.
+-- whatever the gun's range, and a little further round.
 -- (Test 18, the tester: "Maelstrom laser works, but it needs to follow the turret, its detached and can be aimed in a direction
 -- that doesnt match the barrel") Left/right is locked again (+-SECOND_LOCK, as before Test 14: its mount turns with the
 -- turret), keeping only the wider up/down reach.
@@ -82,15 +85,14 @@ local function options()
     if out.mbt and type(o.mbt_arc) == 'number' and o.mbt_arc >= 20 and o.mbt_arc < ARC then out.mbt_arc = o.mbt_arc end
     if type(o.traverse) == 'number' and o.traverse >= 0.25 and o.traverse <= 10 then out.traverse = o.traverse end
     if type(o.elevation) == 'number' and o.elevation >= 0.25 and o.elevation <= 10 then out.elevation = o.elevation end
-    local r = o.range
-    if type(r) == 'table' and type(r[1]) == 'number' and type(r[2]) == 'number' and r[1] >= -45 and r[1] < r[2] and r[2] <= 80 then
-        out.range = {r[1], r[2]}
-    end
+    if type(o.range_lo) == 'number' and o.range_lo >= -45 and o.range_lo < 0 then out.lo = o.range_lo end
+    if type(o.range_hi) == 'number' and o.range_hi > 0 and o.range_hi <= 80 then out.hi = o.range_hi end
     -- (3.0) the Mod Options Menu's values, for the options that are installed (see menu_rows)
     local m = menu_opts
     if out.traverse and m.traverse ~= nil then out.traverse = m.traverse or nil end         -- (false: Off)
     if out.elevation and m.elevation ~= nil then out.elevation = m.elevation or nil end
-    if out.range and m.range ~= nil then out.range = m.range and {m.range[1], m.range[2]} or nil end
+    if out.lo and m.lo ~= nil then out.lo = m.lo or nil end
+    if out.hi and m.hi ~= nil then out.hi = m.hi or nil end
     return out
 end
 local function options_text(o)
@@ -98,7 +100,8 @@ local function options_text(o)
     if o.mbt then t[#t + 1] = o.mbt_arc and string.format('MBT Turrets (%g degrees: %g each side)', 2 * o.mbt_arc, o.mbt_arc) or 'MBT Turrets (all the way round)' end
     if o.traverse then t[#t + 1] = string.format('traverse x%g', o.traverse) end
     if o.elevation then t[#t + 1] = string.format('elevation speed x%g', o.elevation) end
-    if o.range then t[#t + 1] = string.format('aim range %g..%g deg', o.range[1], o.range[2]) end
+    if o.lo then t[#t + 1] = string.format('gun depression %g deg', o.lo) end
+    if o.hi then t[#t + 1] = string.format('gun raise %g deg', o.hi) end
     return #t > 0 and table.concat(t, ', ') or 'none picked (everything stays the game\'s own)'
 end
 
@@ -139,7 +142,7 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.4.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.5.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -275,7 +278,7 @@ local function log()
         local f = loader.open_log and loader.open_log('ArmoredOverhaul-MBTTurrets.log')
         if not f then return end
         -- what a bug report needs: the game build, how the turret settings were found, each gun's values now, errors
-        f:write('Armored Overhaul - Turret settings (Tank MBT Turrets, Tank Turret Traverse, Tank Turret Elevation, Tank Turret Aim Range)\n',
+        f:write('Armored Overhaul - Turret settings (Tank MBT Turrets, Tank Turret Traverse, Tank Turret Elevation, Tank Gun Depression, Tank Gun Raise)\n',
             'version: ', state.version, '\n', 'status: ', state.status, '\n', 'game: ', state.game, '\n', 'found: ', state.how,
             '\n', 'options: ', state.options, '\n', 'options menu: ', state.options_menu, '\n')
         for _, g in ipairs(GUNS) do f:write(g.name, ': ', state.guns[g.name] or 'not found', '\n') end
@@ -713,7 +716,8 @@ local function wanted_for(gun)
                yaw_min = opts.mbt and (gun.second and -SECOND_LOCK or -(opts.mbt_arc or ARC)) or o.yaw_min,
                yaw_max = opts.mbt and (gun.second and SECOND_LOCK or (opts.mbt_arc or ARC)) or o.yaw_max,
                pitch_min = o.pitch_min, pitch_max = o.pitch_max}
-    if opts.range then w.pitch_min, w.pitch_max = opts.range[1], opts.range[2] end
+    if opts.lo then w.pitch_min = opts.lo end
+    if opts.hi then w.pitch_max = opts.hi end
     if opts.mbt and gun.second and gun.tank == 'maelstrom' then      -- (left/right: +-SECOND_LOCK, above)
         -- (3.4.0 review) up as far as the gunner view goes (camera_wanted: VIEW_ABOVE, never past VIEW_TOP)
         w.pitch_min, w.pitch_max = min(w.pitch_min - DESIG_DOWN, DESIG_LOW), max(w.pitch_max, min(w.pitch_max + VIEW_ABOVE, VIEW_TOP))
@@ -723,9 +727,9 @@ end
 
 -- (3.4.0 Test 34) A user: on a slope "the camera's vertical aiming restrictions are calculated relative to the world
 -- horizon rather than the tank's local orientation" (see VIEW_BELOW at the top for what Tests 34-38 found).
--- The gunner view turns all the way round with MBT Turrets (the gun only goes where the view looks); with Tank Turret
--- Aim Range it looks VIEW_BELOW lower than the lowest gun angle and VIEW_ABOVE higher than the highest (at most
--- VIEW_TOP), never less than the game's own view.
+-- The gunner view turns all the way round with MBT Turrets (the gun only goes where the view looks); with Tank Gun
+-- Depression it looks VIEW_BELOW lower than the lowest gun angle, with Tank Gun Raise VIEW_ABOVE higher than the highest
+-- (at most VIEW_TOP: on Raise Highest the view stops at the gun's own top), never less than the game's own view.
 local function camera_wanted()
     local o = originals.camera
     local lo, hi = o.pitch_min, o.pitch_max
@@ -734,7 +738,9 @@ local function camera_wanted()
     -- against the hull (about +84 at every slope); but near straight up the turret spun round (the tester: "the tank will spin around
     -- when you look all the way up"). So the view now goes VIEW_BELOW lower than the lowest gun angle and VIEW_ABOVE
     -- higher than the highest, never above VIEW_TOP: room for the ground's tilt without reaching the spin.
-    if opts.range then lo, hi = min(lo, opts.range[1] - VIEW_BELOW), max(hi, min(opts.range[2] + VIEW_ABOVE, VIEW_TOP)) end
+    -- (3.4.1) per side: Gun Depression moves the low stop, Gun Raise the high one; a side not picked stays the game's
+    if opts.lo then lo = min(lo, opts.lo - VIEW_BELOW) end
+    if opts.hi then hi = max(hi, min(opts.hi + VIEW_ABOVE, VIEW_TOP)) end
     -- (Test 26) with the 180 choice the view stops where the gun does, so the gun never fires off to the side of where
     -- it points (the game's own view goes 20 degrees past its gun)
     local arc = opts.mbt and (opts.mbt_arc or 180)
@@ -890,7 +896,7 @@ local next_check = 0
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'turret'}) do
@@ -943,13 +949,14 @@ do
 end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
-local RANGES = {{-6, 30}, {-10, 35}, {-15, 45}}       -- Tank Turret Aim Range: Wide, Wider, Widest
+local DEPRESSIONS = {-6, -10, -15}                     -- (3.4.1) Tank Gun Depression: Low, Lower, Lowest
+local RAISES = {30, 45, 60}                            -- (3.4.1) Tank Gun Raise: High, Higher, Highest (Test 2, the tester: "raise the gun more than 45, maybe 60"; was 30, 35, 45)
 local SPEEDS = {1.25, 1.5, 2}                          -- Elevation: Quick, Fast, Very fast
 local TRAVERSE_SPEEDS = {1.5, 2, 3}                    -- (3.1.0 Test 26) Traverse: Quick, Fast, Very fast
 local function tag(v) return (string.format('%g', v):gsub('%.', '_')) end
 local function pick_of(list, v)
     for i, x in ipairs(list) do
-        if type(x) == 'table' and type(v) == 'table' and x[1] == v[1] and x[2] == v[2] or x == v then return i + 1 end
+        if x == v then return i + 1 end
     end
     return 2
 end
@@ -979,11 +986,19 @@ menu_rows.turret = function()
             choices = {'Off', 'Quick (x1.25)', 'Fast (x1.5)', 'Very fast (x2)'}, default = pick_of(SPEEDS, o.elevation),
             description = 'How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second), and the gunner view up/down with them. Changes every tank at once; the view from the next time you sit in the gunner seat.'}, 'elevation'}
     end
-    if type(o.range) == 'table' then
-        local pick = pick_of(RANGES, o.range)
-        rows[#rows + 1] = {'armored_overhaul.turret.aim_range.' .. (pick - 1), {type = 'choice', label = 'Tank Turret Aim Range',
-            choices = {'Off', 'Wide (-6..+30 deg)', 'Wider (-10..+35 deg)', 'Widest (-15..+45 deg)'}, default = pick,
-            description = 'How far down and up the Bastion and Maelstrom guns aim (the game: 3 below to 25 above), and the gunner view up/down with them. Changes every tank at once; the view from the next time you sit in the gunner seat.'}, 'range'}
+    -- (3.4.1) Tank Turret Aim Range split in two: one row each (new ids, so a 3.4.0 Aim Range value doesn't carry over),
+    -- named by the installed angle like Traverse and Elevation (3.4.1 review: a later change of steps starts fresh)
+    if type(o.range_lo) == 'number' then
+        local pick = pick_of(DEPRESSIONS, o.range_lo)
+        rows[#rows + 1] = {'armored_overhaul.turret.gun_depression.' .. tag(-o.range_lo), {type = 'choice', label = 'Tank Gun Depression',
+            choices = {'Off', 'Low (6 below)', 'Lower (10 below)', 'Lowest (15 below)'}, default = pick,
+            description = 'How far down the Bastion and Maelstrom guns aim (the game: 3 degrees below level), and the gunner view down with them. Changes every tank at once; the view from the next time you sit in the gunner seat.'}, 'lo'}
+    end
+    if type(o.range_hi) == 'number' then
+        local pick = pick_of(RAISES, o.range_hi)
+        rows[#rows + 1] = {'armored_overhaul.turret.gun_raise.' .. tag(o.range_hi), {type = 'choice', label = 'Tank Gun Raise',
+            choices = {'Off', 'High (30 above)', 'Higher (45 above)', 'Highest (60 above)'}, default = pick,
+            description = 'How far up the Bastion and Maelstrom guns aim (the game: 25 degrees above level), and the gunner view up with them. Changes every tank at once; the view from the next time you sit in the gunner seat.'}, 'hi'}
     end
     return rows
 end
@@ -994,7 +1009,8 @@ menu_set = function(key, v)
         if type(o) == 'table' and SHIFTS[v] then o.mbt_shift = SHIFTS[v] end
         return
     end
-    if key == 'range' then menu_opts.range = RANGES[v - 1] or false
+    if key == 'lo' then menu_opts.lo = DEPRESSIONS[v - 1] or false
+    elseif key == 'hi' then menu_opts.hi = RAISES[v - 1] or false
     elseif key == 'traverse' then menu_opts.traverse = TRAVERSE_SPEEDS[v - 1] or false
     elseif key == 'elevation' then menu_opts.elevation = SPEEDS[v - 1] or false end
     next_check = 0                                       -- (applied at the next frame)
