@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.4.0 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.5.0 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
@@ -28,6 +28,23 @@
 -- y -4.74..0.6 on hulls 9 m long (-4.85..4.13) whose deck stays at the roof line up to y 3.4, so up to 2.5 m forward
 -- the turret floor stays over the deck; 1.5 m puts it at the hull's middle. (Test 8) Default: the game's place. Set in the Mod Options Menu (Turret Core's
 -- rows), read here every half second; o.mbt_shift is in metres.
+-- (3.4.1 Test 16) Working hatches. The turret's two roof hatches and the gunner's door slide open and shut again as in
+-- the game (up to Test 15 they were part of the turret armour and never moved). The game slides them by animating its
+-- hatch bones every frame, so they can't be carried round from here; the turret models tie each one to a node the game
+-- doesn't animate instead (the seat effect node beside it, see HATCHES), and every frame that node is put where the
+-- hatch is on the turned turret: its rest place plus the hatch's slide read from the game's bone, carried round the
+-- axis (and the Turret Position move). The passengers' places in the roof hatches and their way in are carried round
+-- with the turret too, so a passenger rides in the hatch where it is.
+-- (3.4.1 Test 19) The gunner's way in and out (node 95c8f8ec, 0.53 m behind the gunner's door) goes round with the turret too:
+-- the gunner got in through the turret's door but out at the game's door place, behind the hull (the tester: "when you
+-- get out, you still use the old hatch location"). Where it lands over the hull's deck it is lifted onto the deck (it is
+-- 0.6 m under the roof line, at the ground behind the tank, where the game has it); off the hull it stays at its height.
+-- (3.4.1 Test 21) The turret's hit areas (its armour blocks, side and rear boxes, radar and antenna) follow node b7e9b43d, the
+-- mount this turns and moves, from the tank's physics files (Turret Hit Areas): nothing to do here. (3.4.1 Test 20 carried
+-- their own nodes from here; the game's animation put them back every frame.)
+-- (3.4.1 Test 18) The gunner's door swings up and out on its top edge (a hatchback) instead of sliding 0.94 m straight up: the
+-- game's slide took it up past the turret's roof, where it stood on its own over the turret (the tester: "when the hatch
+-- opens, it opens up like this, could the hatch animation be fixed?"). It opens as far, and as fast, as the game's slide.
 local o = rawget(_G, 'ArmoredOverhaulTurretOptions')
 if type(o) ~= 'table' then o = {}; rawset(_G, 'ArmoredOverhaulTurretOptions', o) end
 o.mbt = true
@@ -49,12 +66,10 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.4.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.5.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
 S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)
--- (3.1.1 review) S.yaw_rate (no reader since Test 24) is gone; hull -> heading / gun unit only in Tester builds (the probe)
-if TESTER then S.angle, S.gun = {}, {} end
 local seen = {}                    -- tank name -> {turret = fastest turret turn against the hull, hull = fastest hull turn}
 
 -- node places, 0-based in the hull's node list (read from the game's unit files), the engine's numbering found from
@@ -62,13 +77,41 @@ local seen = {}                    -- tank name -> {turret = fastest turret turn
 local AXIS_X, AXIS_Y = 0.0, -1.959                     -- the gun mounts' axis in the hull's frame
 local HULLS = {
     {name = 'Bastion', res = 'content/fac_helldivers/vehicles/tank/tank',
-     turn = {k = 159, x = 0, y = -1.959, z = 1.363}, carry = {{k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true}}},
+     turn = {k = 159, x = 0, y = -1.959, z = 1.363}, carry = {{k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true, seat = true}}},
     {name = 'Maelstrom', res = 'content/fac_helldivers/vehicles/tank_storm/tank_storm',
      gun = 'content/fac_helldivers/vehicles/tank_storm/armaments/tank_storm_maingun/tank_storm_maingun',
      turn = {k = 159, x = 0, y = -1.959, z = 1.363},
      carry = {{k = 218, x = 0, y = -2.816, z = 1.917}, {k = 219, x = -1.422, y = -4.511, z = 1.804},
-              {k = 220, x = 1.422, y = -4.511, z = 1.804}, {k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true}}},
+              {k = 220, x = 1.422, y = -4.511, z = 1.804}, {k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true, seat = true}}},
 }
+-- (3.4.1 Test 16) the roof hatches' passengers (where they stand, and their way in), the same in both hulls: optional
+local PASSENGER = {{k = 160, x = -1.5488, y = -2.830774, z = 1.057916, optional = true, stand = true},     -- left, where the passenger stands
+                   {k = 163, x = 1.599837, y = -2.831, z = 1.058, optional = true, stand = true},         -- right
+                   {k = 155, x = -1.583468, y = -2.216, z = 2.083, optional = true, way = true},        -- left, the way in
+                   {k = 156, x = 1.6, y = -2.216, z = 2.083085, optional = true, way = true}}            -- right
+-- (3.4.1 Test 19) the gunner's way in and out; deck = lifted onto the hull's deck where it lands over it
+PASSENGER[#PASSENGER + 1] = {k = 154, x = 0.116909, y = -5.226354, z = 0.457656, optional = true, deck = true, way = true}
+for _, h in ipairs(HULLS) do for _, c in ipairs(PASSENGER) do h.carry[#h.carry + 1] = c end end
+local DECK = {x = 2.0, y0 = -4.8, y1 = 4.0, z = 1.098}      -- (3.4.1 Test 19) the hull's deck in the hull's frame (roof line 1.078, + 2 cm)
+local function deck_z(n, x, y)
+    if n.deck and math.abs(x) <= DECK.x and y >= DECK.y0 and y <= DECK.y1 then return DECK.z end
+    return n.z
+end
+-- (3.4.1 Test 16) the hatches: the game's bone (animated; x, y, z its shut place, sy/sz how far it slides open) and the
+-- node that carries the turret model's hatch (its rest place and rotation: the model's hatch is tied to that pose)
+local HATCHES = {
+    {what = 'left roof hatch', name = 'left_hatch', k = 103, x = -1.6162603, y = -2.7994628, z = 2.0722067, sy = 0.908, sz = 0,
+     carrier = 'fx_left_seat', ck = 198, cx = -1.5909, cy = -2.870157, cz = 1.705128, cq = {0, 0, 0, 1}},
+    {what = 'right roof hatch', name = 'right_hatch', k = 102, x = 1.6159551, y = -2.7994628, z = 2.0722067, sy = 0.908, sz = 0,
+     carrier = 'fx_right_seat', ck = 199, cx = 1.649954, cy = -2.870157, cz = 1.705128, cq = {0, 0, 0, 1}},
+    {what = 'gunner\'s door', name = 'back_door', k = 101, x = -0.0018311106, y = -4.6919155, z = 1.2698752, sy = 0, sz = 0.942,
+     carrier = 'fx_back_seat', ck = 200, cx = 0.031258, cy = -4.514132, cz = 1.115169, cq = {0, 0, 1, 0},        -- (turned 180 deg)
+     swing = {y = -4.734, z = 1.697, deg = 90}},    -- (3.4.1 Test 18) hinged on its top outer edge, open = level, out the back
+}
+local DRIVER_HATCH = {k = 104, x = -0.95309305, y = 1.807001, z = 1.012299}                -- (on the hull: the game's own; Tester log only)
+local hatch_seen = {}                -- what -> {opened = times seen opening, most = most open (0..1)}
+for _, h in ipairs(HATCHES) do hatch_seen[h.what] = {opened = 0, most = 0} end
+hatch_seen.driver = {opened = 0, most = 0}
 local GUN_MOUNT = {k = 158, x = 0, y = -1.959, z = 1.363}  -- where the main gun sits (to find it)
 local SHIFT_MAX = 2.5                                      -- (3.3.0 Test 4) m forward at most (see the header)
 local function shift_now()
@@ -82,6 +125,11 @@ end
 local HULL_EVERY, GUN_EVERY, GUN_WAIT = 0.5, 1, 2           -- s between looking for hulls / for a missing gun;
                                                            -- s after a hull appears before its gun is looked for
 local GUN_MISSES, GUN_SLOW = 5, 10                          -- after 5 misses in a row, a missing gun is looked for every 10 s
+-- (3.4.1 Test 27) s the turret's own node is written every frame after a tank is first turned and after Turret Position
+-- changes: Test 26's hit areas (actors the game carries after that node) took a moment to catch up at call-in. A pose
+-- written once, before the game had the tank's hit areas going, was only written again at the half-second refresh.
+local SETTLE = 3
+local WAY_STEP = math.rad(1)        -- (3.4.1 review) the ways in on the turret are written again after this much turn
 
 local GUN_CAP = math.deg(0.8)        -- (Test 31) deg/s: a tank gun's own top turn (measured 46-49; 0.8 rad/s)
 local help_seen = {extra = 0, offset = 0, times = 0}     -- (Test 31) the most mount help given, for the log
@@ -93,6 +141,13 @@ local function log()
             'api: ', S.api, '\n', 'tanks out: ', S.tanks, ' (turrets turning: ', S.turned, ', gun not found: ', S.no_gun,
             ', hull not as expected: ', S.bad_nodes, ')\n', 'gunner seats turned with the turret: ', S.turned - S.no_seat, (S.no_seat > 0 and (' (' .. S.no_seat .. ' seat node(s) not found: those gunners stay put)') or ''), '\n', 'errors: ', S.errors, '\n', 'last error: ', S.last_error, '\n')
         f:write(string.format('turret position: %.2f m forward of the game\'s (Mod Options Menu: Tank Turret Position)\n', S.shift or 0))
+        f:write('hatches working: ', S.hatches or 0, ' of ', S.tanks, ' tank(s)', ((S.no_hatch or 0) > 0 and (' (' .. S.no_hatch .. ' hatch(es) not found: those stay shut)') or ''),
+            '; passenger places turned with the turret: ', S.passengers or 0, '\n')
+        for _, h in ipairs(HATCHES) do
+            local m = hatch_seen[h.what]
+            if m.opened > 0 then f:write(string.format('%s: seen opening %d time(s), up to %.0f%% open\n', h.what, m.opened, m.most * 100)) end
+        end
+        if (S.carrier_moved or 0) > 0 then f:write('hatch nodes found moved by something else: ', S.carrier_moved, ' time(s) (the hatch was put back)\n') end
         if S.search_note then f:write('note: ', S.search_note, '\n') end
         if S.recovered then f:write('turrets found already turned when this started (the game\'s Lua reloaded): ', S.recovered, ', put right\n') end
         if help_seen.times > 0 then
@@ -103,7 +158,14 @@ local function log()
             local m = seen[h.name]
             if m then f:write(string.format('%s: turret turned up to %.0f deg/s against the hull (smoothed), the hull up to %.0f deg/s on the ground\n', h.name, m.turret, m.hull)) end
         end
-        if TESTER then f:write('-- tester details --\n', 'frames: ', S.frames, '\n', 'gun searches: ', S.gun_searches, '\n') end
+        if TESTER then
+            f:write('-- tester details --\n', 'frames: ', S.frames, '\n', 'gun searches: ', S.gun_searches, '\n')
+            f:write(string.format('hatch node writes: %d, hatch reads: %d (%.2f a frame)\n', S.hatch_writes or 0, S.hatch_reads or 0, (S.hatch_reads or 0) / math.max(1, S.frames)))
+            f:write(string.format('settling: the turret\'s node written again %d time(s) (call-in, Turret Position changes)\n', S.settle_writes or 0))   -- (3.4.1 Test 27)
+            local m = hatch_seen.driver
+            f:write(string.format('driver\'s hatch (on the hull, the game\'s own): seen opening %d time(s), up to %.0f%% open\n', m.opened, m.most * 100))
+            if S.hatch_find then f:write('hatch nodes found by: ', S.hatch_find, '\n') end
+        end
         f:close()
     end)
 end
@@ -190,7 +252,7 @@ local function node_at(u, base, want)
     if not x or math.abs(x - want.x) > 0.01 or y < want.y - 0.01 or y > want.y + SHIFT_MAX + 0.01 or math.abs(z - want.z) > 0.01 then return nil end
     local q = quat(select(2, pcall(U.local_rotation, u, i)))
     if not q then return nil end
-    return {i = i, x = want.x, y = want.y, z = want.z, q = q, moved = y - want.y}
+    return {i = i, x = want.x, y = want.y, z = want.z, q = q, moved = y - want.y, deck = want.deck, way = want.way}
 end
 
 -- (3.1.1 review) A carried node already turned round the axis (the game's Lua rebuilt with the game open while a
@@ -198,7 +260,7 @@ end
 local function turned_by(u, i, want, moved)
     local ok, p = pcall(U.local_position, u, i)
     local x, y, z = xyz(ok and p)
-    if not x or math.abs(z - want.z) > 0.01 then return nil end
+    if not x or (math.abs(z - want.z) > 0.01 and not (want.deck and math.abs(z - DECK.z) < 0.01)) then return nil end
     y = y - (moved or 0)                  -- (3.3.0 Test 4) less the Turret Position move found on the turret's own mount
     local wx, wy, nx, ny = want.x - AXIS_X, want.y - AXIS_Y, x - AXIS_X, y - AXIS_Y
     local r = math.sqrt(wx * wx + wy * wy)
@@ -231,11 +293,11 @@ local function setup(u, h)
             if a and (a0 == nil or math.abs(math.atan2(math.sin(a - a0), math.cos(a - a0))) < 0.01) then
                 a0 = a0 or a
                 local q = quat(select(2, pcall(U.local_rotation, u, base + c.k)))
-                if q then n = {i = base + c.k, x = c.x, y = c.y, z = c.z, q = q, turned = true} end
+                if q then n = {i = base + c.k, x = c.x, y = c.y, z = c.z, q = q, turned = true, deck = c.deck, way = c.way} end
             end
         end
-        if n then e.carry[#e.carry + 1] = n
-        elseif c.optional then e.no_seat = true
+        if n then e.carry[#e.carry + 1] = n; if c.stand then e.passengers = (e.passengers or 0) + 1 end
+        elseif c.optional then if c.seat then e.no_seat = true end
         else return e end
     end
     if a0 then
@@ -244,6 +306,32 @@ local function setup(u, h)
         S.recovered = (S.recovered or 0) + 1
     end
     e.ok = e.turn ~= nil and e.mount ~= nil
+    -- (3.4.1 Test 16) the hatches: each hatch bone and its carrier found by name (the engine's own numbering), else by
+    -- place (the bone shut or partly open, the carrier at rest)
+    e.hatch = {}
+    for _, h in ipairs(HATCHES) do
+        local hi, ci = base + h.k, base + h.ck
+        local function at_place(i, j)          -- the hatch bone shut or partly open, its carrier at rest
+            local okh, p = pcall(U.local_position, u, i); local x, y, z = xyz(okh and p)
+            local okc, pc = pcall(U.local_position, u, j); local cx, cy, cz = xyz(okc and pc)
+            return x and cx and math.abs(x - h.x) < 0.01 and y > h.y - 0.01 and y < h.y + h.sy + 0.01 and z > h.z - 0.01 and z < h.z + h.sz + 0.01
+                and math.abs(cx - h.cx) < 0.01 and math.abs(cy - h.cy) < 0.01 and math.abs(cz - h.cz) < 0.01
+        end
+        local okn1, has1 = pcall(U.has_node, u, h.name); local okn2, has2 = pcall(U.has_node, u, h.carrier)
+        local ok1, n1, ok2, n2
+        if okn1 and has1 and okn2 and has2 then ok1, n1 = pcall(U.node, u, h.name); ok2, n2 = pcall(U.node, u, h.carrier) end
+        local named = ok1 and ok2 and type(n1) == 'number' and type(n2) == 'number'
+        local found = named and n1 == hi and n2 == ci and 'name'
+        -- (3.4.1 review) named nodes at other numbers (a game update renumbered them): used if they're at the place
+        if not found and named and at_place(n1, n2) then hi, ci, found = n1, n2, 'name (renumbered)' end
+        if not found and at_place(hi, ci) then found = 'place' end
+        if found then e.hatch[#e.hatch + 1] = {h = h, hi = hi, ci = ci}; S.hatch_find = found
+        else e.no_hatch = (e.no_hatch or 0) + 1 end
+    end
+    if TESTER then
+        local okd, p = pcall(U.local_position, u, base + DRIVER_HATCH.k); local x = xyz(okd and p)
+        if x and math.abs(x - DRIVER_HATCH.x) < 0.01 then e.driver_hatch = base + DRIVER_HATCH.k end
+    end
     return e
 end
 
@@ -373,9 +461,18 @@ local function help(u, e, a, t)
     end
 end
 
-local function turn(u, e, a, d)
+local function turn(u, e, a, d, settling)
     -- (3.1.0 review) the turret hasn't moved since the last write (within 0.006 deg): nothing to write
-    if e.ta and math.abs(a - e.ta) < 1e-4 and e.sd == d then return end
+    if e.ta and math.abs(a - e.ta) < 1e-4 and e.sd == d then
+        if settling then            -- (3.4.1 Test 27) settling: the turret's own node again (what its hit areas follow)
+            local t = e.turn
+            pcall(U.set_local_rotation, u, t.i, Q.multiply(Q(V3(0, 0, 1), a), Q.from_elements(t.q[1], t.q[2], t.q[3], t.q[4])))
+            pcall(U.set_local_position, u, t.i, V3(t.x, t.y + d, t.z))
+            if TESTER then S.settle_writes = (S.settle_writes or 0) + 1 end
+        end
+        return
+    end
+    local fresh = e.ta == nil or e.sd ~= d          -- (3.4.1 review) a whole pose (first, refresh, new Turret Position)
     local yaw = Q(V3(0, 0, 1), a)
     local t = e.turn
     local ok = pcall(U.set_local_rotation, u, t.i, Q.multiply(yaw, Q.from_elements(t.q[1], t.q[2], t.q[3], t.q[4])))
@@ -388,11 +485,84 @@ local function turn(u, e, a, d)
     end
     local c, s = math.cos(a), math.sin(a)
     for _, n in ipairs(e.carry) do
-        local dx, dy = n.x - AXIS_X, n.y - AXIS_Y
-        ok = pcall(U.set_local_position, u, n.i, V3(AXIS_X + dx * c - dy * s, AXIS_Y + d + dx * s + dy * c, n.z)) and ok
-        ok = pcall(U.set_local_rotation, u, n.i, Q.multiply(yaw, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))) and ok
+        -- (3.4.1 review) the ways in (where you walk up to get on) only every degree while the turret turns; the
+        -- half-second refresh puts them exactly where the turret stopped
+        if fresh or not n.way or not n.wa or math.abs(a - n.wa) > WAY_STEP then
+            local dx, dy = n.x - AXIS_X, n.y - AXIS_Y
+            local nx, ny = AXIS_X + dx * c - dy * s, AXIS_Y + d + dx * s + dy * c
+            local okn = pcall(U.set_local_position, u, n.i, V3(nx, ny, deck_z(n, nx, ny)))
+            okn = pcall(U.set_local_rotation, u, n.i, Q.multiply(yaw, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))) and okn
+            n.wa = okn and a or nil
+            ok = okn and ok
+        end
     end
     e.ta = ok and a or nil                -- (3.1.1 review: only a pose that was written is skipped next time)
+    if ok then e.pa, e.pd = a, d end      -- (3.4.1 Test 16) where the turret stands, for the hatches
+end
+-- (3.4.1 Test 16) the hatches: each carrier where its hatch is on the turret (turned a, moved d forward), written when
+-- the hatch slides or the turret moves. How open each one is goes to the log.
+local function seen_open(m, t, f)              -- (3.4.1 review) open/shut kept per tank (t), the counts shared
+    if f > 0.05 and not t.open then t.open = true; m.opened = m.opened + 1; S.seen_changed = true
+    elseif f < 0.01 then t.open = false end
+    if f > m.most + 0.05 then m.most = math.min(1, f); S.seen_changed = true end
+end
+local function hatches(u, e, a, d)
+    local c, s, yaw
+    for _, t in ipairs(e.hatch) do
+        local h = t.h
+        local okr, p = pcall(U.local_position, u, t.hi)
+        if TESTER then S.hatch_reads = (S.hatch_reads or 0) + 1 end
+        local x, y, z = xyz(okr and p)
+        if x then
+            local sx, sy, sz = x - h.x, y - h.y, z - h.z
+            if math.abs(sx) < 1e-4 and math.abs(sy) < 1e-4 and math.abs(sz) < 1e-4 then sx, sy, sz = 0, 0, 0 end
+            seen_open(hatch_seen[h.what], t, (h.sy > 0 and sy / h.sy or 0) + (h.sz > 0 and sz / h.sz or 0))
+            if t.a ~= a or t.d ~= d or t.sx ~= sx or t.sy ~= sy or t.sz ~= sz then
+                if not c then c, s, yaw = math.cos(a), math.sin(a), Q(V3(0, 0, 1), a) end
+                local hx, hy, hz, rot = h.cx + sx, h.cy + sy, h.cz + sz, Q.from_elements(h.cq[1], h.cq[2], h.cq[3], h.cq[4])
+                local w = h.swing
+                if w then                                  -- (3.4.1 Test 18) turned on its hinge as far as the game slid it
+                    local f = h.sz > 0 and sz / h.sz or sy / h.sy
+                    local p = math.rad(w.deg) * math.max(0, math.min(1, f))
+                    local cp, sp, ry, rz = math.cos(p), math.sin(p), h.cy - w.y, h.cz - w.z
+                    hx, hy, hz = h.cx, w.y + ry * cp + rz * sp, w.z - ry * sp + rz * cp
+                    rot = Q.multiply(Q(V3(1, 0, 0), -p), rot)
+                end
+                local px, py = hx - AXIS_X, hy - AXIS_Y
+                local wx, wy, wz = AXIS_X + px * c - py * s, AXIS_Y + d + px * s + py * c, hz
+                local ok = pcall(U.set_local_position, u, t.ci, V3(wx, wy, wz))
+                ok = pcall(U.set_local_rotation, u, t.ci, Q.multiply(yaw, rot)) and ok
+                if TESTER then S.hatch_writes = (S.hatch_writes or 0) + 1 end
+                if ok then t.a, t.d, t.sx, t.sy, t.sz, t.wx, t.wy, t.wz = a, d, sx, sy, sz, wx, wy, wz else t.a = nil end
+            end
+        end
+    end
+    if e.driver_hatch then
+        local okd, p = pcall(U.local_position, u, e.driver_hatch); local _, y = xyz(okd and p)
+        if y then e.dh = e.dh or {}; seen_open(hatch_seen.driver, e.dh, (DRIVER_HATCH.y - y) / 0.925) end
+    end
+end
+-- (3.4.1 Test 16) every half second: a carrier not where it was put (something else moved it) is counted, and written again
+local function hatch_check(u, e)
+    for _, t in ipairs(e.hatch or {}) do
+        if t.a then
+            local ok, p = pcall(U.local_position, u, t.ci); local x, y, z = xyz(ok and p)
+            if not x then t.a = nil                -- (3.4.1 review) written again only when unreadable or moved
+            elseif math.abs(x - t.wx) > 1e-3 or math.abs(y - t.wy) > 1e-3 or math.abs(z - t.wz) > 1e-3 then
+                S.carrier_moved = (S.carrier_moved or 0) + 1; S.seen_changed = true; t.a = nil
+            end
+        end
+    end
+end
+-- (3.4.1 Test 16) the hatch carriers at rest: the hatches where the game has them (also on a hull whose turret nodes
+-- weren't found: its hatches still slide, 3.4.1 review)
+local function rest_hatches(u, e)
+    for _, t in ipairs(e.hatch or {}) do
+        local h = t.h
+        pcall(U.set_local_position, u, t.ci, V3(h.cx, h.cy, h.cz))
+        pcall(U.set_local_rotation, u, t.ci, Q.from_elements(h.cq[1], h.cq[2], h.cq[3], h.cq[4]))
+        t.a = nil
+    end
 end
 -- (3.1.1 review) every node back at its rest pose (the shutdown below)
 local function rest(u, e)
@@ -404,7 +574,8 @@ local function rest(u, e)
         pcall(U.set_local_position, u, n.i, V3(n.x, n.y, n.z))
         pcall(U.set_local_rotation, u, n.i, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))
     end
-    e.ta, e.ms, e.sd = nil, nil, nil
+    rest_hatches(u, e)
+    e.ta, e.ms, e.sd, e.pa, e.pd = nil, nil, nil, nil, nil
 end
 
 local list, next_list, shown = {}, 0, -1
@@ -424,12 +595,16 @@ local function tick()
         -- (3.1.1 review) units no longer out are forgotten; the rest are written again once (e.ta / e.ms cleared), so a pose
         -- the game itself put back (a turret parked since) is set right within half a second
         for u, e in pairs(hulls) do
-            if not listed[u] then hulls[u] = nil else e.ta, e.ms, e.sd = nil, nil, nil end
+            if not listed[u] then hulls[u] = nil else e.ta, e.ms, e.sd = nil, nil, nil; hatch_check(u, e) end
         end
     end
     local tanks, turned, no_gun, bad, no_seat = 0, 0, 0, 0, 0
+    local hatched, no_hatch, passengers = 0, 0, 0
     local d = shift_now()
-    if d ~= S.shift then S.shift = d; S.seen_changed = true end
+    if d ~= S.shift then
+        S.shift = d; S.seen_changed = true
+        for _, e in pairs(hulls) do e.settle = S.clock + SETTLE end      -- (3.4.1 Test 27)
+    end
     local t_now = nil
     for _, it in ipairs(list) do
         local u = it.u
@@ -439,7 +614,12 @@ local function tick()
             local e = hulls[u]
             if e and e.kind ~= it.h then e = nil end          -- (3.1.1 review: another tank at that unit's place)
             if not e then e = setup(u, it.h); hulls[u] = e end
+            if e.hatch then
+                no_hatch = no_hatch + (e.no_hatch or 0)
+                if #e.hatch > 0 then hatched = hatched + 1 end
+            end
             if not e.ok then bad = bad + 1
+                if e.hatch and #e.hatch > 0 then hatches(u, e, 0, 0) end        -- (3.4.1 Test 16: the turret at rest: the hatches still slide)
             else
                 if e.gun then
                     local okg, ga = pcall(U.alive, e.gun)
@@ -453,8 +633,10 @@ local function tick()
                 end
                 local a, hy
                 if e.gun then a, hy = heading(u, e) end
-                if a then turn(u, e, a, d); turned = turned + 1; if e.no_seat then no_seat = no_seat + 1 end else no_gun = no_gun + 1 end
-                if TESTER then S.angle[u], S.gun[u] = a, e.gun end
+                if a and not e.settle then e.settle = S.clock + SETTLE end      -- (3.4.1 Test 27)
+                if a then turn(u, e, a, d, S.clock < e.settle); turned = turned + 1; if e.no_seat then no_seat = no_seat + 1 end else no_gun = no_gun + 1 end
+                if #e.hatch > 0 then hatches(u, e, e.pa or 0, e.pd or 0) end          -- (3.4.1 Test 16)
+                if e.pa then passengers = passengers + (e.passengers or 0) end
                 if a then t_now = t_now or now_s(); rates(e, a, it.h, t_now, hy); help(u, e, a, t_now) else e.last_t, e.hl_t = nil, nil; if (e.m or 0) ~= 0 then e.m, e.mr = 0, 0; set_mount(u, e, 0) end end
             end
         elseif oka then
@@ -463,8 +645,9 @@ local function tick()
     end
     -- (3.1.0 review) the log is rewritten when a count changes (compared as numbers: no new text every frame)
     local changed = tanks ~= S.tanks or turned ~= S.turned or no_gun ~= S.no_gun or bad ~= S.bad_nodes or no_seat ~= S.no_seat
-        or S.errors ~= shown
+        or S.errors ~= shown or hatched ~= S.hatches or no_hatch ~= S.no_hatch or passengers ~= S.passengers
     S.tanks, S.turned, S.no_gun, S.bad_nodes, S.no_seat = tanks, turned, no_gun, bad, no_seat
+    S.hatches, S.no_hatch, S.passengers = hatched, no_hatch, passengers
     S.status = tanks == 0 and 'no tank out' or (turned == tanks and 'turning' or 'turning, some turrets not (see below)')
     if changed or (S.seen_changed and S.clock >= (S.next_seen_log or 0)) then
         shown = S.errors; S.seen_changed = false; S.next_seen_log = S.clock + 2; log()
@@ -495,7 +678,7 @@ do
             if S.api ~= 'ok' then return end
             for u, e in pairs(hulls) do
                 local oka, alive = pcall(U.alive, u)
-                if oka and alive and e.ok then rest(u, e) end
+                if oka and alive then if e.ok then rest(u, e) elseif e.hatch then rest_hatches(u, e) end end
             end
             hulls = {}
             S.status = 'stopped (game closing): turrets put back at rest'

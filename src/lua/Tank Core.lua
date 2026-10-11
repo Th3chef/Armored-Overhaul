@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.4.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.5.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -216,7 +216,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.4.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.5.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -402,7 +402,7 @@ local logged = {}
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'autoloader', 'gunner_drive'}) do
