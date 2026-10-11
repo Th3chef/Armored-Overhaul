@@ -1,5 +1,35 @@
 # Changelog
 
+## 3.5.0
+
+New option:
+- **Tank Collision Damage Boost** (right after Tank Stability; one checkbox, plus a Mod Options Menu switch, on by default). The faster the Bastion and Maelstrom drive into things, the harder they hit: walls, fences and small buildings break when you ram them at speed instead of stopping the tank dead. The demolition force follows how fast the tank is really going: 30 when crawling, 35 at half speed (about 17 km/h), 40 from three-quarter speed (about 26 km/h) up, never more than 40 (no cheesing objectives that need more). A nudge still won't break a wall. Changes every tank at once, the ones already out too; turning it off puts the game's own back. Both tanks of the same kind share the game's setting (with two Bastions out the faster one sets it); in multiplayer it most likely only applies when you host.
+
+Changed:
+- **Tank Turret Aim Range is split into Tank Gun Depression and Tank Gun Raise**, so each side is set on its own. Depression: *Low* 6, *Lower* 10, *Lowest* 15 degrees below level (the game: 3). Raise: *High* 30, *Higher* 45, *Highest* 60 degrees above level (the game: 25; higher than the old Widest's 45). The side you don't pick stays the game's own, for the gun and the gunner view. The gunner view goes 20 degrees below the gun's lowest angle and 15 above its highest, never above 60 (on *Highest* it stops at the gun's own top). Each has its own Mod Options Menu row that reaches the tanks already out at once.
+- **Tank MBT Turrets, reworked turret model:** cut level just above the hull's roof line, with walls that come straight down, rounded in at the bottom, ending a small gap above the deck with a recessed turret ring in the gap. The old flared lip at the turret's base (which stuck out past the hull when the turret turned) is gone. The turret is closed all round (no holes or see-through spots), and the hull's own plating (with your camo) shows under it, also where the old turret sat. The front arms keep the game's own angle again.
+- **Tank MBT Turrets, working hatches:** the turret's hatches open and close like the game's own (they were stuck shut) and go round with the turret. The gunner's door at the back of the turret swings up and out on its top edge and no longer clips into the hull or leaves a hole. The gunner gets in and out at the turret's door wherever the turret points; the passengers' places and the ways in go round with the turret too.
+- **Tank MBT Turrets, hit areas follow the turret:** the turret's 14 hit areas (its five armor plates, its core, the side and rear boxes, radar and antenna) now turn and move with the turret, also with Tank Turret Position *Centered* and after a change in the Mod Options Menu. Before, a shot on a turned or centered turret could hit thin air or the hull underneath. MBT Turrets now includes the tanks' physics files for this; with Tank Suspension on too, its copy carries the same hit areas.
+- **Option order:** Tank Suspension now comes right after Tank MBT Turrets (both change the tanks' physics files; this way they work together).
+
+Fixes & code review:
+- Hatches are tracked per tank (two tanks with different hatches open no longer confuse each other), put back on every tank when the game closes, and found again after a game update renumbers the model's parts.
+- Less work a frame while the turret turns (the ways in are updated about once a degree); right after a tank is called in, its turret's hit areas line up at once.
+- Gun Depression and Gun Raise menu rows are named by their angle.
+- The physics builder checks every shape it changes against the rules the game's own files follow, and stops rather than write a broken file.
+
+Upgrading:
+- Tick the new Tank Collision Damage Boost option if you want it.
+- Tank Turret Aim Range is gone: pick Tank Gun Depression and/or Tank Gun Raise instead. Its 3.4.0 Mod Options Menu value doesn't carry over.
+- Tank Suspension moved below Tank MBT Turrets in the list (your pick stays).
+- Purge & Deploy.
+
+Known issues:
+- The tank's body (what you stand on and what the tank drives into) is still the game's own shape, whose top is the old turret's roof: with the turret centered or turned you can stand at roof height where the old turret was, in thin air. (The hit areas follow the turret; this is separate.)
+- Smoke from the gunner seat doesn't work in a tank another player called in yet.
+- With a key set for Forward in the Mod Bindings Menu, holding W in the gunner seat may still nudge the tank a little. Please report it with your logs if you see it.
+- Tank Suspension still needs the tank to be called in again after a change (it's in the tank's physics file); every other tank option changes mid-game.
+
 ## 3.4.0
 
 New:
