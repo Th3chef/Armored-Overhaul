@@ -1,9 +1,10 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.5.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.5.1 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
--- (Built from indicator.lua.in, which holds the Turret indicator and the driver panel: they share the drawing code.)
+-- (The Turret indicator and the driver panel share their drawing code; each file is edited directly - (3.5.1 review) the old
+-- indicator.lua.in template is gone.)
 --
 -- Drawn the way HD2 HUD+ puts its widgets on screen: a retained screen GUI created in the game's overlay
 -- world (the world in Application.worlds() that is not the main game world; Test 3 drew into the main world, which
@@ -26,12 +27,12 @@ local CORE_STALL = 60                -- frames without a Tank Core update before
 
 local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- (3.0.0) no settings file (1.2.2-2.1 wrote and read ArmoredOverhaul-DriverPanel.cfg; a file an older version
--- wrote is left alone and not read); these are fixed. x, y: the panel's centre as shares of the screen (0 = left / bottom edge);
+-- wrote is left alone and not read); these are fixed. x, y: the panel's center as shares of the screen (0 = left / bottom edge);
 -- size: the gear letters' height as a share of the screen height. (3.0.1 review: show and game_font, always on, went
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.5.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.5.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
            speed = 'not measured yet', fastest = 'not measured yet', speed_check = 'none', handling_check = 'not driven yet', options_menu = 'not installed (the defaults are used)'}
@@ -341,7 +342,7 @@ local function tri(g, a, b, c, color)
     if id ~= nil and ov.sink then local sink = ov.sink; sink[#sink + 1] = id end
 end
 
--- ---------------------------------------------------------------- turret tracker (shared source: turret_tracker.lua.inc)
+-- ---------------------------------------------------------------- turret tracker (the same code in the Camera, Driver Panel and Turret Indicator files)
 -- Finds the tank you sit in and reads which way its turret points compared to the hull, through the engine's Lua
 -- API: the hull by its unit resource (World.units_by_resource), the gun by its unit or by its turning bone
 -- ('traverse') near the hull, and the angle as the gun's forward direction measured in the hull's own frame.
@@ -609,8 +610,10 @@ local function font_ready(g, set)
     ft = {gui = g}
     local key = pub.font .. ' ' .. pub.material .. ' ' .. pub.atlas
     local last = fontcheck()
-    if last and last:find('^trying') and last:find(key, 1, true) and last:find(MARK_TAG, 1, true) then
-        fontcheck('skipped once ' .. key .. ' ' .. MARK_TAG .. '\n')
+    -- ((3.5.1 review) skipped for the rest of this start, not just this GUI: the next mission's GUI found the marker at
+    -- 'skipped once', tried the font again and could crash again)
+    if S.font_skip == key or (last and last:find('^trying') and last:find(key, 1, true) and last:find(MARK_TAG, 1, true)) then
+        if S.font_skip ~= key then fontcheck('skipped once ' .. key .. ' ' .. MARK_TAG .. '\n'); S.font_skip = key end
         S.font = 'stroke letters for now (the last drive in the game font ended with the game closing; the font is '
             .. 'tried again next start)'
         return false
@@ -959,7 +962,7 @@ end
 
 -- ---------------------------------------------------------------- speed
 -- (1.2.2) The speed is measured from how far the tank's hull moves, sampled every 6 frames against the game's clock
--- and smoothed. 1.2.0-1.2.1 showed the game's own speed figure times 3.6, taking it for metres a second, and a user saw
+-- and smoothed. 1.2.0-1.2.1 showed the game's own speed figure times 3.6, taking it for meters a second, and a user saw
 -- 112 km/h. Without the hull or a clock the game's figure is shown as it is (tester builds log both, to compare).
 local SPEED_EVERY = 0.1          -- (3.1.1 review) seconds (3.1.0: 6 frames, 25 ms at 240 fps)
 local spd = {hull = nil, x = nil, y = nil, z = nil, t = nil, kmh = nil, next = 0, src = nil, check_at = 0, top = {}}
@@ -1242,6 +1245,9 @@ local function tick()
     local live_due = frame_due or (now >= (ov.lnext or 0) and (not ov.lkey or differs(Lv, live_was)))
     -- (3.1.1 review) after a failed drawing, half a second before the next try (see below)
     if now < (ov.retry_at or 0) then frame_due, live_due = false, false end
+    -- ((3.5.1 review) a frame that draws checks the GUI's world first: the cached GUI was only checked once a second, so
+    -- a world that died during a mission load could be drawn into until then)
+    if (frame_due or live_due) and not gui_alive() then ov.next_check = 0; return end
     -- (2.0.1 review) the font's ids are made only on frames that draw text (2.0: every frame)
     if font and (frame_due or live_due) and not font_frame(g) then
         font_refused('stroke letters (the game font ids could not be made)')
