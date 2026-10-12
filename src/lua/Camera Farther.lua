@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.5.1 - Gunner camera option (Farther): how far behind the turret the tank
+-- Armored Overhaul 3.5.2 - Gunner camera option (Farther): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -52,7 +52,7 @@ local dist_own, dist_written                        -- the view's own distances;
 local distance = PRESET          -- (3.0) the pick in meters (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.5.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.5.2', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -1269,6 +1269,11 @@ local function zb_link()
     ZB.at = state.frames + 60
     local B = rawget(_G, 'ModBindingsMenu')
     if type(B) ~= 'table' or B.api ~= 1 or type(B.register_binding) ~= 'function' or type(B.is_down) ~= 'function' then return end
+    -- (3.5.2) Freelook (Turret Core) asks for its key slot first: wait while it hasn't, at most 600 frames (a fallback)
+    if rawget(_G, 'ArmoredOverhaulFreelookFirst') == true then
+        ZB.wait = ZB.wait or state.frames
+        if state.frames - ZB.wait < 600 then ZB.at = state.frames + 10; return end
+    end
     local failed
     for _, k in ipairs({{'zoom_in', 'Gunner Camera: Zoom In'}, {'zoom_out', 'Gunner Camera: Zoom Out'}}) do
         local ok, done, why = pcall(B.register_binding, ZB.prefix .. k[1], k[2], nil, {category = 'ARMORED OVERHAUL'})

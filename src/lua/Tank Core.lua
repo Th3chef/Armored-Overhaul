@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.5.1 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.5.2 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -216,7 +216,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.5.1', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.5.2', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -472,7 +472,7 @@ menu_rows.gunner_drive = function()
     local names = {}
     for i, c in ipairs(GD) do names[i] = c.name end
     return {{'armored_overhaul.gunner_drive.' .. (tanks and frv and 'both' or (tanks and 'tanks' or 'frv')), {type = 'choice',
-        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake. F sounds the horn; Mouse 3 pops the Maelstrom\'s smoke. Controller: the left stick drives, its click is the horn, the right stick click pops smoke. Keys set in the Mod Bindings Menu replace these. A teammate who takes the wheel drives. Pick which vehicles.'}, 'gunner_drive'}}
+        label = 'Gunner Drive', choices = names, default = 2, description = 'Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake, F the horn, Mouse 3 the Maelstrom\'s smoke. Controller: the left stick drives, its click is the horn, the right stick click pops smoke. Mod Bindings Menu keys replace Forward, Back, Handbrake, Horn and Smoke. A teammate at the wheel drives. Pick which vehicles.'}, 'gunner_drive'}}
 end
 menu_set = function(key, v)
     if key == 'autoloader' then menu_opts.autoloader = v == true or v == 1
@@ -1080,29 +1080,28 @@ end
 -- ------------------------------------------------------------------------------------------ key bindings (3.0.1)
 -- With CowboyBingus's Mod Bindings Menu installed, Gunner Drive's controls get their own lines in the game's key and
 -- controller binding pages (tab MODS, section ARMORED OVERHAUL), each named "Gunner Drive: ...": Forward, Back,
--- Steer Left, Steer Right, Shift Up, Shift Down, Handbrake (3.2.0), Horn and Smoke (Maelstrom; only with the tanks'
+-- Handbrake (3.2.0), Horn and Smoke (Maelstrom; only with the tanks'
 -- Gunner Drive installed). They start with no key; a key or button set there works as well as the built-in ones (the
 -- movement keys, shift / CTRL, Space, F, Mouse 3, the stick),
 -- which always stay. (Its API, from the menu's own source: _G.ModBindingsMenu {api = 1, version = 3,
 -- register_binding(id, label, slot, options), is_down(id), ready()}; a binding without a slot gets a free one and
 -- keeps it in later sessions.) The menu may load after this addon: it is looked for once a second until found, and
 -- only once the Gunner Drive option is known to be installed. is_down is asked only while you drive.
--- (3.2.0) every Gunner Drive key bindable: Shift Up, Shift Down and Handbrake
--- too: held into the driver record's buttons as the game's own keys put them there (Space = +0x2D, the gear keys
--- +0x2E / +0x2F; see INPUT.buttons). Which of the two gear bytes shifts up is checked against the gear selector the
--- first time a bound gear key moves it, and swapped if it went the other way (log: key bindings).
+-- (3.2.0) Handbrake bindable too: held into the driver record's buttons as the game's own key puts it there
+-- (Space = +0x2D; see INPUT.buttons).
+-- (3.5.2: fewer of the menu's shared key slots) Shift Up and Shift Down are no longer bindings: the gears are the
+-- game's own gear keys (shift / CTRL; on a controller the game's own gear buttons), copied in as before. Steer Left
+-- and Steer Right are gone too: steering is the game's own A / D (or the controller's stick).
 local binds = {list = {{'forward', 'Gunner Drive: Forward'}, {'back', 'Gunner Drive: Back'},
-                       {'left', 'Gunner Drive: Steer Left'}, {'right', 'Gunner Drive: Steer Right'},
-                       {'gear_up', 'Gunner Drive: Shift Up'}, {'gear_down', 'Gunner Drive: Shift Down'},
                        {'handbrake', 'Gunner Drive: Handbrake'},
                        {'horn', 'Gunner Drive: Horn'}, {'smoke', 'Gunner Drive: Smoke (Maelstrom)'}},
                api = nil, at = 0, keys = {}, ids = {}, down = {}, used = {},
-               gear = {up = 0x2F, down = 0x2E, handbrake = 0x2D, sel = nil, from = nil, dir = nil, check_at = nil, held = false, learned = false}}
+               handbrake = 0x2D}
 S.bindings, S.bindings_used = 'Mod Bindings Menu not installed (the built-in keys work)', 'none yet'
 S.bindings_off = 'none'
 -- (3.3.0: the built-in driving keys turn off once they are rebound) A Gunner Drive control with a key or button
 -- set in the Mod Bindings Menu no longer answers its built-in key: Forward / Back the game's throttle and brake (W / S,
--- a controller's triggers), Steer Left / Right A / D, Shift Up / Down and Handbrake shift / CTRL / Space, Horn F and the
+-- a controller's triggers), Handbrake Space, Horn F and the
 -- left stick click, Smoke Mouse 3 and the right stick click. The controller's left stick still drives. Whether a control
 -- has a key set: the menu's own record of where it put the binding (ModBindingsMenu.assignments in the logs folder:
 -- id, native group, action) and the game's live binding table for that action (the menu's source: input owner at
@@ -1119,6 +1118,16 @@ function binds.link(frame)
     if not tanks and not frv then return end
     local B = rawget(_G, 'ModBindingsMenu')
     if type(B) ~= 'table' or B.api ~= 1 or type(B.register_binding) ~= 'function' or type(B.is_down) ~= 'function' then return end
+    -- (3.5.2) Freelook (Turret Core) asks for its key slot first: wait while it hasn't, at most 600 frames (a fallback
+    -- for a Turret Core that stopped; it normally asks within a second)
+    if rawget(_G, 'ArmoredOverhaulFreelookFirst') == true then
+        binds.fl_wait = binds.fl_wait or frame
+        if frame - binds.fl_wait < 600 then
+            binds.at = frame + 10
+            S.bindings = 'Mod Bindings Menu found: waiting for Freelook to take its key slot first'
+            return
+        end
+    end
     -- (3.0.1 review) the menu is taken only once a binding is registered: when none could be, it is tried again a
     -- second later (3.0.0 took it at once and never tried again)
     local failed
@@ -1238,45 +1247,18 @@ function binds.check()
         hist('built-in keys off for: ' .. S.bindings_off)
     end
 end
--- (3.2.0) the bound Handbrake / Shift Up / Shift Down, held into the driver record (after the game's own buttons are
--- copied in); a bound gear key's first press notes the selector, checked half a second later (see binds.learn)
+-- (3.2.0) the bound Handbrake, held into the driver record (after the game's own buttons are copied in)
 function binds.buttons(record)
-    local d, g, bd = binds.down, binds.gear, binds.bound
-    if bd.handbrake then record[g.handbrake] = 0 end          -- (3.3.0) a key is set for it: the built-in one is off
-    if bd.gear_up then record[g.up] = 0 end
-    if bd.gear_down then record[g.down] = 0 end
-    if d.handbrake then record[g.handbrake] = 1 end
-    local dir = d.gear_up and 'up' or (d.gear_down and 'down') or nil
-    if dir and not g.held and not g.learned and not g.check_at and g.sel
-        and record[0x2E] == 0 and record[0x2F] == 0 then         -- (not while the game's own gear keys are held)
-        g.from, g.dir, g.check_at = g.sel, dir, S.time + 0.5
-    end
-    g.held = dir ~= nil
-    if d.gear_up then record[g.up] = 1 end
-    if d.gear_down then record[g.down] = 1 end
+    if binds.bound.handbrake then record[binds.handbrake] = 0 end   -- (3.3.0) a key is set for it: the built-in one is off
+    if binds.down.handbrake then record[binds.handbrake] = 1 end
 end
--- (with the instruments, every 4 frames) the gear selector now: 0 R, 1 N, 2 D, 3 first, 4 second
-function binds.learn(sel)
-    local g = binds.gear
-    g.sel = sel
-    if not g.check_at or S.time < g.check_at then return end
-    g.check_at = nil
-    if not (sel and g.from) or sel == g.from then return end     -- (didn't move: top or bottom gear; asked again next press)
-    g.learned = true
-    if (sel > g.from) ~= (g.dir == 'up') then g.up, g.down = g.down, g.up end
-    local note = string.format('bound Shift Up = record +0x%X (checked: the gear went %s)', g.up, sel > g.from and 'up' or 'down')
-    S.bindings = S.bindings .. '; ' .. note
-    hist(note)
-end
--- the bound driving keys as a stick: x (right +), y (forward +), or nil when none is held. (3.0.1 review) A diagonal
--- (Forward + Steer Left) stays full forward and full steering, as W + A give it: scaling it to length 1 made bound keys
--- drive at two thirds throttle while turning
+-- the bound Forward / Back as a stick's y (forward +), or nil when neither is held. (3.5.2) Only Forward / Back are
+-- bindings now (no Steer Left / Right): the game's own A / D steer alongside.
 function binds.axes()
     local d = binds.down
-    local x = (d.right and 1 or 0) - (d.left and 1 or 0)
     local y = (d.forward and 1 or 0) - (d.back and 1 or 0)
-    if x == 0 and y == 0 then return nil end
-    return x, y
+    if y == 0 then return nil end
+    return y
 end
 
 local input_note, tag_note
@@ -1364,7 +1346,6 @@ feed = function(me, record)
     -- +0x18 forward (W), +0x1C reverse (S), +0x20 look A x, +0x2C driver flag, buttons
     f[0], f[1], f[2], f[3], f[4], f[5] = LF[3], LF[4], LF[5], LF[0], LF[1], LF[2]
     f[6], f[7], f[8] = forward, reverse, LF[3]
-    if (bd.left and f[0] < 0) or (bd.right and f[0] > 0) then f[0], f[8] = 0, 0 end   -- (3.3.0) A / D off when rebound
     -- ((3.5.1 review) and W / S's push in look A's y (and its z) when Forward / Back are rebound: only +0x18/+0x1C were
     -- zeroed, so W still nudged the tank through the look vector - the known issue)
     if (bd.forward and f[1] > 0) or (bd.back and f[1] < 0) then f[1], f[2] = 0, 0 end
@@ -1374,13 +1355,10 @@ feed = function(me, record)
     local sx, sy = pads.stick()
     binds.poll()
     binds.buttons(record)
-    local bx, by = binds.axes()                  -- (3.0.1) the Gunner Drive keys from the Mod Bindings Menu: as a stick
-    if bx then
-        if not sx then sx, sy = bx, by
-        else
-            if math.abs(bx) > math.abs(sx) then sx = bx end
-            if math.abs(by) > math.abs(sy) then sy = by end
-        end
+    local by = binds.axes()                      -- (3.0.1) the bound Forward / Back as a stick's y (3.5.2: no x)
+    if by then
+        if not sx then sx, sy = 0, by
+        elseif math.abs(by) > math.abs(sy) then sy = by end
     end
     if sx then                                  -- (2.1) a controller's left stick drives (see pads)
         -- (3.0 review) forward and back past a small dead zone of their own, so a stick pushed hard left or right no
@@ -1388,13 +1366,13 @@ feed = function(me, record)
         local dz, y = pads.dead_y, 0
         if sy > dz then y = (sy - dz) / (1 - dz) elseif sy < -dz then y = (sy + dz) / (1 - dz) end
         if y > 0 then f[6] = max(f[6], y) elseif y < 0 then f[7] = max(f[7], -y) end
-        local kx = f[0]                         -- (3.3.0: after the rebound A / D are taken out)
+        local kx = f[0]                         -- (A / D as the game gives them)
         if math.abs(sx) >= math.abs(kx) then f[0], f[8] = sx, sx end
         -- (3.0: the stick didn't turn a stopped tank on the spot, A/D do) with no driving key held, the whole look
         -- vector as a driver's stick gives it (x the steering, y the push, no z); with W/S/A/D held the keys' own y
         -- and z stay (3.0 review: W plus a sideways stick turned on the spot instead of curving)
         if forward == 0 and reverse == 0 and math.abs(kx) < 0.01 then f[1], f[2] = y, 0 end
-        if S.controller == 'not used yet' and not bx then S.controller = 'used (the left stick drives)' end
+        if S.controller == 'not used yet' and not by then S.controller = 'used (the left stick drives)' end
         if TESTER and S.frames % 5 == 0 then input_note('gunner seat, written', f) end
     end
     last.forward, last.reverse = f[6], f[7]
@@ -1996,7 +1974,6 @@ local function drive_frame()
         if read_instruments(index, hdr, SEAT_PUB) then
             if not drive.sel_check or S.frames >= drive.sel_check then drive.sel_at, drive.sel_check = selector_at(drive.vehicle), S.frames + 60 end   -- (3.0 review: a miss waits too)
             SEAT_PUB.selector = (drive.sel_at and fetch(drive.sel_at, 4) and mem_u32(0) <= 4) and mem_u32(0) or nil
-            binds.learn(SEAT_PUB.selector)
             -- does the tank answer? throttle held (not in neutral) for 3 s with no revs and no speed = no
             -- (1.3) the tank answers your throttle: it is yours (another player's earlier drive no longer matters)
             local pushing = last.forward and max(last.forward, last.reverse) > 0.5 and SEAT_PUB.selector ~= 1

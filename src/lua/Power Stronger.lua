@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_power
--- Armored Overhaul 3.5.1 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
+-- Armored Overhaul 3.5.2 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
 -- Throttle Response, for the TD-220 Bastion and TD-110 Maelstrom (one source, built once per option and strength;
 -- this copy is the 'torque' option, Stronger). Written from scratch.
 --
@@ -108,7 +108,7 @@ local TANK_KINDS = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
 local CHECK_EVERY = 120
 local MAX_TANKS = 8
 
-local state = {version = '3.5.1', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
+local state = {version = '3.5.2', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
                tanks = {}, errors = 0, last_error = 'none', frames = 0, writes = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
 state.part, state.live_mult = PART, 1            -- (Test 20: what this part multiplies now, for the other parts)
