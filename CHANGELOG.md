@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.2
+
+Changed:
+- **Freelook gets its key first:** the Mod Bindings Menu has 29 key slots shared by every mod. "Tank Turret: Freelook" now asks for its slot before the other Armored Overhaul keys, so it is no longer the one left out when the slots run short.
+- **Fewer key slots:** Gunner Drive's Steer Left, Steer Right, Shift Up and Shift Down are no longer in the Mod Bindings Menu. Steering and gears are always the game's own controls (A / D and Shift / CTRL, or the controller's). Armored Overhaul now takes 8 of the menu's slots (was 12). If you had set keys for them, A / D and Shift / CTRL work again. The menu frees the old slots for other mods after 30 game sessions.
+
+**Known issue:** Freelook in multiplayer: the game keeps one setting for both tanks' main guns, so while you hold Freelook as the host, another player's turret may stop turning too. Tell me if you see it.
+
 ## 3.5.1
 
 New:
