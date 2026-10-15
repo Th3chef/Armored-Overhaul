@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.5.2 - Gunner camera option (Farthest): how far behind the turret the tank
+-- Armored Overhaul 3.5.3 - Gunner camera option (Farthest): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -52,7 +52,7 @@ local dist_own, dist_written                        -- the view's own distances;
 local distance = PRESET          -- (3.0) the pick in meters (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.5.2', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.5.3', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -165,7 +165,7 @@ local function log()
             'game: ', state.game, '\n', 'found: ', state.how, '\n', 'preset: ', state.preset, '\n',
             'gunner view: ', state.view, '\n', 'turning with the turret: ', state.turning, '\n', 'scroll zoom: ', state.zoom, '\n',
             state.zoom_seen and ('crosshair zoom check: ' .. state.zoom_seen .. '\n') or '',
-            'zoom keys: ', tostring(state.zoom_keys), '\n', 'zoom readout: ', tostring(state.readout), '\n',
+            'zoom keys: ', tostring(state.zoom_keys), '\n', 'mouse wheel: ', tostring(state.zoom_wheel), '\n', 'zoom readout: ', tostring(state.readout), '\n',
             'other gunner seats: ', tostring(state.other_views), '\n', 'other seat zoom: ', tostring(state.other_zoom or 'not used yet'), '\n',
             'options menu: ', state.options_menu, '\n', 'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
         if TESTER then
@@ -1287,14 +1287,92 @@ do  -- (3.3.0) v19: the zoom keys registered as soon as every addon has loaded
     local L = rawget(_G, 'CowboyBingusModLoader')
     if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() ZB.at = 0; pcall(zb_link) end) end
 end
--- the bound zoom keys' notches this frame (zoom in positive), 0 without the menu or while it isn't ready
-local function zb_notches()
+-- (3.5.3) A Zoom In / Zoom Out key set in the Mod Bindings Menu turns that direction of the mouse wheel off (wheel up
+-- for Zoom In, wheel down for Zoom Out), as Gunner Drive's built-in keys turn off once they are rebound. Whether a key
+-- is set: the menu's own record of where it put each binding (ModBindingsMenu.assignments in the logs folder: id,
+-- native group, action) and the game's live binding table for that action (the menu's source: input owner at
+-- game.dll+0x347CF18, a 256-entry map at +686800 of 328-byte records {u32 code = group * 65536 + action, u32 count,
+-- mappings}; the menu leaves its actions with no mapping until the player sets one). Checked every 2 s in a gunner
+-- seat, only while the menu says it is ready (its own game build check); anything unreadable counts as no key set.
+local ZBT = {owner = 0x347CF18, map = 686800, records = 256, size = 328}
+ZB.bound, ZB.rec, ZB.check_at, ZB.slots_at = {}, {}, 0, 0
+state.zoom_wheel = 'mouse wheel zooms both ways'
+local function zb_slots()
+    local root = rawget(_G, 'ArmoredOverhaulLogsDir')()
+    local f = root and root ~= '' and io and io.open and io.open(root .. '\\ModBindingsMenu.assignments', 'r')
+    if not f then return nil end
+    local text = f:read('*a'); f:close()
+    local out = {}
+    for line in text:gmatch('[^\r\n]+') do
+        local id, g, a = line:match('^(%S+)%s+(%d+)%s+(%d+)')
+        if id and id:sub(1, #ZB.prefix) == ZB.prefix then out[id:sub(#ZB.prefix + 1)] = tonumber(g) * 65536 + tonumber(a) end
+    end
+    return out
+end
+local function zb_ptr(address)
+    if not read(address, 8) then return nil end
+    local p = ffi.cast('void **', buf)[0]
+    return p ~= nil and ffi.cast(U8, p) or nil
+end
+-- how many keys are set for zoom key k (nil: not known); its record is remembered, the 84 KB table read at most once a check
+local function zb_count(k, scan)
+    local code = ZB.slots and ZB.slots[k]
+    if not code or not game then return nil end
+    local r = ZB.rec[k]
+    if r then
+        local s = read(r, 8)
+        if s and u32(s, 0) == code then return u32(s, 4) end
+        ZB.rec[k] = nil
+    end
+    if scan.done then return nil end
+    scan.done = true
+    local owner = zb_ptr(game + ZBT.owner)
+    local head = owner and read(owner + ZBT.map, 12)
+    if not head or u32(head, 8) ~= ZBT.records then return nil end
+    local list = zb_ptr(owner + ZBT.map)
+    local all = list and read(list, ZBT.records * ZBT.size)
+    if not all then return nil end
+    local n
+    for i = 0, ZBT.records - 1 do
+        local c = u32(all, i * ZBT.size)
+        for _, kk in ipairs(ZB.keys) do
+            if ZB.slots[kk] == c then
+                ZB.rec[kk] = list + i * ZBT.size
+                if kk == k then n = u32(all, i * ZBT.size + 4) end
+            end
+        end
+    end
+    return n
+end
+local function zb_check()
+    if state.clock < ZB.check_at then return end
+    ZB.check_at = state.clock + 2
+    local missing = not ZB.slots                            -- (read again at once while a zoom key's slot isn't in it yet:
+    for _, k in ipairs(ZB.keys) do if ZB.slots and not ZB.slots[k] then missing = true end end   -- the menu writes it later)
+    if missing or state.clock >= ZB.slots_at then
+        local ok, sl = pcall(zb_slots)
+        ZB.slots, ZB.slots_at = ok and sl or nil, state.clock + 30
+    end
+    local scan, off, changed = {}, {}, false
+    for _, k in ipairs(ZB.keys) do
+        local okc, c = pcall(zb_count, k, scan)
+        local on = okc and type(c) == 'number' and c > 0 and c <= 16 or nil
+        if ZB.bound[k] ~= on then ZB.bound[k], changed = on, true end
+        if on then off[#off + 1] = k == 'zoom_in' and 'up (Zoom In has a key)' or 'down (Zoom Out has a key)' end
+    end
+    if changed then state.zoom_wheel = #off > 0 and ('mouse wheel ' .. table.concat(off, ', ') .. ' turned off') or 'mouse wheel zooms both ways' end
+end
+-- this frame's zoom notches (zoom in positive): the mouse wheel's (w; a direction whose key is set is off) and the
+-- bound zoom keys'; only the wheel's without the menu or while it isn't ready
+local function zb_notches(w)
     local B = ZB.api
-    if not B then return 0 end
+    if not B then return w end
     local okr, ready = true, true
     if type(B.ready) == 'function' then okr, ready = pcall(B.ready) end
-    if not (okr and ready) then return 0 end
-    local n = 0
+    if not (okr and ready) then return w end
+    zb_check()
+    if (w > 0 and ZB.bound.zoom_in) or (w < 0 and ZB.bound.zoom_out) then w = 0 end
+    local n = w
     for _, k in ipairs(ZB.keys) do
         local ok, d = pcall(B.is_down, ZB.prefix .. k)
         if ok and d == true then
@@ -1442,7 +1520,7 @@ local function zoom_frame(seated)
     if not zoom.seated then                                 -- (sat down: the picked distance again)
         zoom.seated, zoom.extra, zoom.d, zoom.t, zoom.level, zoom.f = true, 0, distance, state.clock, 0, 1
     end
-    local n = (wheel() or 0) + zb_notches()
+    local n = zb_notches(wheel() or 0)
     local level_was = zoom.level
     -- (3.4.0 review) 16 m in the orbit only; the offset fallback keeps the 3.2.0-3.3.0 reach (or the pick, if further)
     local lo, hi = ZOOM.min - distance, (dist_own and ZOOM.max or math.max(ZOOM.max_other, distance)) - distance
@@ -1623,7 +1701,7 @@ local function other_frame(v)
         if TESTER then local okf, fv = pcall(other_cam_fov); OZ.fov0 = okf and fv or nil end
     end
     local aim = aiming()
-    local n = (wheel() or 0) + zb_notches()
+    local n = zb_notches(wheel() or 0)
     local level_was = OZ.level
     if aim then                                             -- aiming: the crosshair zoom
         OZ.level = math.max(0, math.min(#ZOOM.fovs, OZ.level + n))
