@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.5.3
+
+Changed:
+- **Zoom keys replace the mouse wheel:** a key set for Gunner Camera: Zoom In or Zoom Out in the Mod Bindings Menu (controls, tab MODS) now turns that direction of the mouse wheel off, like every other Armored Overhaul key you rebind. Zoom In set: wheel up no longer zooms; Zoom Out set: wheel down no longer zooms. Clear the key and the wheel works again within a couple of seconds. In every gunner seat that zooms (tanks, FRV, emplacements).
+
+**Known issue:** Freelook in multiplayer: the game keeps one setting for both tanks' main guns, so while you hold Freelook as the host, another player's turret may stop turning too. Tell me if you see it.
+
 ## 3.5.2
 
 Changed:
