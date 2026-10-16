@@ -1,5 +1,32 @@
 # Changelog
 
+## 3.6.0
+
+New:
+- **Maelstrom Missile Demolition** (new option): the Maelstrom's missiles hit with demolition force 40 instead of the game's 30 on a direct hit, so they break the walls and fences in their way. On/off in the Mod Options Menu, at once.
+- **Maelstrom Fire Rate** (new option): hold reload in the Maelstrom's gunner seat to switch its main gun between 1200, 1800 and 2400 rounds a minute, like other weapons with fire-rate settings. Pick with left click (right click stays the missiles); the menu is titled Maelstrom. The gun starts at 1800.
+- **Maelstrom Single Belt** (new option): all 2,100 of the main gun's rounds on one belt, so it never reloads.
+- **FRV Run-Flat Tires** (new option): the M-102 FRV's and M-103 Supply FRV's tires never pop or lose health. On/off in the Mod Options Menu, at once. Works when you host or play alone.
+- **Supply FRV turret ammo:** in the M-103 Supply FRV the Vehicle Indicator shows a bar with its automated turret's ammo, so you know when it's out.
+
+Changed:
+- **Maelstrom missile pods:** with Tank Turret Position on Centered, the pods ride a little higher so they no longer sink into the hull.
+- **Gunner camera:** aiming up, and with the tank leaning to the side, the camera rises over the turret, so it no longer sinks between (or into) the Maelstrom's missile pods.
+- **Aiming up on slopes:** with MBT Turrets, the gun's and the view's top stops rise by how far the ground under the turret falls away, so aiming up over the low side of a leaning tank reaches as high as on flat ground.
+- Maelstrom Fire Rate and Single Belt changes in the Mod Options Menu reach the next Maelstrom called in (a Maelstrom keeps what it was called in with).
+
+Fixes & code review:
+- The Vehicle Indicator no longer shows an FRV tire as damaged after the FRV's hood takes a hit with run-flat tires on.
+- Turning a Maelstrom option off while the game's settings were being found again (after they moved) now puts the game's own values back.
+- The Maelstrom options refuse to change anything a game update has changed (the gun's rate, its belt), rather than guess.
+- FRV Run-Flat Tires keeps full only the FRVs it set, never above their own tire health, and its search after a game update checks memory before reading it.
+- The Supply FRV turret's ammo bar also shows when you get into an FRV whose turret is already low or empty.
+- With MBT Turrets, aiming on slopes keeps up while the turret turns over the low side of a leaning tank.
+- The gunner camera no longer steps up and down while it rises over the turret.
+- Lighter: fewer memory checks for the FRVs' run-flat copies and the Maelstrom smoke key's log line.
+
+**Known issue:** Freelook in multiplayer: the game keeps one setting for both tanks' main guns, so while you hold Freelook as the host, another player's turret may stop turning too. Tell me if you see it.
+
 ## 3.5.3
 
 Changed:
