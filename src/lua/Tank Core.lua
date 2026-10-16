@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.5.3 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.6.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -216,7 +216,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.5.3', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.6.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -351,12 +351,12 @@ end
 -- The log is what a user attaches to a bug report: what the addon found in this game build, where you sat and
 -- what it did, and the last error. Tester builds add the counters and per-frame details used during development.
 TC.LOG_MAIN = {'version', 'loader', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
-    'response', 'overwritten', 'control', 'engine', 'smoke', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'kinds', 'autoloader', 'reloads', 'brakes', 'errors', 'last_error'}
+    'response', 'overwritten', 'control', 'engine', 'smoke', 'smoke_keys', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'turret_ammo', 'run_flat', 'kinds', 'autoloader', 'reloads', 'brakes', 'errors', 'last_error'}
 TC.LABELS = {loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
                 engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3, right stick click or a bound key, gunner seat)',
                 sessions = 'times driven from the gunner seat', drive_frames = 'frames driven',
                 response = 'tank answers the throttle', health = 'vehicle health (Vehicle Indicator color)',
-                autoloader = 'autoloader (gunner seat)', horn = 'horn (F, left stick click or a bound key, gunner seat)', controller = 'controller (gunner seat)', bindings = 'key bindings (Mod Bindings Menu)', bindings_off = 'built-in keys turned off (a key is set for them in the Mod Bindings Menu)', bindings_used = 'bound keys used (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', brakes = 'braked to a stop as you got out (Gunner Drive)', control = 'who runs the tank (multiplayer)', overwritten = 'driving input replaced by the game (frames)'}
+                autoloader = 'autoloader (gunner seat)', horn = 'horn (F, left stick click or a bound key, gunner seat)', controller = 'controller (gunner seat)', bindings = 'key bindings (Mod Bindings Menu)', bindings_off = 'built-in keys turned off (a key is set for them in the Mod Bindings Menu)', bindings_used = 'bound keys used (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', turret_ammo = 'M-103 Supply FRV turret ammo (Vehicle Indicator bar)', run_flat = 'FRV run-flat tires (the FRV you ride in)', smoke_keys = 'Maelstrom smoke key (while driving from the gunner seat)', turret_near = 'ammo-table weapons near the Supply FRV id (offset: rounds)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', brakes = 'braked to a stop as you got out (Gunner Drive)', control = 'who runs the tank (multiplayer)', overwritten = 'driving input replaced by the game (frames)'}
 -- The last few drive starts and stops (1.2: players report Gunner Drive stops working after someone else drove)
 local history = {}
 local function hist(what)
@@ -389,7 +389,7 @@ local function itrace(what)
     if #input_trace >= 40 then table.remove(input_trace, 1) end
     input_trace[#input_trace + 1] = string.format('f%d %s', S.frames, what)
 end
-TC.LOG_TESTER = {'pad_buttons', 'tires', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
+TC.LOG_TESTER = {'pad_buttons', 'tires', 'turret_near', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
     'frames', 'polls', 'reads', 'page_checks', 'gear_read', 'engine_starts', 'hud_font', 'smoke_shots'}
 local logged = {}
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
@@ -402,7 +402,7 @@ local logged = {}
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'missile', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'run_flat', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'autoloader', 'gunner_drive'}) do
@@ -1704,6 +1704,38 @@ smoke_frame = function(me, paused)
         write_log(true)
     end
     local down = smoke.id and not paused and smoke_key() or false
+    -- (3.6.0 Test 4) the tester on Test 3: the smoke "doesn't fire" from the gunner seat while driving, and the log had no
+    -- press at all (smoke launcher found, no key set for Smoke). What the smoke key reads while you drive, for the log:
+    -- the middle button's index, how often it was seen held, and how often a held key was not used (input paused: the
+    -- game's UI has the input; the launcher not found yet)
+    do
+        if keys.mouse == nil then
+            local SR = rawget(_G, 'stingray')
+            local mm = type(SR) == 'table' and field(SR, 'Mouse')
+            keys.mouse = mm and button_of(mm, {'middle'}) or false     -- ((3.6.0 review) no Mouse: false, not looked up again)
+        end
+        local m = keys.mouse
+        local raw = m and pressed(m) or false
+        local sk = smoke.keys
+        if not sk then sk = {held = 0, paused = 0, no_id = 0, bound = 0, used = 0}; smoke.keys = sk end
+        if raw and not sk.was then
+            sk.held = sk.held + 1
+            if paused then sk.paused = sk.paused + 1 end
+            if not smoke.id then sk.no_id = sk.no_id + 1 end
+            if binds.bound.smoke then sk.bound = sk.bound + 1 end
+        end
+        if down and not smoke.held then sk.used = sk.used + 1 end
+        sk.was = raw
+        -- ((3.6.0 review) the text only when a count changed: Test 13 built it every frame while driving)
+        local sig = sk.held * 1e8 + sk.paused * 1e6 + sk.no_id * 1e4 + sk.bound * 1e2 + sk.used
+        if sig ~= sk.sig or not S.smoke_keys then
+            sk.sig = sig
+            S.smoke_keys = string.format('middle mouse button %s; pressed %d time(s) while driving (%d with the game\'s UI holding the input, %d before the launcher was found, %d while a key was set for Smoke); smoke fired %d time(s)',
+                m == false and 'not found' or (m and m.idx ~= nil and ('index ' .. tostring(m.idx)) or 'found, but it has no middle button'), sk.held, sk.paused, sk.no_id, sk.bound, sk.used)
+            sk.dirty = true
+        end
+        if sk.dirty and S.frames >= (sk.logged or 0) + 60 then sk.dirty, sk.logged = false, S.frames; write_log(true) end
+    end
     if down and not smoke.held then
         local err = smoke_down(me, smoke.id)
         if err then
@@ -2062,6 +2094,7 @@ local function publish(mine)
         SEAT_PUB.kind, SEAT_PUB.role, SEAT_PUB.vehicle = mine.kind, mine.role, mine.vehicle
     else
         SEAT_PUB.kind, SEAT_PUB.role, SEAT_PUB.vehicle, SEAT_PUB.health = nil, 0, 0, nil
+        SEAT_PUB.ammo, SEAT_PUB.ammo_full = nil, nil       -- (3.6.0) the Supply FRV turret's rounds
         local tt = SEAT_PUB.tires; if tt then tt[1], tt[2], tt[3], tt[4] = nil, nil, nil, nil end   -- (2.1 review)
         clear_drive_pub()
     end
@@ -2183,7 +2216,8 @@ end
 -- right, 350 each on the M-102 and M-103), and the byte at +0x20 has a bit per part (2k+1 for part k) the game sets when
 -- the part is destroyed. Found in 2.1.0 Test 12 by shooting the tires out one at a time. Published as shares of full
 -- health, -1 for a popped tire.
-S.health, S.tires = 'not read yet', 'not read yet'
+S.health, S.tires, S.run_flat = 'not read yet', 'not read yet', 'not in an FRV yet'
+local run_flat_count = {refills = 0, downed = 0, popped = {}}
 SEAT_PUB.tires = {nil, nil, nil, nil}
 local health_at, health_for = 0, nil
 local function clear_tires() local t = SEAT_PUB.tires; t[1], t[2], t[3], t[4] = nil, nil, nil, nil end
@@ -2229,25 +2263,126 @@ do
         local rec = records(vehicle)
         return rec and fetch(rec, TIRES.size) and raw_parts() or nil
     end
-    local function read_health(vehicle, tires)
+    -- (3.6.0) FRV Run-Flat Tires (its own addon sets the tires' immortal flag in the FRVs' settings, so a tire can't pop,
+    -- and publishes ArmoredOverhaulRunFlat): while it is on, the tires of the FRV you ride in are put back to full
+    -- health at this read (every 15 frames), so they never show damage. A tire the game has destroyed (its bit 2k+1:
+    -- the flag wasn't set yet) is left as it is; a tire held down by the flag is filled up too, also from below 0 (3.6.0
+    -- Test 3: hood damage took the front left tire to -970, held down, and Test 3 only filled 0 and up, so the indicator
+    -- showed it as not known). In the record now in `mem`, and in `mem` itself, so the published shares are the full ones.
+    local MEMU32 = ffi.cast(U32P, mem)
+    -- (3.6.0 review) only an FRV the option set, up to that FRV's own tire maximum (ArmoredOverhaulRunFlat.set: name ->
+    -- maximum; Test 13 filled any FRV to 350, one the option had left alone too)
+    local RUN_FLAT_NAMES = {[FRV_KIND] = 'M-102', [0x1B] = 'M-103'}
+    local function run_flat(rec, vehicle, kind)
+        local RF = rawget(_G, 'ArmoredOverhaulRunFlat')
+        if type(RF) ~= 'table' or RF.on ~= true then
+            if S.run_flat ~= 'off' and S.run_flat ~= 'option not installed' then S.run_flat = type(RF) == 'table' and 'off' or 'option not installed' end
+            return
+        end
+        local name = RUN_FLAT_NAMES[kind]
+        local full = name and type(RF.set) == 'table' and tonumber(RF.set[name])
+        if not full or full < 1 or full > 100000 then
+            local text = string.format('on, but not for this FRV (%s: the option left it alone)', name or 'unknown kind')
+            if S.run_flat ~= text then S.run_flat = text end
+            return
+        end
+        local flags = mem[TIRES.flags]
+        for k = 0, 3 do
+            local v = signed(mem_u32(TIRES.at + 4 * k))
+            local state = floor(flags / 4 ^ k) % 4
+            if state < 2 and v > -10000000 and v < full then
+                local at = rec + TIRES.at + 4 * k
+                if data_pages(at, 4) then
+                    ffi.cast(U32P, at)[0] = full
+                    MEMU32[(TIRES.at + 4 * k) / 4] = full
+                    run_flat_count.refills = run_flat_count.refills + 1
+                    if state == 1 or v <= 0 then run_flat_count.downed = run_flat_count.downed + 1 end
+                end
+            elseif state >= 2 then
+                run_flat_count.popped[vehicle * 4 + k] = true
+            end
+        end
+        local popped = 0
+        for _ in pairs(run_flat_count.popped) do popped = popped + 1 end
+        S.run_flat = string.format('on: %d tire refill(s), %d of them from 0 health or below; %d tire(s) seen popped', run_flat_count.refills, run_flat_count.downed, popped)
+    end
+    local function read_health(vehicle, tires, kind)
         local rec, top_at = records(vehicle)
         if not rec then return nil, top_at end
         if not fetch(rec, tires and TIRES.size or 0x18) then return nil, 'health unreadable' end
         local cur = signed(mem_u32(0x14))
-        if tires then parse_tires(vehicle) end
+        if tires then run_flat(rec, vehicle, kind); parse_tires(vehicle) end
         local top = fetch_u32(top_at + 0x14)
         if not top then return nil, 'health unreadable' end
         top = signed(top)
         if top <= 0 or top > 10000000 or cur < 0 or cur > top * 4 then return nil, string.format('odd health values (%d / %d)', cur, top) end
         return min(1, cur / top), cur, top
     end
+    -- (3.6.0) The M-103 Supply FRV's automated defense turret (its "gun" mount: 5.5 mm, 120 rounds, no spare magazines;
+    -- the asset index's weapon data): its rounds left, for the Vehicle Indicator's ammo bar. The turret is a weapon of its
+    -- own in the ammo table (map +0x20, 16-byte records at +0x48, rounds u32 at +0). A vehicle's mounted weapons get
+    -- entity ids close to the vehicle's (the tanks' smoke launcher is the tank's id + 3), so the ids just after and just
+    -- before the FRV's are looked up, and the first one in the ammo table holding 9..120 rounds is taken (the supply rack
+    -- holds 8 at most). Kept for that FRV while it stays in the table; one read every 15 frames after that.
+    -- ((3.6.0 review) the id where 3.6.0 Test 1 found it in game, +1, is taken holding 0..120 rounds, so a turret already
+    -- low or empty when you get in is found too (Test 13 only took 9..120 anywhere: no bar for an emptied turret))
+    local TURRET = {full = 120, known = 1, near = {1, 2, 3, 4, -1, -2, -3, -4, 5, 6, 7, 8, -5, -6, -7, -8}}
+    local turret = {memo = {}}
+    S.turret_ammo, SEAT_PUB.ammo, SEAT_PUB.ammo_full = 'not in an M-103 Supply FRV yet', nil, nil
+    local function turret_rounds(ah, e, memo)
+        local ai = map_get(ah, 0x20, e, memo)
+        local arr = ai and str_ptr(ah, 0x48)
+        local r = arr and fetch_u32(arr + ai * 16)
+        if r and r <= 100000 then return r end
+        return nil
+    end
+    local function read_turret(vehicle)
+        local F = FEAT.reload or FEAT.smoke
+        if not F then return nil, 'not available in this game version' end
+        local ah = mgr_hdr(F.ammo, 0x50)
+        if not ah then return nil, 'ammo table unreadable' end
+        if turret.vehicle ~= vehicle then turret = {vehicle = vehicle, memo = {}, top = TURRET.full} end
+        if turret.entity then
+            local r = turret_rounds(ah, turret.entity, turret.memo)
+            if r then return r end
+            turret.entity, turret.memo = nil, {}
+        end
+        local list = TESTER and {} or nil
+        for _, d in ipairs(TURRET.near) do
+            local e = (vehicle + d) % TWO32
+            local r = turret_rounds(ah, e)
+            if r then
+                if list then list[#list + 1] = string.format('%+d: %d', d, r) end
+                if not turret.entity and (r > 8 or d == TURRET.known) and r <= TURRET.full then turret.entity, turret.d = e, d end
+            end
+        end
+        if list then S.turret_near = (#list > 0 and table.concat(list, ', ') or 'none in the ammo table') .. string.format(' (FRV %08x)', vehicle) end
+        if not turret.entity then return nil, 'turret not found (not at the FRV\'s id +1, and none of the ids near it holds 9-120 rounds)' end
+        return turret_rounds(ah, turret.entity, turret.memo)
+    end
+    local function publish_turret(mine)
+        if mine.kind ~= 0x1B then
+            if SEAT_PUB.ammo ~= nil then SEAT_PUB.ammo, SEAT_PUB.ammo_full = nil, nil end
+            return
+        end
+        local ok, r, why = pcall(read_turret, mine.vehicle)
+        if ok and r then
+            turret.top = max(turret.top or TURRET.full, r)
+            SEAT_PUB.ammo, SEAT_PUB.ammo_full = r, turret.top
+            S.turret_ammo = string.format('%d / %d rounds (FRV id %+d)', r, turret.top, turret.d or 0)
+        else
+            SEAT_PUB.ammo, SEAT_PUB.ammo_full = nil, nil
+            S.turret_ammo = ok and tostring(why) or ('failed: ' .. tostring(r))
+        end
+    end
     publish_health = function(mine)
         -- (2.0) read at once when you sit in another vehicle (Test 8 waited out the 15 frames: a gray outline meanwhile)
         if S.frames < health_at and mine.vehicle == health_for then return end
         health_at, health_for = S.frames + 15, mine.vehicle
+        publish_turret(mine)
         local frv = FRV_KINDS[mine.kind] ~= nil
         if not frv then clear_tires() end
-        local ok, share, cur, top = pcall(read_health, mine.vehicle, frv)
+        local ok, share, cur, top = pcall(read_health, mine.vehicle, frv, mine.kind)
         if ok and share then
             SEAT_PUB.health = share
             S.health = string.format('%d / %d (%.0f%%)', cur, top, share * 100)
@@ -2362,7 +2497,7 @@ local function poll()
                 o.kind, DRIVEN[o.kind] or FRV_KINDS[o.kind] or 'not supported yet', okr and tostring(raw) or 'unreadable')
         end
     end end
-    if SEAT_PUB.kind and mine.role ~= 0 then publish_health(mine) else SEAT_PUB.health = nil; clear_tires() end   -- (2.1) the FRV too
+    if SEAT_PUB.kind and mine.role ~= 0 then publish_health(mine) else SEAT_PUB.health, SEAT_PUB.ammo, SEAT_PUB.ammo_full = nil, nil, nil; clear_tires() end   -- (2.1) the FRV too
     if autoloader_wanted() and VEHICLES[mine.kind] and (mine.role ~= GUNNER or S.frames >= auto.next_check) then
         local oka, aerr = pcall(autoload, mine, seats.me)
         if not oka then S.errors = S.errors + 1; S.last_error = 'autoloader: ' .. tostring(aerr); S.autoloader = 'error (see last error)' end

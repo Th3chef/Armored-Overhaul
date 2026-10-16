@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.5.3 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.6.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -142,7 +142,7 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.5.3', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.6.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -294,6 +294,7 @@ local function log()
         f:write('tanks already out: ', state.live or 'not looked at yet', '\n')
         f:write('gunner view: ', state.camera, '\n')
         f:write('aiming on slopes: ', state.slope or 'not used yet', '\n')   -- (3.5.1 Test 5)
+        f:write('aiming up on slopes: ', state.slope_up or 'not used yet', '\n')   -- (3.6.0 Test 4)
         f:write('freelook key: ', state.freelook, '\n')                     -- (3.5.1 Test 7)
         f:write('errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
         if TESTER then
@@ -729,12 +730,13 @@ local opts = {}
 -- axes the Turret indicator or Gunner camera publish (ArmoredOverhaulTurretAngle), in the gunner seat only, in 2 degree
 -- steps looked at every 0.1 s and written at most 4 times a second; out of the seat, without them or stale: 0.
 local next_check = 0   -- (3.5.1 Test 5: declared before slope_step, which asks for an apply)
-local SLOPE = {shift = 0, next = 0, last_key = nil, key_at = 0, writes = 0, steepest = 0, wrote_at = -1e9}
+local SLOPE = {shift = 0, next = 0, last_key = nil, key_at = 0, writes = 0, steepest = 0, wrote_at = -1e9,
+               raise = 0, raise_writes = 0, raise_most = 0}     -- (3.6.0 Test 4) raise: see slope_step
 local SLOPE_STEP, SLOPE_LIMIT = 2, 80          -- (Test 6: 80, was 89)
 local function slope_step()
     if state.frames < SLOPE.next then return end
     SLOPE.next = state.frames + 6
-    local want = 0
+    local want, raise = 0, 0
     local seat, pub = rawget(_G, 'ArmoredOverhaulSeat'), rawget(_G, 'ArmoredOverhaulTurretAngle')
     if opts.mbt and type(seat) == 'table' and seat.role == 2 and (seat.kind == 0x2B or seat.kind == 0x2C)
         and type(pub) == 'table' and pub.kind == seat.kind and type(pub.angle) == 'number' and type(pub.axes) == 'table' and pub.axes.ok then
@@ -747,13 +749,35 @@ local function slope_step()
             local s = under - nose
             -- (a full step from what is set before it moves, so a slope on a step's edge doesn't flip back and forth)
             if s == s then want = math.abs(s - SLOPE.shift) < SLOPE_STEP and SLOPE.shift or math.floor(s / SLOPE_STEP + 0.5) * SLOPE_STEP end
+            -- (3.6.0 Test 4) The tester on Test 3: "if you aim up while on an angle, it limits how far up you can aim up",
+            -- with the tank leaning sideways. The view's top stop is measured against the hull along the view (3.4.0 Test 37:
+            -- about +84 against the hull at every slope with an 80 top), so aiming over the low side of a leaning tank tops
+            -- out the lean lower against the horizon (Test 3's log: +38 against the horizon facing 15 down). The top stops
+            -- (the view's and the guns') are raised by how far the ground under the turret's heading falls away, so the
+            -- top against the horizon stays where it is on flat ground; aiming over the high side keeps them as set (the
+            -- view never nearer straight up, where the turret spins). Same steps and rate as the shift.
+            local r = max(0, -under)
+            if r == r then raise = math.abs(r - SLOPE.raise) < SLOPE_STEP and SLOPE.raise or math.floor(r / SLOPE_STEP + 0.5) * SLOPE_STEP end
         end
     end
-    if want ~= SLOPE.shift and state.clock - SLOPE.wrote_at >= 0.25 then
-        SLOPE.shift, SLOPE.wrote_at = want, state.clock
-        SLOPE.writes = SLOPE.writes + 1; state.slope_changes = SLOPE.writes
-        if math.abs(want) > math.abs(SLOPE.steepest) then SLOPE.steepest = want end
-        state.slope = string.format('gun stops moved by %+d deg now (the slope under the turret minus the nose; biggest %+d, %d changes)', want, SLOPE.steepest, SLOPE.writes)
+    -- ((3.6.0 review) one gated write for both, so a changing raise no longer starves the shift while the turret turns
+    -- (Test 13: up to 20 deg behind over the low side); a lower raise is written at once, the safe direction, so the
+    -- view's top never stays raised over the high side)
+    local lower = raise < SLOPE.raise
+    if (raise ~= SLOPE.raise or want ~= SLOPE.shift) and (lower or state.clock - SLOPE.wrote_at >= 0.25) then
+        SLOPE.wrote_at = state.clock
+        if raise ~= SLOPE.raise then
+            SLOPE.raise = raise
+            SLOPE.raise_writes = SLOPE.raise_writes + 1
+            if raise > SLOPE.raise_most then SLOPE.raise_most = raise end
+            state.slope_up = string.format('top stops raised by %d deg now (the ground falling away under the turret\'s heading; most %d, %d changes)', raise, SLOPE.raise_most, SLOPE.raise_writes)
+        end
+        if want ~= SLOPE.shift then
+            SLOPE.shift = want
+            SLOPE.writes = SLOPE.writes + 1; state.slope_changes = SLOPE.writes
+            if math.abs(want) > math.abs(SLOPE.steepest) then SLOPE.steepest = want end
+            state.slope = string.format('gun stops moved by %+d deg now (the slope under the turret minus the nose; biggest %+d, %d changes)', want, SLOPE.steepest, SLOPE.writes)
+        end
         next_check = 0                                    -- (applied this frame: the guns and the tanks already out)
     end
 end
@@ -926,6 +950,7 @@ local function wanted_for(gun)
         if SLOPE.shift < 0 then w.pitch_min = max(-SLOPE_LIMIT, min(w.pitch_min, w.pitch_min + SLOPE.shift))
         else w.pitch_max = min(SLOPE_LIMIT, max(w.pitch_max, w.pitch_max + SLOPE.shift)) end
     end
+    if opts.mbt and SLOPE.raise > 0 then w.pitch_max = min(SLOPE_LIMIT, max(w.pitch_max, w.pitch_max + SLOPE.raise)) end   -- (3.6.0 Test 4)
     -- (3.5.1 Test 11) Freelook held (last: (Test 14) the slope widening would open the up/down hold): the stops hold the main guns (both kinds: the Bastion's and Maelstrom's have the same
     -- record, so a tank already out can't be told apart and would be left as it is if they wanted different stops)
     if FL.on and FL.lock and not gun.second then
@@ -953,6 +978,8 @@ local function camera_wanted()
     if opts.lo then lo = min(lo, opts.lo - VIEW_BELOW) end
     if opts.hi then hi = max(hi, min(opts.hi + VIEW_ABOVE, VIEW_TOP)) end
     if opts.mbt then lo = min(lo, VIEW_TURNED_LOW) end   -- (3.5.1 Test 3)
+    -- (3.6.0 Test 4) aiming over the low side of a leaning tank: the top raised by the ground's fall (see slope_step)
+    if opts.mbt and SLOPE.raise > 0 then hi = min(SLOPE_LIMIT, hi + SLOPE.raise) end
     -- (Test 26) with the 180 choice the view stops where the gun does, so the gun never fires off to the side of where
     -- it points (the game's own view goes 20 degrees past its gun)
     local arc = opts.mbt and (opts.mbt_arc or 180)
@@ -1107,7 +1134,7 @@ local phase = 'gate'
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'missile', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'run_flat', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'turret'}) do

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_collision_damage
--- Armored Overhaul 3.5.3 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
+-- Armored Overhaul 3.6.0 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
 -- buildings they drive into instead of stopping dead against them. Written from scratch. (Named Tank Wall Breaking until
 -- 3.5.0 Test 3: the tester named it Tank Collision Damage Boost, since it breaks small buildings too.)
 --
@@ -55,7 +55,7 @@ local PEAK_HOLD = 0.25             -- (Test 7, the tester: "it seems to stay on 
 local GAME = {25, 35}                          -- the game's own values for both tanks (Sept 2026 build)
 local RING = 128                               -- speed samples kept per tank (PEAK_HOLD at up to ~500 frames a second; 3.5.0: 64)
 
-local S = {version = '3.5.3', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.6.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            tanks = 'not yet', writes = 0, reapplied = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (the mod manager\'s pick)', frames = 0}
 rawset(_G, 'ArmoredOverhaulCollisionDamage', S)
@@ -310,7 +310,7 @@ end
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'missile', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'run_flat', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'collision'}) do

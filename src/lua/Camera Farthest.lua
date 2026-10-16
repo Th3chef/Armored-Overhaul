@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.5.3 - Gunner camera option (Farthest): how far behind the turret the tank
+-- Armored Overhaul 3.6.0 - Gunner camera option (Farthest): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -52,7 +52,7 @@ local dist_own, dist_written                        -- the view's own distances;
 local distance = PRESET          -- (3.0) the pick in meters (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.5.3', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.6.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -164,6 +164,7 @@ local function log()
         f:write('Armored Overhaul - Gunner Camera\n', 'version: ', state.version, '\n', 'status: ', state.status, '\n',
             'game: ', state.game, '\n', 'found: ', state.how, '\n', 'preset: ', state.preset, '\n',
             'gunner view: ', state.view, '\n', 'turning with the turret: ', state.turning, '\n', 'scroll zoom: ', state.zoom, '\n',
+            'raised over the turret (aiming up / leaning): ', string.format('%.1f m now, %.1f m at most', state.view_lift or 0, state.view_lift_max or 0), '\n',
             state.zoom_seen and ('crosshair zoom check: ' .. state.zoom_seen .. '\n') or '',
             'zoom keys: ', tostring(state.zoom_keys), '\n', 'mouse wheel: ', tostring(state.zoom_wheel), '\n', 'zoom readout: ', tostring(state.readout), '\n',
             'other gunner seats: ', tostring(state.other_views), '\n', 'other seat zoom: ', tostring(state.other_zoom or 'not used yet'), '\n',
@@ -538,7 +539,8 @@ local function tt_find_tip(U, Q, gun, trav)
     end
     b.tip, b.axis, b.sign, b.trav = best, axis, sign, trav
 end
-local function tt_pitch(U, Q, f, qh)
+-- the barrel's direction in the world (unit length), or nil
+local function tt_barrel(U, Q, f)
     local b = TT.barrel
     if b.gun ~= f.gun then tt_find_tip(U, Q, f.gun, f.gun_node) end
     if not b.tip then return nil end
@@ -549,11 +551,17 @@ local function tt_pitch(U, Q, f, qh)
         local mx, my, mz = tt_comps(U.world_position(f.gun, b.tip))
         if tx and mx then vx, vy, vz = mx - tx, my - ty, mz - tz end
     end
-    local ux, uy, uz = tt_comps(Q.up(qh))
-    if not vx or not ux then return nil end
+    if not vx then return nil end
     local n = math.sqrt(vx * vx + vy * vy + vz * vz)
     if n < 1e-6 then return nil end
-    local d = (b.axis >= 0 and b.sign or 1) * (vx * ux + vy * uy + vz * uz) / n
+    local sg = (b.axis >= 0 and b.sign or 1) / n
+    return vx * sg, vy * sg, vz * sg
+end
+local function tt_pitch(U, Q, f, qh)
+    local vx, vy, vz = tt_barrel(U, Q, f)
+    local ux, uy, uz = tt_comps(Q.up(qh))
+    if not vx or not ux then return nil end
+    local d = vx * ux + vy * uy + vz * uz
     return math.deg(math.asin(math.max(-1, math.min(1, d))))
 end
 local function tt_read_angle()
@@ -583,6 +591,16 @@ local function tt_read_angle()
     if type(pub) == 'table' and pub.want_pitch and Q.up then
         local okp, pd = pcall(tt_pitch, U, Q, TT.found, qh)
         TT.pitch = okp and pd or nil
+    end
+    -- (3.6.0 Test 3) the barrel's pitch against the horizon (degrees, up positive), while the Gunner camera asks for it
+    -- (TT.want_view / pub.want_view: tanks, in the gunner seat): it lifts the camera as you aim up (see view_lift)
+    TT.view_pitch = nil
+    -- ((3.6.0 review) the gunner seat only: pub.want_view stays set once the camera ran, and the indicator, which reads the
+    -- angle in any tank seat, worked the barrel out in the driver's and passengers' seats too, unused)
+    local seat_now = rawget(_G, 'ArmoredOverhaulSeat')
+    if (TT.want_view or (type(pub) == 'table' and pub.want_view)) and TT.TANKS[TT.found.kind] and type(seat_now) == 'table' and seat_now.role == 2 then
+        local okb, vx, vy, vz = pcall(tt_barrel, U, Q, TT.found)
+        if okb and vz then TT.view_pitch = math.deg(math.asin(math.max(-1, math.min(1, vz)))) end
     end
     return math.atan2(gx * rx + gy * ry + gz * rz, gx * fx + gy * fy + gz * fz)
 end
@@ -636,6 +654,8 @@ function TT.shared_angle(world, kind, frame, key)
         ax.ok = type(pa) == 'table' and pa.ok == true
         if ax.ok then ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz = pa.fx, pa.fy, pa.fz, pa.rx, pa.ry, pa.rz, pa.ux, pa.uy, pa.uz end
         if TT.want_up then pub.want_up = true end
+        TT.view_pitch = pub.view_pitch                   -- (3.6.0 Test 3)
+        if TT.want_view then pub.want_view = true end
         return pub.angle, pub.why
     end
     local angle, why = TT.angle(world, kind, frame)
@@ -643,12 +663,14 @@ function TT.shared_angle(world, kind, frame, key)
     pub.key, pub.kind, pub.angle, pub.why, pub.tank, pub.pick = key, kind, angle, why, TT.tank, TT.pick
     pub.hull = angle and TT.found.unit or nil
     pub.pitch = angle and TT.pitch or nil                -- (3.5.1 Test 14) for Freelook (nil unless asked)
+    pub.view_pitch = angle and TT.view_pitch or nil      -- (3.6.0 Test 3) for the Gunner camera (nil unless asked)
     -- (the hull's axes, numbers only, for this frame)
     local ax, pa = TT.axes, pub.axes
     if type(pa) ~= 'table' then pa = {}; pub.axes = pa end
     pa.ok = angle ~= nil and ax.ok
     if pa.ok then pa.fx, pa.fy, pa.fz, pa.rx, pa.ry, pa.rz, pa.ux, pa.uy, pa.uz = ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz end
     if TT.want_up then pub.want_up = true end
+    if TT.want_view then pub.want_view = true end
     return angle, why
 end
 -- (1.2.2) A unit's axes in the world (forward, right, up; x right, y forward, z up), for the Gunner camera's level
@@ -767,6 +789,33 @@ end
 -- sits up the slope behind the turret, as the game's own view does), since a level camera stayed down at the turret's
 -- height and the tank's own hull hid the ground ahead (a user: "impossible to see ahead of the tank when you're going
 -- downhill" with the further cameras). Roll stays levelled either way; level ground is unchanged.
+-- (3.6.0 Test 3) A user's screenshots (via the tester): aiming up with the Maelstrom leaning on a slope, the camera sank
+-- between the missile pods, and zoomed in it sat inside one. In the orbit the camera goes back along the line of sight
+-- from the point over the turret, so aiming up swings it down behind that point by its distance x the sine of the
+-- climb (the game's own view is only 1-2 m back, so it never reached the pods), and leaning sideways tips a pod up
+-- towards the middle. So the point over the turret is raised by both: the distance (up to 4 m) x how far the barrel
+-- climbs past 5 degrees, and VIEW_ROLL x how far the turret leans to its side (its right axis out of level). In 10 cm
+-- steps (few writes), at most VIEW_MAX. The barrel's climb comes from the turret tracker (TT.view_pitch).
+local VIEW_ROLL, VIEW_MAX, VIEW_DIST, VIEW_FREE = 1.2, 3.0, 4.0, math.sin(math.rad(5))
+local function view_lift(a, B)
+    local up = 0
+    local p = TT.view_pitch
+    if type(p) == 'number' and p == p and dist_own then
+        local s = math.sin(math.rad(math.max(-90, math.min(90, p))))
+        if s > VIEW_FREE then up = math.min(VIEW_DIST, dist_own.m + reach) * (s - VIEW_FREE) end
+    end
+    local c, s = math.cos(a), math.sin(a)
+    local lean = math.abs(B.rz * c - B.fz * s)                       -- the turret's right axis out of level (sine)
+    up = up + VIEW_ROLL * math.min(1, lean)
+    -- ((3.6.0 review) a step kept until the lift is 0.07 m past it: on a step's edge the lean and the climb, which change
+    -- all the time while driving, flipped it 10 cm up and down from frame to frame, a camera write each time)
+    local last = state.view_lift_step
+    if last and math.abs(up - last) <= 0.07 then up = last else up = math.floor(up * 10 + 0.5) / 10 end
+    up = math.min(VIEW_MAX, up)
+    state.view_lift_step, state.view_lift = up, up
+    if up > (state.view_lift_max or 0) + 0.05 then state.view_lift_max = up; state.lift_log = true end
+    return up
+end
 local function set_target_level(a, B)
     local c, s = math.cos(a), math.sin(a)
     local gx, gy = B.fx * c + B.rx * s, B.fy * c + B.ry * s          -- the turret's heading in the world, flattened
@@ -790,6 +839,7 @@ local function set_target_level(a, B)
     end
     local wx = rx * want.side + px * want.back + ux * want.up
     local wy = ry * want.side + py * want.back + uy * want.up
+    lift = lift + view_lift(a, B)                         -- (3.6.0 Test 3) aiming up / leaning: over the pods
     local wz = pz * want.back + uz * want.up + lift
     target.side = wx * B.rx + wy * B.ry + wz * B.rz
     target.back = wx * B.fx + wy * B.fy + wz * B.fz
@@ -884,6 +934,7 @@ local last_step, retry_at
 local basis, level = {}, false
 -- (the tracker keeps the hull's up axis too, for the level offset; 3.0.1 review: only while a distance is picked)
 TT.want_up = distance ~= nil
+TT.want_view = distance ~= nil                     -- (3.6.0 Test 3) the barrel's pitch, for view_lift
 -- (3.0 review) the turning text, rebuilt only when what it says changes (2.1: every frame in the gunner seat)
 local turning_was = {}
 local function turning_text(found, tank, extra)
@@ -1849,6 +1900,7 @@ local function follow_turret()
     if blocked or hold or state.frames < (retry_at or 0) then return end
     -- (3.0 review) Off in the menu: the game's own view, straight behind, never turned or levelled
     if not distance then set_target(0) elseif level then set_target_level(a, basis) else set_target(math.floor(a / ANGLE_STEP + 0.5) * ANGLE_STEP) end
+    if state.lift_log and state.clock >= (state.lift_logged or 0) + 5 then state.lift_log, state.lift_logged = false, state.clock; log() end   -- (3.6.0 Test 3)
     if last_step and math.abs(target.side - written.side) < 0.01 and math.abs(target.back - written.back) < 0.01
         and math.abs(target.up - written.up) < 0.01 then return end
     local ok, how = write(target)
@@ -1871,7 +1923,7 @@ end
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'missile', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'run_flat', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'camera'}) do
@@ -1954,8 +2006,9 @@ menu_set = function(key, v)
     -- (3.0.1 review) the hull's up axis is asked for only while a distance is picked (Off: the Vehicle Indicator stops
     -- reading it for this addon)
     TT.want_up = distance ~= nil
+    TT.want_view = distance ~= nil
     local pub = rawget(_G, 'ArmoredOverhaulTurretAngle')
-    if not distance and type(pub) == 'table' then pub.want_up = nil end
+    if not distance and type(pub) == 'table' then pub.want_up = nil; pub.want_view = nil end
 end
 
 -- ---------------------------------------------------------------- main loop

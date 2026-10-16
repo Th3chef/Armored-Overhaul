@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.5.3 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
+-- Armored Overhaul 3.6.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
 -- FRV or M-103 Supply FRV (any seat), a small outline on your screen shows which way the turret points compared to the
 -- hull, like a real tank's display, colored by the vehicle's health (the FRV's tires too). The turret always points
 -- up; the hull outline turns around it, with a notch at its front. Drawn only on your screen. Written from scratch.
@@ -33,11 +33,11 @@ local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.lo
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
 local PANEL_DEFAULT = {x = 0.5, y = 0.1, size = 0.022}   -- (3.1.0 Test 26) the Driver Panel's default place (its SETTINGS)
 
-local S = {version = '3.5.3', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.6.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
-           speed = 'not measured yet', speed_check = 'none', health = 'not shown yet', tires = 'not in an FRV yet', skull = 'not shown yet', dock = 'not shown yet'}
+           speed = 'not measured yet', speed_check = 'none', health = 'not shown yet', tires = 'not in an FRV yet', ammo = 'not in an M-103 Supply FRV yet', skull = 'not shown yet', dock = 'not shown yet'}
 rawset(_G, 'ArmoredOverhaulIndicator', S)
 
 -- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
@@ -57,7 +57,7 @@ local SR = rawget(_G, 'stingray')
 -- ---------------------------------------------------------------- log and settings
 -- The log is what a user attaches to a bug report: whether the engine offers what the option needs, where it
 -- draws, the settings, your seat and tank, and what went wrong. Tester builds add counters and details.
-local LOG_MAIN = {'version', 'status', 'api', 'gui', 'options_menu', 'seat', 'tank', 'pick', 'angle', 'health', 'tires', 'skull', 'dock', 'errors', 'last_error'}
+local LOG_MAIN = {'version', 'status', 'api', 'gui', 'options_menu', 'seat', 'tank', 'pick', 'angle', 'health', 'tires', 'ammo', 'skull', 'dock', 'errors', 'last_error'}
 local LOG_TESTER = {'frames', 'drawn', 'finds', 'shapes', 'hulls', 'hull_changes', 'tilts', 'tips'}
 local notes, test_notes = {}, {}
 local function note(s)
@@ -104,7 +104,7 @@ for k, v in pairs(SETTINGS) do settings[k] = v end
 -- menu_rows[group]: {{id, spec, key}, ...} or a function making it; menu_set(key, value) applies a value.
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'missile', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'run_flat', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
     for _, g in ipairs({'indicator'}) do
@@ -158,7 +158,7 @@ end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
 menu_rows.indicator = {
-    {'armored_overhaul.indicator', {type = 'toggle', label = 'Vehicle Indicator', default = true, description = 'A small outline of your vehicle shows where the gun points compared to the hull, colored by health (blue to red). Works in the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV, in any seat; the FRVs\' tires each show their own health and go clear when popped. Only you see it.'}, 'show'},
+    {'armored_overhaul.indicator', {type = 'toggle', label = 'Vehicle Indicator', default = true, description = 'A small outline of your vehicle shows where the gun points compared to the hull, colored by health (blue to red). Works in the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV, in any seat; the FRVs\' tires each show their own health and go clear when popped, and the M-103\'s turret gets an ammo bar. Only you see it.'}, 'show'},
 }
 menu_set = function(key, v)
     if key == 'show' then settings.show = (v == true or v == 1) and 1 or 0; settings.sig = settings.sig + 1 end
@@ -522,7 +522,8 @@ local function tt_find_tip(U, Q, gun, trav)
     end
     b.tip, b.axis, b.sign, b.trav = best, axis, sign, trav
 end
-local function tt_pitch(U, Q, f, qh)
+-- the barrel's direction in the world (unit length), or nil
+local function tt_barrel(U, Q, f)
     local b = TT.barrel
     if b.gun ~= f.gun then tt_find_tip(U, Q, f.gun, f.gun_node) end
     if not b.tip then return nil end
@@ -533,11 +534,17 @@ local function tt_pitch(U, Q, f, qh)
         local mx, my, mz = tt_comps(U.world_position(f.gun, b.tip))
         if tx and mx then vx, vy, vz = mx - tx, my - ty, mz - tz end
     end
-    local ux, uy, uz = tt_comps(Q.up(qh))
-    if not vx or not ux then return nil end
+    if not vx then return nil end
     local n = math.sqrt(vx * vx + vy * vy + vz * vz)
     if n < 1e-6 then return nil end
-    local d = (b.axis >= 0 and b.sign or 1) * (vx * ux + vy * uy + vz * uz) / n
+    local sg = (b.axis >= 0 and b.sign or 1) / n
+    return vx * sg, vy * sg, vz * sg
+end
+local function tt_pitch(U, Q, f, qh)
+    local vx, vy, vz = tt_barrel(U, Q, f)
+    local ux, uy, uz = tt_comps(Q.up(qh))
+    if not vx or not ux then return nil end
+    local d = vx * ux + vy * uy + vz * uz
     return math.deg(math.asin(math.max(-1, math.min(1, d))))
 end
 local function tt_read_angle()
@@ -567,6 +574,16 @@ local function tt_read_angle()
     if type(pub) == 'table' and pub.want_pitch and Q.up then
         local okp, pd = pcall(tt_pitch, U, Q, TT.found, qh)
         TT.pitch = okp and pd or nil
+    end
+    -- (3.6.0 Test 3) the barrel's pitch against the horizon (degrees, up positive), while the Gunner camera asks for it
+    -- (TT.want_view / pub.want_view: tanks, in the gunner seat): it lifts the camera as you aim up (see view_lift)
+    TT.view_pitch = nil
+    -- ((3.6.0 review) the gunner seat only: pub.want_view stays set once the camera ran, and the indicator, which reads the
+    -- angle in any tank seat, worked the barrel out in the driver's and passengers' seats too, unused)
+    local seat_now = rawget(_G, 'ArmoredOverhaulSeat')
+    if (TT.want_view or (type(pub) == 'table' and pub.want_view)) and TT.TANKS[TT.found.kind] and type(seat_now) == 'table' and seat_now.role == 2 then
+        local okb, vx, vy, vz = pcall(tt_barrel, U, Q, TT.found)
+        if okb and vz then TT.view_pitch = math.deg(math.asin(math.max(-1, math.min(1, vz)))) end
     end
     return math.atan2(gx * rx + gy * ry + gz * rz, gx * fx + gy * fy + gz * fz)
 end
@@ -618,6 +635,7 @@ function TT.shared_angle(world, kind, frame, key)
         local pa, ax = pub.axes, TT.axes
         ax.ok = type(pa) == 'table' and pa.ok == true
         if ax.ok then ax.fx, ax.fy, ax.fz, ax.rx, ax.ry, ax.rz, ax.ux, ax.uy, ax.uz = pa.fx, pa.fy, pa.fz, pa.rx, pa.ry, pa.rz, pa.ux, pa.uy, pa.uz end
+        TT.view_pitch = pub.view_pitch                   -- (3.6.0 Test 3)
         return pub.angle, pub.why
     end
     local angle, why = TT.angle(world, kind, frame)
@@ -625,6 +643,7 @@ function TT.shared_angle(world, kind, frame, key)
     pub.key, pub.kind, pub.angle, pub.why, pub.tank, pub.pick = key, kind, angle, why, TT.tank, TT.pick
     pub.hull = angle and TT.found.unit or nil
     pub.pitch = angle and TT.pitch or nil                -- (3.5.1 Test 14) for Freelook (nil unless asked)
+    pub.view_pitch = angle and TT.view_pitch or nil      -- (3.6.0 Test 3) for the Gunner camera (nil unless asked)
     -- (the hull's axes, numbers only, for this frame)
     local ax, pa = TT.axes, pub.axes
     if type(pa) ~= 'table' then pa = {}; pub.axes = pa end
@@ -778,7 +797,45 @@ local function skull_material(g, set)
     end
     return sk.m, sk.pick.scale
 end
-local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place)
+-- (3.6.0) the M-103 Supply FRV turret's ammo bar (Tank Core's SEAT_PUB.ammo / ammo_full): AMMO_SEGS segments up the
+-- right side of the outline, filled bottom up; yellow, orange at a quarter or less, red at a tenth or less; empty: the
+-- segments as thin red outlines. One number for the redraw check: 0 empty, else filled segments + 16 x tone (0 yellow,
+-- 1 orange, 2 red); nil without a bar
+local AMMO_SEGS = 10
+local function ammo_code(seat)
+    if seat.kind ~= 0x1B then return nil end
+    local r, full = seat.ammo, seat.ammo_full
+    if type(r) ~= 'number' or type(full) ~= 'number' or full <= 0 then return nil end
+    if r <= 0 then return 0 end
+    local share = math.min(1, r / full)
+    return max(1, math.ceil(share * AMMO_SEGS - 1e-9)) + 16 * (share <= 0.1 and 2 or (share <= 0.25 and 1 or 0))
+end
+local function draw_ammo(g, set, cx, cy, hx, hy, th, L, code)
+    local x0, x1 = cx + hx + th + L * 0.16, cx + hx + th + L * 0.27
+    local gap = max(1, L * 0.012)
+    local seg = (2 * hy - gap * (AMMO_SEGS - 1)) / AMMO_SEGS
+    local filled, tone = code % 16, floor(code / 16)
+    local a = floor(245 * set.opacity + 0.5)
+    local FILL = tone == 2 and C(a, 235, 45, 35) or (tone == 1 and C(a, 255, 140, 20) or C(a, 255, 231, 16))
+    local EMPTY = C(a, 235, 45, 35)
+    for i = 1, AMMO_SEGS do
+        local y0 = cy - hy + (i - 1) * (seg + gap)
+        local y1 = y0 + seg
+        if code == 0 then
+            local lw = max(1, L * 0.014)
+            line(g, x0, y0, x1, y0, lw, EMPTY); line(g, x1, y0, x1, y1, lw, EMPTY)
+            line(g, x1, y1, x0, y1, lw, EMPTY); line(g, x0, y1, x0, y0, lw, EMPTY)
+        else
+            local p1, p3 = P(x0 - 1, y0 - 1), P(x1 + 1, y1 + 1)
+            tri(g, p1, P(x1 + 1, y0 - 1), p3, SHADOW); tri(g, p1, p3, P(x0 - 1, y1 + 1), SHADOW)
+            if i <= filled then
+                local q1, q3 = P(x0, y0), P(x1, y1)
+                tri(g, q1, P(x1, y0), q3, FILL); tri(g, q1, q3, P(x0, y1), FILL)
+            end
+        end
+    end
+end
+local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place, ammo)
     colors(set.opacity)
     local b = band and HEALTH_BANDS[band]
     local HULL = b and C(floor(245 * set.opacity + 0.5), b[3], b[4], b[5]) or GREY
@@ -845,6 +902,7 @@ local function draw(g, sw, sh, set, angle, band, frv, tires, nogun, place)
         local x1, y1 = R(-wx, fy); local x2, y2 = R(wx, fy); local x3, y3 = R(0, wy)
         tri(g, P(x1, y1), P(x2, y2), P(x3, y3), col)
     end
+    if ammo then draw_ammo(g, set, cx, cy, hx, hy, max(3, L * 0.065), L, ammo) end    -- (3.6.0) the Supply FRV turret's ammo
     th = max(1.2, L * 0.018)                         -- (the gun line below keeps its own width)
     -- turret: the game's skull icon (else a filled octagon), with the gun pointing straight up
     local r = L * 0.11
@@ -1141,17 +1199,18 @@ local function tick()
         else dock, px, py, ps = 3, place.x, place.y, place.size end
     elseif settings.dock >= 0.5 then dock = 1 end
     local tires = FRV_KINDS[seat.kind] and tire_code(seat, settings.health >= 0.5) or nil
+    local ammo = ammo_code(seat)
     if (not ov.key or step ~= ov.step or sw ~= ov.sw or sh ~= ov.sh or settings.sig ~= ov.sig or band ~= ov.band
         or dock ~= ov.dock or px ~= ov.px or py ~= ov.py or ps ~= ov.ps or ov.kind ~= seat.kind or ov.nogun ~= nogun
-        or (tires and tires ~= ov.tires)) and S.frames >= (ov.retry_at or 0) then
+        or (tires and tires ~= ov.tires) or ammo ~= ov.ammo) and S.frames >= (ov.retry_at or 0) then
         -- ((3.5.1 review) a frame that draws checks the GUI's world first: the cached GUI was only checked once a second,
         -- so a world that died during a mission load could be drawn into until then)
         if not gui_alive() then ov.next_check = 0; return end
         clear_shapes(true)
         ov.kind = seat.kind
         ov.frv, ov.nogun = FRV_KINDS[seat.kind] ~= nil, nogun
-        ov.tires = tires
-        local okd, err = pcall(draw, g, sw, sh, settings, angle, band, ov.frv, ov.frv and tire_bands or nil, nogun, (dock == 3 or dock == 5) and place or nil)
+        ov.tires, ov.ammo = tires, ammo
+        local okd, err = pcall(draw, g, sw, sh, settings, angle, band, ov.frv, ov.frv and tire_bands or nil, nogun, (dock == 3 or dock == 5) and place or nil, ammo)
         if not okd then
             S.errors = S.errors + 1; S.last_error = 'drawing failed: ' .. tostring(err); clear_shapes(true)
             -- (2.0.1 review) only drawing failures count towards turning it off (2.0 counted the tracker's too)
@@ -1181,6 +1240,12 @@ local function tick()
         end
         if TESTER then S.shapes = string.format('screen %dx%d, %d shapes, %d bitmaps, triangles %s', sw, sh, #ov.ids, #ov.bitmaps, tostring(ov.style)) end
         -- (3.0 review) from what was drawn (2.1: a failed draw left it stale, and a tank kept the FRV's text)
+        local ak = ammo or (seat.kind == 0x1B and -1 or -2)
+        if ak ~= ov.ammo_logged then
+            ov.ammo_logged = ak
+            S.ammo = ammo == nil and (seat.kind == 0x1B and 'not known (no bar)' or 'not in an M-103 Supply FRV')
+                or (ammo == 0 and 'empty (red outlines)' or string.format('%d of %d segments (the rounds: Tank Core\'s log)', ammo % 16, AMMO_SEGS))
+        end
         if not ov.frv then
             if ov.tires_shown ~= false then ov.tires_shown = false; S.tires = 'not in an FRV' end
         elseif tires ~= ov.tires_shown then
