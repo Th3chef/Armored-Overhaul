@@ -1,9 +1,9 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.5.3",
+  "Name": "Armored Overhaul 3.6.0",
   "IconPath": "thumbnail.png",
-  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; a collision damage boost for ramming; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
+  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; a collision damage boost for ramming; stronger Maelstrom missiles, a faster Maelstrom gun with all its ammo on one belt; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; FRV run-flat tires; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
   "Options": [
     {
       "Name": "Tank Top Speed",
@@ -216,6 +216,33 @@
       "Include": [
         "Tank Core",
         "Collision Damage"
+      ]
+    },
+    {
+      "Name": "Maelstrom Missile Demolition",
+      "Description": "The Maelstrom's missiles hit with demolition force 40 instead of the game's 30, on the hit and the blast, so they break the tree branches, fences and walls in their way instead of being stopped by them. Only the missiles change (nothing else in the game uses their settings). Can be turned off in game with the Mod Options Menu.",
+      "Image": "options/maelstrom_missile_demolition.png",
+      "Include": [
+        "Maelstrom Weapons",
+        "Missile Demolition"
+      ]
+    },
+    {
+      "Name": "Maelstrom Fire Rate",
+      "Description": "Hold reload in the Maelstrom's gun seat to switch its main gun's fire rate on the fly, like other weapons with fire-rate settings: 1200, 1800 or 2400 rounds a minute (the game: 1200 only). The choice is on the main fire button, and its menu is titled Maelstrom. Only the Maelstrom's gun changes. Can be turned off in game with the Mod Options Menu.",
+      "Image": "options/maelstrom_fire_rate.png",
+      "Include": [
+        "Maelstrom Weapons",
+        "Fire Rate"
+      ]
+    },
+    {
+      "Name": "Maelstrom Single Belt",
+      "Description": "The Maelstrom's main gun carries all its ammo on one belt: 2,100 rounds instead of 300, and it never reloads. With Maelstrom Fire Rate, holding reload switches the fire rate instead. Can be turned off in game with the Mod Options Menu.",
+      "Image": "options/maelstrom_belt.png",
+      "Include": [
+        "Maelstrom Weapons",
+        "Single Belt"
       ]
     },
     {
@@ -534,8 +561,17 @@
       ]
     },
     {
+      "Name": "FRV Run-Flat Tires",
+      "Description": "The M-102 and M-103 FRVs' tires never pop, and the tires of the FRV you ride in stay at full health (no damage on the Vehicle Indicator). Works when you host or play alone: in someone else's game, their game decides. Can be turned off in game with the Mod Options Menu.",
+      "Image": "options/frv_run_flat.png",
+      "Include": [
+        "Tank Core",
+        "Run Flat"
+      ]
+    },
+    {
       "Name": "Vehicle Indicator",
-      "Description": "A small outline of your vehicle shows where the gun points compared to the hull, colored by health (blue to red). Works in the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV, in any seat; the FRVs' tires each show their own health and go clear when popped. Only you see it.",
+      "Description": "A small outline of your vehicle shows where the gun points compared to the hull, colored by health (blue to red). Works in the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV, in any seat; the FRVs' tires each show their own health and go clear when popped, and the M-103's turret gets an ammo bar. Only you see it.",
       "Image": "options/turret_indicator.png",
       "Include": [
         "Tank Core",
