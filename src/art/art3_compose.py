@@ -1,4 +1,4 @@
-"""Armored Overhaul 3.5 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
+"""Armored Overhaul 3.6 art: grades the Bastion / Maelstrom / FRV renders (scene3.py) into the square thumbnail, the 16:9
 gallery photo, the Nexus header and the 2:1 GitHub social picture.
   python3 art3_compose.py [square] [wide] [header] [social]   (needs R/sq.png, R/mask_sq.png, R/mist_sq_0001.png, the same for wd and hd)
 Outputs: thumbnail_1254.png, thumbnail_512.png (Arsenal), gallery_1920x1080.png, clean_square.png (no text, for icons)."""
@@ -10,16 +10,18 @@ ART = '.'
 R = '../final'
 FONT = ART + '/Oswald-VF.ttf'
 YELLOW = (255, 196, 0)
-VERSION = '3.5'
+VERSION = '3.6'
 TAG1, TAG2 = 'DRIVE  \u2022  FIGHT  \u2022  RELOAD', 'COMMAND YOUR ARMOR'
 VEHICLES = 'TD-220 BASTION  \u2022  TD-110 MAELSTROM  \u2022  M-102 FRV'
 FEATURES_SQUARE = ['TOP SPEED  •  ENGINE TORQUE  •  GRIP  •  STEERING  •  THROTTLE  •  STABILITY',
-                   'COLLISION DAMAGE  •  360° MBT TURRETS  •  SUSPENSION  •  TRAVERSE  •  ELEVATION',
-                   'GUN DEPRESSION  •  GUN RAISE  •  AUTOLOADER  •  GUNNER DRIVE  •  DRIVER PANEL',
-                   'GUNNER CAMERA  •  FRV STABILITY  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT']   # (3.5) Arsenal option order
+                   'COLLISION DAMAGE  •  MISSILE DEMOLITION  •  FIRE RATE  •  SINGLE BELT  •  360° MBT TURRETS',
+                   'SUSPENSION  •  TRAVERSE  •  ELEVATION  •  GUN DEPRESSION  •  GUN RAISE  •  AUTOLOADER',
+                   'GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA  •  FRV STABILITY  •  RUN-FLAT TIRES',
+                   'VEHICLE INDICATOR  •  VEHICLE LOADOUT']   # (3.6) Arsenal option order
 FEATURES = ['TOP SPEED  •  ENGINE TORQUE  •  GRIP  •  STEERING  •  THROTTLE  •  STABILITY  •  COLLISION DAMAGE',
-            '360° MBT TURRETS  •  SUSPENSION  •  TRAVERSE  •  ELEVATION  •  GUN DEPRESSION  •  GUN RAISE  •  AUTOLOADER',
-            'GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA  •  FRV STABILITY  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT']
+            'MISSILE DEMOLITION  •  FIRE RATE  •  SINGLE BELT  •  360° MBT TURRETS  •  SUSPENSION  •  TRAVERSE  •  ELEVATION',
+            'GUN DEPRESSION  •  GUN RAISE  •  AUTOLOADER  •  GUNNER DRIVE  •  DRIVER PANEL  •  GUNNER CAMERA',
+            'FRV STABILITY  •  RUN-FLAT TIRES  •  VEHICLE INDICATOR  •  VEHICLE LOADOUT']
 
 
 def font(size, weight):
@@ -239,9 +241,9 @@ def header():
     d.rectangle([48, base + 26, 54, base + 26 + cap(fs) + 88], fill=YELLOW)
     text(d, (68, base + 26 + cap(fs)), VEHICLES, fs, (255, 255, 255), anchor='ls')
     ff = font(19, 500)
-    for i, line in enumerate(['TOP SPEED  \u2022  TORQUE  \u2022  GRIP  \u2022  STABILITY  \u2022  COLLISION DAMAGE  \u2022  360\u00b0 MBT TURRETS',
-                              'SUSPENSION  \u2022  TRAVERSE  \u2022  ELEVATION  \u2022  GUN DEPRESSION  \u2022  GUN RAISE  \u2022  AUTOLOADER',
-                              'GUNNER DRIVE  \u2022  GUNNER CAMERA  \u2022  FRV STABILITY  \u2022  VEHICLE INDICATOR  \u2022  VEHICLE LOADOUT']):
+    for i, line in enumerate(['TOP SPEED  \u2022  TORQUE  \u2022  GRIP  \u2022  STABILITY  \u2022  COLLISION DAMAGE  \u2022  MAELSTROM WEAPONS',
+                              '360\u00b0 MBT TURRETS  \u2022  SUSPENSION  \u2022  TRAVERSE  \u2022  ELEVATION  \u2022  GUN DEPRESSION  \u2022  GUN RAISE',
+                              'AUTOLOADER  \u2022  GUNNER DRIVE  \u2022  GUNNER CAMERA  \u2022  RUN-FLAT TIRES  \u2022  VEHICLE INDICATOR']):
         text(d, (68, base + 26 + cap(fs) + 32 + i * 28), line, ff, (215, 215, 215), anchor='ls')
     d.rectangle([46, 40, 150, 92], fill=YELLOW)
     text(d, (98, 66), VERSION, font(46, 700), (14, 14, 16), anchor='mm')
