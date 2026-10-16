@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.5.3 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.6.0 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
@@ -66,7 +66,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.5.3', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.6.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
 S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)
@@ -81,8 +81,8 @@ local HULLS = {
     {name = 'Maelstrom', res = 'content/fac_helldivers/vehicles/tank_storm/tank_storm',
      gun = 'content/fac_helldivers/vehicles/tank_storm/armaments/tank_storm_maingun/tank_storm_maingun',
      turn = {k = 159, x = 0, y = -1.959, z = 1.363},
-     carry = {{k = 218, x = 0, y = -2.816, z = 1.917}, {k = 219, x = -1.422, y = -4.511, z = 1.804},
-              {k = 220, x = 1.422, y = -4.511, z = 1.804}, {k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true, seat = true}}},
+     carry = {{k = 218, x = 0, y = -2.816, z = 1.917}, {k = 219, x = -1.422, y = -4.511, z = 1.804, pod = true},
+              {k = 220, x = 1.422, y = -4.511, z = 1.804, pod = true}, {k = 183, x = 0.013, y = -3.622, z = 0.353, optional = true, seat = true}}},
 }
 -- (3.4.1 Test 16) the roof hatches' passengers (where they stand, and their way in), the same in both hulls: optional
 local PASSENGER = {{k = 160, x = -1.5488, y = -2.830774, z = 1.057916, optional = true, stand = true},     -- left, where the passenger stands
@@ -93,7 +93,16 @@ local PASSENGER = {{k = 160, x = -1.5488, y = -2.830774, z = 1.057916, optional 
 PASSENGER[#PASSENGER + 1] = {k = 154, x = 0.116909, y = -5.226354, z = 0.457656, optional = true, deck = true, way = true}
 for _, h in ipairs(HULLS) do for _, c in ipairs(PASSENGER) do h.carry[#h.carry + 1] = c end end
 local DECK = {x = 2.0, y0 = -4.8, y1 = 4.0, z = 1.098}      -- (3.4.1 Test 19) the hull's deck in the hull's frame (roof line 1.078, + 2 cm)
-local function deck_z(n, x, y)
+-- (3.6.0 Test 3) The Maelstrom's missile pods with the turret moved forward. A user (via the tester): "the missle pod on
+-- the maelstrom clipping into the hull when place into center position", at any turret angle. The pod unit's box
+-- (tank_storm_silo, its LODs) reaches 0.806 m under its mount (its mesh space sits 0.223 m under the unit's root: the
+-- missile tubes, at -0.743, are inside it), so its bottom is at 0.998 in the hull's frame, 10 cm under the deck plating
+-- (1.098). At the game's place the pod's back half hangs behind the hull and its front half sits beside the turret
+-- armor, so it never shows; moved forward, its back half is over the bare deck. So with the turret moved, the pods ride
+-- POD_LIFT higher (3 cm over the plating), in full from POD_RAMP m forward (the game's place: as the game has them).
+local POD_LIFT, POD_RAMP = 0.13, 0.3
+local function deck_z(n, x, y, d)
+    if n.pod then return n.z + POD_LIFT * math.min(1, math.max(0, (d or 0) / POD_RAMP)) end
     if n.deck and math.abs(x) <= DECK.x and y >= DECK.y0 and y <= DECK.y1 then return DECK.z end
     return n.z
 end
@@ -255,10 +264,11 @@ local function node_at(u, base, want)
     if not ok or p == nil then return nil end
     local x, y, z = xyz(p)
     -- (3.3.0 Test 4) y may be the rest place moved forward by up to SHIFT_MAX (an earlier copy's Turret Position)
-    if not x or math.abs(x - want.x) > 0.01 or y < want.y - 0.01 or y > want.y + SHIFT_MAX + 0.01 or math.abs(z - want.z) > 0.01 then return nil end
+    -- (3.6.0 Test 3) a pod may be up to POD_LIFT higher (an earlier copy's lift)
+    if not x or math.abs(x - want.x) > 0.01 or y < want.y - 0.01 or y > want.y + SHIFT_MAX + 0.01 or z < want.z - 0.01 or z > want.z + (want.pod and POD_LIFT or 0) + 0.01 then return nil end
     local q = quat(select(2, pcall(U.local_rotation, u, i)))
     if not q then return nil end
-    return {i = i, x = want.x, y = want.y, z = want.z, q = q, moved = y - want.y, deck = want.deck, way = want.way}
+    return {i = i, x = want.x, y = want.y, z = want.z, q = q, moved = y - want.y, deck = want.deck, way = want.way, pod = want.pod}
 end
 
 -- (3.1.1 review) A carried node already turned round the axis (the game's Lua rebuilt with the game open while a
@@ -266,7 +276,8 @@ end
 local function turned_by(u, i, want, moved)
     local ok, p = pcall(U.local_position, u, i)
     local x, y, z = xyz(ok and p)
-    if not x or (math.abs(z - want.z) > 0.01 and not (want.deck and math.abs(z - DECK.z) < 0.01)) then return nil end
+    if not x or (math.abs(z - want.z) > 0.01 and not (want.deck and math.abs(z - DECK.z) < 0.01)
+        and not (want.pod and z > want.z and z < want.z + POD_LIFT + 0.01)) then return nil end
     y = y - (moved or 0)                  -- (3.3.0 Test 4) less the Turret Position move found on the turret's own mount
     local wx, wy, nx, ny = want.x - AXIS_X, want.y - AXIS_Y, x - AXIS_X, y - AXIS_Y
     local r = math.sqrt(wx * wx + wy * wy)
@@ -299,7 +310,7 @@ local function setup(u, h)
             if a and (a0 == nil or math.abs(math.atan2(math.sin(a - a0), math.cos(a - a0))) < 0.01) then
                 a0 = a0 or a
                 local q = quat(select(2, pcall(U.local_rotation, u, base + c.k)))
-                if q then n = {i = base + c.k, x = c.x, y = c.y, z = c.z, q = q, turned = true, deck = c.deck, way = c.way} end
+                if q then n = {i = base + c.k, x = c.x, y = c.y, z = c.z, q = q, turned = true, deck = c.deck, way = c.way, pod = c.pod} end
             end
         end
         if n then e.carry[#e.carry + 1] = n; if c.stand then e.passengers = (e.passengers or 0) + 1 end
@@ -501,7 +512,7 @@ local function turn(u, e, a, d, settling)
         if fresh or not n.way or not n.wa or math.abs(a - n.wa) > WAY_STEP then
             local dx, dy = n.x - AXIS_X, n.y - AXIS_Y
             local nx, ny = AXIS_X + dx * c - dy * s, AXIS_Y + d + dx * s + dy * c
-            local okn = pcall(U.set_local_position, u, n.i, V3(nx, ny, deck_z(n, nx, ny)))
+            local okn = pcall(U.set_local_position, u, n.i, V3(nx, ny, deck_z(n, nx, ny, d)))
             okn = pcall(U.set_local_rotation, u, n.i, Q.multiply(yaw, Q.from_elements(n.q[1], n.q[2], n.q[3], n.q[4]))) and okn
             n.wa = okn and a or nil
             ok = okn and ok
