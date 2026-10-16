@@ -13,7 +13,7 @@ def font(size, weight):
     return f
 
 
-# Arsenal order (3.5); tag = group, badge = what changed since 3.4.0
+# Arsenal order (3.6); tag = group, badge = what changed since 3.5
 CARDS = [
     ('tank_speed', 'TANK TOP SPEED', 'HANDLING', 'Faster forward and in reverse, up to x1.3.', None),
     ('tank_power', 'ENGINE TORQUE', 'HANDLING', 'More pull off the line and up slopes, live.', None),
@@ -21,19 +21,23 @@ CARDS = [
     ('tank_steering', 'TANK STEERING', 'HANDLING', 'Quicker to start and stop turning.', None),
     ('tank_throttle', 'THROTTLE RESPONSE', 'HANDLING', 'Snappier throttle, brake and gear changes.', None),
     ('tank_stability', 'TANK STABILITY', 'HANDLING', 'Downforce keeps the tank on the ground.', None),
-    ('tank_collision_damage', 'COLLISION DAMAGE BOOST', 'HANDLING', 'Ram through walls and small buildings at speed.', 'NEW'),
+    ('tank_collision_damage', 'COLLISION DAMAGE', 'HANDLING', 'Ram through walls and small buildings at speed.', None),
+    ('maelstrom_missile_demolition', 'MISSILE DEMOLITION', 'MAELSTROM', 'Missile hits break walls and fences.', 'NEW'),
+    ('maelstrom_fire_rate', 'FIRE RATE', 'MAELSTROM', 'Hold reload: 1200, 1800 or 2400 rpm.', 'NEW'),
+    ('maelstrom_belt', 'SINGLE BELT', 'MAELSTROM', 'All 2,100 rounds on one belt, no reload.', 'NEW'),
     ('mbt_turrets', 'TANK MBT TURRETS', 'TURRET', 'New turret, working hatches, hit areas follow it.', 'UPDATED'),
     ('tank_suspension', 'TANK SUSPENSION', 'HANDLING', 'A calm ride, tighter turns at speed.', None),
     ('turret_traverse', 'TURRET TRAVERSE', 'TURRET', 'Up to three times as fast, tanks out too.', None),
     ('turret_elevation', 'TURRET ELEVATION', 'TURRET', 'Up and down up to twice as fast.', None),
-    ('gun_depression', 'GUN DEPRESSION', 'TURRET', 'Aim down to 15° below level.', 'NEW'),
-    ('gun_raise', 'GUN RAISE', 'TURRET', 'Aim up to 60° above level.', 'NEW'),
+    ('gun_depression', 'GUN DEPRESSION', 'TURRET', 'Aim down to 15° below level.', None),
+    ('gun_raise', 'GUN RAISE', 'TURRET', 'Aim up to 60° above level, on slopes too.', 'UPDATED'),
     ('autoloader', 'TANK AUTOLOADER', 'TURRET', 'The main gun reloads by itself.', None),
     ('gunner_drive', 'GUNNER DRIVE', 'GUNNER SEAT', 'Drive tanks and the FRV from the gunner seat.', None),
     ('driver_panel', 'DRIVER PANEL', 'GUNNER SEAT', 'Gear, rpm, speed and fuel while you drive.', None),
     ('gunner_camera', 'GUNNER CAMERA', 'GUNNER SEAT', 'Farther, steadier, zoom up to x10.', None),
     ('frv_stability', 'FRV STABILITY', 'FRV', 'The FRVs stay on their wheels.', None),
-    ('turret_indicator', 'VEHICLE INDICATOR', 'ANY SEAT', 'Your vehicle and gun at a glance.', None),
+    ('frv_run_flat', 'FRV RUN-FLAT TIRES', 'FRV', 'The FRVs\' tires never pop.', 'NEW'),
+    ('turret_indicator', 'VEHICLE INDICATOR', 'HUD', 'Your vehicle, gun and Supply FRV turret ammo.', 'UPDATED'),
     ('vehicle_loadout', 'VEHICLE LOADOUT', 'LOADOUT', 'More than one vehicle per mission.', None),
 ]
 
@@ -69,14 +73,14 @@ def main():
     im = bg.convert('RGBA')
     d = ImageDraw.Draw(im)
     d.rectangle([60, 56, 290, 166], fill=YELLOW)
-    d.text((175, 111), '3.5', font=font(104, 700), fill=(14, 14, 16), anchor='mm')
+    d.text((175, 111), '3.6', font=font(104, 700), fill=(14, 14, 16), anchor='mm')
     d.text((326, 106), 'ARMORED ', font=font(84, 700), fill=(255, 255, 255), anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
     x = 326 + d.textlength('ARMORED ', font=font(84, 700))
     d.text((x, 106), 'OVERHAUL', font=font(84, 700), fill=YELLOW, anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
-    d.text((330, 160), 'TWENTY OPTIONS  •  NEW: COLLISION DAMAGE, GUN DEPRESSION, GUN RAISE', font=font(27, 500), fill=(215, 215, 215), anchor='ls')
-    d.text((1860, 106), "WHAT'S IN 3.5", font=font(64, 700), fill=YELLOW, anchor='rs', stroke_width=2, stroke_fill=(10, 10, 12))
+    d.text((330, 160), 'TWENTY-FOUR OPTIONS  •  NEW: MAELSTROM WEAPONS, FRV RUN-FLAT TIRES', font=font(27, 500), fill=(215, 215, 215), anchor='ls')
+    d.text((1860, 106), "WHAT'S IN 3.6", font=font(64, 700), fill=YELLOW, anchor='rs', stroke_width=2, stroke_fill=(10, 10, 12))
     d.text((1860, 158), 'TD-220 BASTION  •  TD-110 MAELSTROM  •  FRVS', font=font(30, 600), fill=(255, 255, 255), anchor='rs')
-    cols, x0, y0, gx, gy = 5, 60, 204, 16, 14
+    cols, x0, y0, gx, gy = 6, 60, 204, 14, 14
     cw = (1800 - gx * (cols - 1)) // cols
     ch = (1050 - y0 - gy * 3) // 4
     icon = 80
