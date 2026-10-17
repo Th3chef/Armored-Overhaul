@@ -14,16 +14,6 @@ Changed:
 - **Aiming up on slopes:** with MBT Turrets, the gun's and the view's top stops rise by how far the ground under the turret falls away, so aiming up over the low side of a leaning tank reaches as high as on flat ground.
 - Maelstrom Fire Rate and Single Belt changes in the Mod Options Menu reach the next Maelstrom called in (a Maelstrom keeps what it was called in with).
 
-Fixes & code review:
-- The Vehicle Indicator no longer shows an FRV tire as damaged after the FRV's hood takes a hit with run-flat tires on.
-- Turning a Maelstrom option off while the game's settings were being found again (after they moved) now puts the game's own values back.
-- The Maelstrom options refuse to change anything a game update has changed (the gun's rate, its belt), rather than guess.
-- FRV Run-Flat Tires keeps full only the FRVs it set, never above their own tire health, and its search after a game update checks memory before reading it.
-- The Supply FRV turret's ammo bar also shows when you get into an FRV whose turret is already low or empty.
-- With MBT Turrets, aiming on slopes keeps up while the turret turns over the low side of a leaning tank.
-- The gunner camera no longer steps up and down while it rises over the turret.
-- Lighter: fewer memory checks for the FRVs' run-flat copies and the Maelstrom smoke key's log line.
-
 **Known issue:** Freelook in multiplayer: the game keeps one setting for both tanks' main guns, so while you hold Freelook as the host, another player's turret may stop turning too. Tell me if you see it.
 
 ## 3.5.3

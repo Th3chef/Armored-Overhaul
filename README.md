@@ -2,7 +2,7 @@
 
 ![Armored Overhaul](media/header_1300x372.png)
 
-*Main battle tank upgrades for the TD-220 Bastion and TD-110 Maelstrom, and more for the FRVs, for Helldivers 2.*
+*A full vehicle overhaul for the TD-220 Bastion, TD-110 Maelstrom and the FRVs in Helldivers 2: handling, turrets, weapons, gunner-seat driving, cameras and a vehicle HUD, each part its own option.*
 
 Armored Overhaul makes the Bastion and Maelstrom feel like real main battle tanks and keeps the FRVs on their wheels. Every part is its own option, so you pick what you want in your mod manager, and with the Mod Options Menu you can change them in game too.
 
