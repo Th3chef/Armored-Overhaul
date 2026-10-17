@@ -26,6 +26,8 @@ inward; 3.4.1 keeps the game's angle, LEAN_ARMS.)
 over the deck with a recessed ring showing (Tests 8-15: LIP_CUT, BASE_GAP, ROUND_K); the hull plating is copied back
 under it; its hatches keep working: each turret hatch rides a node MBT Turrets carries round with the turret
 (HATCH_CARRY), the gunner's door split at the turret's base and swung open by the addon (Tests 16-18).
+(3.6.1 Test 5) The old lip's ledge at the arms' root (a flat piece just over the gap level, reaching out past the side walls)
+is dropped with the outer walls (OUT_CORNER): it showed as a small triangle sticking out under the turret's side.
 Some switches below are kept off for the record of what was tried (LEAN_ARMS, BASE_BAND, DECK_PLAIN, DECK_LIFT): their
 code doesn't run."""
 import struct, sys, math, collections, os
@@ -58,6 +60,7 @@ LEAN_ARMS = False
 # boxes (uv0 tiles 13-18) hang on the walls and are left whole.
 LIP_CUT = 0.24
 LIP_FRONT = 0.25
+OUT_CORNER = True                   # (3.6.1 Test 5) low inside triangles with a corner past the walls go with the outer walls
 # (3.4.1 Test 9, the tester: "the turret needs to not be a block into the hull, it needs to round off and have a small gap
 # between it and the hull like an actual turret on a MBT") The turret now ends BASE_GAP over the deck everywhere, its
 # outer walls rounded in (ROUND_K of the rounding's height) over the last stretch down; along the arms, whose fronts come
@@ -706,6 +709,7 @@ def lip_cut(U, li, M, G0, V, new_v, new_t, r, roof, foot, cfg, put_index, ib, id
     L = U.layouts[li]; isz = L.isz
     ya = cfg['arms'][0]
     zg = roof + BASE_GAP
+    lip_cut.out_corner = 0
     def zc_at(y):                                       # the outer cut: LIP_CUT behind the arms, easing to FRONT_CUT
         t = min(max((y - ya) / FRONT_EASE, 0.0), 1.0)
         return roof + LIP_CUT + (FRONT_CUT - LIP_CUT) * t
@@ -739,6 +743,16 @@ def lip_cut(U, li, M, G0, V, new_v, new_t, r, roof, foot, cfg, put_index, ib, id
         if any(13 <= tile(d) <= 18 for d in ds): return False      # the roof boxes hang on the walls: left whole
         cx = sum(d['pos'][0] for d in ds) / 3; cy = sum(d['pos'][1] for d in ds) / 3
         if not inside(cx, cy): return True
+        # (3.6.1 Test 5, the tester: "theres a triangle sticking out of the turret") a low triangle whose middle is inside but
+        # with a corner out past the body's walls: the old lip's ledge at the arms' root (Maelstrom: z +0.08, out to
+        # x -2.39 / +2.41 where the walls stand at 2.21) sits just over the gap level, so it was kept whole: a flat wedge
+        # sticking out under the turret's side once it turned. A triangle all within 1 cm over the gap with a corner
+        # out past the rounded base's outline (the ledge and the 2 mm edge the gap cut left of its front) goes with the
+        # outer walls, under their cut: dropped.
+        if OUT_CORNER and max(d['pos'][2] for d in ds) < zg + 0.01 and any(not out_line.contains(Point(d['pos'][0], d['pos'][1])) for d in ds):
+            lip_cut.out_corner = getattr(lip_cut, 'out_corner', 0) + 1
+            if os.getenv('OUTDBG'): print('   out-corner', tuple(tri), [tuple(round(q, 3) for q in d['pos']) for d in ds], tile(ds[0]))
+            return True
         # (Test 14) an inner wall within the round's reach (behind the arms): it would hang out under the rounded base
         # (the side cases' inner walls showed their backs there). Cut at the outer level, no skirt of its own
         if round_in is not None and cy < ya and not round_in.contains(Point(cx, cy)) and not well.contains(Point(cx, cy)):
@@ -750,6 +764,7 @@ def lip_cut(U, li, M, G0, V, new_v, new_t, r, roof, foot, cfg, put_index, ib, id
     body_c = foot.centroid
     _S = getattr(lip_cut, 'smooth', None)
     round_in = _S.buffer(-(ROUND_K * (LIP_CUT - BASE_GAP) + 0.02)) if _S is not None else None
+    out_line = _S.buffer(0.01) if _S is not None else outer_body          # (3.6.1 Test 5)
     cache = {}; up_look = {}
     def cut(a, b, outer):
         key = (min(a, b), max(a, b), outer)
@@ -978,7 +993,7 @@ def lip_cut(U, li, M, G0, V, new_v, new_t, r, roof, foot, cfg, put_index, ib, id
         best = max(getattr(filled, 'geoms', [filled]), key=lambda g: g.area)
         if best.area > 0.8 * foot.area: break
     lip_cut.floor = best
-    return f'cut at +{LIP_CUT} m (+{FRONT_CUT} m along the arms), rounded down to +{BASE_GAP} m: {dropped} triangles under it dropped, {cutn} cut, {skirt} skirt triangles, {len(new_v) - nv0} new vertices, underside {best.area:.2f} m2'
+    return f'cut at +{LIP_CUT} m (+{FRONT_CUT} m along the arms), rounded down to +{BASE_GAP} m: {dropped} triangles under it dropped, {cutn} cut, {skirt} skirt triangles, {len(new_v) - nv0} new vertices, underside {best.area:.2f} m2' + (f', {lip_cut.out_corner} low triangle(s) with a corner past the walls taken as outer' if lip_cut.out_corner else '')
 
 
 def build(tank, van_b, out_b):
