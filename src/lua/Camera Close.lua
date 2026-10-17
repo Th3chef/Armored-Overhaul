@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.6.0 - Gunner camera option (Close): how far behind the turret the tank
+-- Armored Overhaul 3.6.1 - Gunner camera option (Close): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -52,7 +52,7 @@ local dist_own, dist_written                        -- the view's own distances;
 local distance = PRESET          -- (3.0) the pick in meters (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.6.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.6.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -166,7 +166,7 @@ local function log()
             'gunner view: ', state.view, '\n', 'turning with the turret: ', state.turning, '\n', 'scroll zoom: ', state.zoom, '\n',
             'raised over the turret (aiming up / leaning): ', string.format('%.1f m now, %.1f m at most', state.view_lift or 0, state.view_lift_max or 0), '\n',
             state.zoom_seen and ('crosshair zoom check: ' .. state.zoom_seen .. '\n') or '',
-            'zoom keys: ', tostring(state.zoom_keys), '\n', 'mouse wheel: ', tostring(state.zoom_wheel), '\n', 'zoom readout: ', tostring(state.readout), '\n',
+            'zoom keys: ', tostring(state.zoom_keys), '\n', 'mouse wheel: ', tostring(state.zoom_wheel), '\n', 'zoom ignored while the map or a menu was open: ', state.zoom_menu, ' time(s)\n', 'zoom readout: ', tostring(state.readout), '\n',
             'other gunner seats: ', tostring(state.other_views), '\n', 'other seat zoom: ', tostring(state.other_zoom or 'not used yet'), '\n',
             'options menu: ', state.options_menu, '\n', 'errors: ', state.errors, '\n', 'last error: ', state.last_error, '\n')
         if TESTER then
@@ -1435,6 +1435,22 @@ local function zb_notches(w)
     end
     return n
 end
+-- (3.6.1, the tester: "the gunner camera zoom shouldnt be active when the map or pause menu is active. If i have the
+-- pause menu open or the map and I want to zoom in on the map or scroll the menus, it still adjusts the camera") This
+-- frame's zoom notches, none while the game's UI holds the input (Tank Core's ui_input: the pause menu, the map). Asked
+-- only when the wheel or a zoom key moved; without Tank Core's answer the notches count as before.
+state.zoom_menu = 0
+local function zoom_notches()
+    local n = zb_notches(wheel() or 0)
+    if n == 0 then return 0 end
+    local seat = rawget(_G, 'ArmoredOverhaulSeat')
+    local ask = type(seat) == 'table' and seat.ui_input
+    if type(ask) == 'function' then
+        local ok, held = pcall(ask)
+        if ok and held == true then state.zoom_menu = state.zoom_menu + 1; return 0 end
+    end
+    return n
+end
 -- (3.2.0) The crosshair zoom shown as "x2.4" just below and right of the crosshair, in the game's HUD font, whenever it
 -- changes; it fades out after RO.hold s. Drawn the way the Driver Panel draws (HD2 HUD+'s method): a screen GUI in the
 -- game's overlay world (the one in Application.worlds() that isn't the main world), the font, material and atlas Tank
@@ -1571,7 +1587,7 @@ local function zoom_frame(seated)
     if not zoom.seated then                                 -- (sat down: the picked distance again)
         zoom.seated, zoom.extra, zoom.d, zoom.t, zoom.level, zoom.f = true, 0, distance, state.clock, 0, 1
     end
-    local n = zb_notches(wheel() or 0)
+    local n = zoom_notches()
     local level_was = zoom.level
     -- (3.4.0 review) 16 m in the orbit only; the offset fallback keeps the 3.2.0-3.3.0 reach (or the pick, if further)
     local lo, hi = ZOOM.min - distance, (dist_own and ZOOM.max or math.max(ZOOM.max_other, distance)) - distance
@@ -1752,7 +1768,7 @@ local function other_frame(v)
         if TESTER then local okf, fv = pcall(other_cam_fov); OZ.fov0 = okf and fv or nil end
     end
     local aim = aiming()
-    local n = zb_notches(wheel() or 0)
+    local n = zoom_notches()
     local level_was = OZ.level
     if aim then                                             -- aiming: the crosshair zoom
         OZ.level = math.max(0, math.min(#ZOOM.fovs, OZ.level + n))

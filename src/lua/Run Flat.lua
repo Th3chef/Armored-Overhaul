@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_run_flat
--- Armored Overhaul 3.6.0 - FRV Run-Flat Tires: the M-102 and M-103 FRVs' tires never pop. Written from scratch.
+-- Armored Overhaul 3.6.1 - FRV Run-Flat Tires: the M-102 and M-103 FRVs' tires never pop. Written from scratch.
 --
 -- How the game decides (game.dll, Sept 2026 build; field meanings from the game's own health settings, offsets from
 -- its code): every unit with health has a health settings record (HealthComponent, 0x5650 bytes, in the settings the
@@ -35,7 +35,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.6.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.6.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            frvs = 'not yet', copies = 'not looked at yet', copies_found = 'not looked for yet', writes = 0, reapplied = 0,
            errors = 0, last_error = 'none', options_menu = 'not installed (the mod manager\'s pick)', frames = 0,
            on = false, tire_full = nil}
