@@ -1,24 +1,19 @@
 -- HD2-Addon: mods/chef/armored_overhaul_maelstrom_weapons
--- Armored Overhaul 3.6.0 - Maelstrom weapons: the TD-110 Maelstrom's settings for three options, each its own pick
--- (its option addon sets ArmoredOverhaulMaelstromPicks): Maelstrom Missile Demolition (the missiles of its two pods hit
--- with demolition force 40 instead of the game's 30 on a direct hit, so they break the walls and fences in their way),
--- Maelstrom Fire Rate (a hold-reload choice of the main gun's rounds per minute x1 / x1.5 / x2) and Maelstrom Single
--- Belt (all its ammo on one belt, no reload). Written for Armored Overhaul from the author's own Leveller & Solo Silo Demo
--- Force 50 core (the same settings-table scan).
+-- Armored Overhaul 3.6.0 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
+-- pick (its option addon sets ArmoredOverhaulMaelstromPicks): Maelstrom Fire Rate (a hold-reload choice of the main gun's
+-- rounds per minute x1 / x1.5 / x2) and Maelstrom Single Belt (all its ammo on one belt, no reload). Written for Armored
+-- Overhaul from the author's own Leveller & Solo Silo Demo Force 50 core (the same settings-table scan).
 --
 -- How it works: the game keeps its weapon settings in tables in memory (each behind a 24-byte 'LDLD' header; found by
--- their table type and layout, never by fixed addresses). From the pods' weapon (tank_storm_silo, entity
--- 8AFF7F0793A5BCED) the fire-mode / rounds tables lead to its projectile (the 66mm Missile, 245), its direct-hit damage
--- record (237: 1100 damage, AP 6, demolition 30) and its impact explosion (148) and that explosion's damage record. Only
--- records that hold a value from FROM up to TO and that nothing else in the game uses are raised to TO (the blast's
--- record is shared, so only the direct hit changes). The main gun (tank_storm_maingun, D58AE6A04EDB10DE: 12.5mm, 1200
--- rpm, 300-round belt, 6 spare belts): its fire-mode record's rates (+4/+8/+12), its weapon data's left-input function
--- (+184: the fire-rate choice), one encyclopedia look-up slot (the menu's title) and its magazine record's belt and
--- spare belts. Every copy of a table is written and read back. Every 5 s the values are checked (set
--- again if the game put its own back); every 5 minutes a headers-only scan looks for moved or new tables. Turning it
--- off in the Mod Options Menu puts the game's values back (also kept in a process environment variable, so a copy of
--- this addon loaded again while the game runs knows them). Writes ArmoredOverhaul-MaelstromWeapons.log.
--- (Multiplayer: like the game's other hit rules, most likely decided by the host's game.)
+-- their table type and layout, never by fixed addresses). The main gun (tank_storm_maingun, D58AE6A04EDB10DE: 12.5mm,
+-- 1200 rpm, 300-round belt, 6 spare belts): its fire-mode record's rates (+4/+8/+12), its weapon data's left-input
+-- function (+184: the fire-rate choice), one encyclopedia look-up slot (the menu's title) and its magazine record's belt
+-- and spare belts. Every copy of a table is written and read back. Every 5 s the values are checked (set again if the
+-- game put its own back); every 5 minutes a headers-only scan looks for moved or new tables. Turning it off in the Mod
+-- Options Menu puts the game's values back (also kept in a process environment variable, so a copy of this addon loaded
+-- again while the game runs knows them). A Maelstrom takes these when it is called in. Writes
+-- ArmoredOverhaul-MaelstromWeapons.log.
+-- (3.6.0: Maelstrom Missile Demolition was taken out before release: the missiles already break the walls it was for.)
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 -- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
 -- %LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs as before (loader v15-v18). A global, so no addon gains a top-level local.
@@ -35,30 +30,19 @@ if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version
 local TESTER = false
 local VERSION = ({version = '3.6.0'}).version   -- (as the other addons write it, so test builds name themselves)
 
--- The game's values we expect and the value we set: records from FROM up to (not including) TO are raised to TO.
-local FROM, TO = 20, 40
-local MISSILE = { name = 'Maelstrom missile pods', entity = '8AFF7F0793A5BCED' }
 local GUN = { name = 'Maelstrom main gun', entity = 'D58AE6A04EDB10DE', belt = 300, mags = 6, rpm = 1200 }   -- (the game's belt, spare belts and rate)
 local ENV_NAME = 'ARMORED_OVERHAUL_MAELSTROM_GAME'
 
 -- The settings tables this addon reads. type = the table's type hash in its header; stride = record size in this game
--- build (row tables re-derive it when it changes and they carry no tail data).
+-- build (all keyed: the size is worked out from the layout when a patch changes it).
 local KINDS = {
-    fire = { type = 0x45171B68, stride = 616, keyed = true, optional = true },    -- +0 projectile
-    rounds = { type = 0x66081072, stride = 136, keyed = true, optional = true },  -- +64 projectile
-    projectile = { type = 0xBD4042C2, stride = 272 },                -- +60 damage, +144 impact / +156 expiry explosion
-    explosion = { type = 0x2AEA2592, stride = 152, tail = true },    -- +4 damage, +16/20/24 radii, +80 fragments, +84 fragment projectile
-    damage = { type = 0xE0A72CF0, stride = 76 },                     -- +4 damage, +12 armor pen., +28 demolition
-    magazine = { type = 0xFB8D88A3, stride = 160, keyed = true, optional = true },    -- +136 rounds per magazine, then magazines, refill, most
-    weapondata = { type = 0x88E4DBB1, stride = 1232, keyed = true, optional = true }, -- +184 / +188 the inputs' functions (2 = fire rate)
-    encyclopedia = { type = 0x8A40FE2F, stride = 56, keyed = true, optional = true },  -- an entity's names (+0 name, +8 upper, ...)
-    explosive = { type = 0xF5CF9B8C, stride = 360, keyed = true, optional = true },    -- +36 / +40 the explosions a stratagem sets off
+    fire = { type = 0x45171B68, stride = 616, keyed = true },    -- +4 / +8 / +12 rounds per minute
+    magazine = { type = 0xFB8D88A3, stride = 160, keyed = true },    -- +136 rounds per magazine, then magazines, refill, most
+    weapondata = { type = 0x88E4DBB1, stride = 1232, keyed = true }, -- +184 / +188 the inputs' functions (2 = fire rate)
+    encyclopedia = { type = 0x8A40FE2F, stride = 56, keyed = true },  -- an entity's names (+0 name, +8 upper, ...)
 }
-local KIND_NAMES = { 'fire', 'rounds', 'projectile', 'explosion', 'damage', 'magazine', 'weapondata', 'encyclopedia', 'explosive' }
-local OPTIONAL_WAIT = 60   -- seconds to wait for the weapon's own tables after the shared ones are found
-local AT = { fire_projectile = 0, rounds_projectile = 64, proj_damage = 60, proj_impact = 144, proj_expiry = 156,
-             expl_damage = 4, expl_inner = 16, expl_outer = 20, expl_shock = 24, expl_frag_count = 80,
-             expl_frag_projectile = 84, dmg_damage = 4, dmg_ap = 12, dmg_demolition = 28 }
+local KIND_NAMES = { 'fire', 'magazine', 'weapondata', 'encyclopedia' }
+local OPTIONAL_WAIT = 60   -- seconds to wait for the rest of the gun's tables once one of them is found
 
 if rawget(_G, 'ArmoredOverhaulMaelstromWeapons') then return end
 local S = { status = 'starting', frame = 0, version = VERSION, lines = {}, events = {}, checks = 0, resets = 0,
@@ -91,10 +75,6 @@ local function key_of(hex16)  -- entity hash as stored (u64 little-endian)
     return u32_bytes(tonumber(hex16:sub(9, 16), 16)) .. u32_bytes(tonumber(hex16:sub(1, 8), 16))
 end
 
-local function hex_of(key)
-    return string.format('%08X%08X', u32(key, 4), u32(key, 0))
-end
-
 -- (Test 10) the encyclopedia table may hold the gun's look-up slot this addon added (it shares the hull's record): not
 -- counted as an entity of its own when the table's layout is worked out, so a later scan still reads the table
 KINDS.encyclopedia.ignore = key_of(GUN.entity)
@@ -114,7 +94,7 @@ local function write_log()
     pcall(function()
         local f = loader.open_log and loader.open_log('ArmoredOverhaul-MaelstromWeapons.log')
         if not f then return end
-        local out = { 'Armored Overhaul - Maelstrom weapons (Missile Demolition, Fire Rate, Single Belt)', 'version: ' .. VERSION,
+        local out = { 'Armored Overhaul - Maelstrom weapons (Fire Rate, Single Belt)', 'version: ' .. VERSION,
                       'running: ' .. string.format('%.0f s', api and S.t0 and (api.now() - S.t0) or 0),
                       'status: ' .. S.status, 'options menu: ' .. S.options_menu }
         if S.checks > 0 then
@@ -123,7 +103,6 @@ local function write_log()
         end
         out[#out + 1] = ''
         for _, line in ipairs(S.lines) do out[#out + 1] = line end
-        if S.research then out[#out + 1] = ''; out[#out + 1] = '-- tester: hold-reload fire rate research --'; out[#out + 1] = S.research end
         out[#out + 1] = ''
         out[#out + 1] = 'events:'
         for _, line in ipairs(S.events) do out[#out + 1] = '  ' .. line end
@@ -269,26 +248,6 @@ local function parse_keyed(blob, spec)
     return index, nil, stride, buckets[1]
 end
 
--- Row table: u64, u32 row count, u32 0, then rows with a u32 id at +0 (then, with a tail, the data
--- the rows point to).
-local function parse_rows(blob, spec)
-    local rows = u32(blob, 8)
-    if not rows or rows == 0 or u32(blob, 12) ~= 0 then return nil, 'not a row table' end
-    local stride = spec.stride
-    local size = 16 + rows * stride
-    if not (size == #blob or (spec.tail and size <= #blob)) then
-        if spec.tail or (#blob - 16) % rows ~= 0 then return nil, 'record size changed' end
-        stride = (#blob - 16) / rows
-        event(string.format('record size of the %s table changed: %d -> %d bytes', spec.name, spec.stride, stride))
-    end
-    local index = {}
-    for row = 0, rows - 1 do
-        local id = u32(blob, 16 + row * stride)
-        if index[id] == nil then index[id] = 16 + row * stride end
-    end
-    return index, nil, stride
-end
-
 -- ---------------------------------------------------------------- scan (runs in a coroutine)
 local LOW = 0x80000000
 local LIMIT = 0x7FFFFFFF0000
@@ -301,7 +260,7 @@ local function pause()
     if api.now() >= slice_end then coroutine.yield() end
 end
 
-local function scan_pass(skip_low, sweep, headers_only, visit)
+local function scan_pass(skip_low, sweep, headers_only)
     for _, name in ipairs(KIND_NAMES) do found[name] = {} end
     local seen = {}
     local function table_at(address)
@@ -311,7 +270,6 @@ local function scan_pass(skip_low, sweep, headers_only, visit)
         local kind, payload = u32(head, 8), u32(head, 12)
         if payload < 16 or payload > 64 * 1024 * 1024 then return nil end
         seen[address] = true
-        if visit then visit(address, kind, payload) end     -- (3.6.0 Test 5: the tester's research pass)
         local name = by_type[kind]
         if name then
             local blob = not headers_only and api.read(address + HEADER, payload) or nil
@@ -378,13 +336,12 @@ end
 
 -- Parses what a pass found: per kind, the first copy that parses, plus every copy of the same size.
 local function parse_found()
-    local T, missing = {}, {}
+    local T = {}
     for _, name in ipairs(KIND_NAMES) do
         local spec = KINDS[name]
         for _, c in ipairs(found[name]) do
             local index, why, stride, buckets
-            if spec.keyed then index, why, stride, buckets = parse_keyed(c.blob, spec)
-            else index, why, stride = parse_rows(c.blob, spec) end
+            index, why, stride, buckets = parse_keyed(c.blob, spec)
             if index then
                 T[name] = { blob = c.blob, index = index, stride = stride, payload = c.payload, copies = {}, buckets = buckets }
                 -- (3.6.0 review) a keyed table's other copies only when their look-up slots are byte for byte the same,
@@ -400,171 +357,40 @@ local function parse_found()
             c.why = why
         end
         if not T[name] then
-            local text = name .. (found[name][1] and (' (' .. #found[name] .. ' found, ' .. tostring(found[name][1].why) .. ')') or '')
-            if spec.optional then T.absent = (T.absent and (T.absent .. ', ') or '') .. text
-            else missing[#missing + 1] = text end
+            T.absent = (T.absent and (T.absent .. ', ') or '') .. name .. (found[name][1] and (' (' .. #found[name] .. ' found, ' .. tostring(found[name][1].why) .. ')') or '')
         end
     end
-    return T, missing
+    return T
 end
 
--- What a pass found, in short: where the damage tables are and which tables exist. A refresh pass
+-- What a pass found, in short: where the tables are. A refresh pass
 -- reads headers only and re-applies only when this changes.
 local function found_sig()
     local parts = {}
     for _, name in ipairs(KIND_NAMES) do
         local list = {}
-        for _, c in ipairs(found[name]) do list[#list + 1] = name == 'damage' and string.format('%X:%d', c.address, c.payload) or '1' end
+        for _, c in ipairs(found[name]) do list[#list + 1] = string.format('%X:%d', c.address, c.payload) end
         parts[#parts + 1] = name .. '=' .. table.concat(list, ',')
     end
     return table.concat(parts, ' ')
 end
 
--- ---------------------------------------------------------------- follow a weapon to its damage records
-local function resolve(T, target)
-    local key = key_of(target.entity)
-    local out = { projectiles = {}, explosions = {}, damage = {}, order = {}, notes = {} }
-    local queue = {}
-    local function add_projectile(id, via)
-        if id and id > 0 and not out.projectiles[id] then
-            if not T.projectile.index[id] then out.notes[#out.notes + 1] = 'projectile ' .. id .. ' (' .. via .. ') not in the table'; return end
-            out.projectiles[id] = via
-            queue[#queue + 1] = { 'projectile', id, via }
-        end
-    end
-    local function add_damage(id, via, explosion)
-        if not id or id == 0 then return end
-        local row = T.damage.index[id]
-        if not row then out.notes[#out.notes + 1] = 'damage record ' .. id .. ' (' .. via .. ') not in the table'; return end
-        if not out.damage[id] then
-            out.damage[id] = { id = id, row = row, via = via, explosion = explosion }
-            out.order[#out.order + 1] = id
-        end
-    end
-    local r, f = T.rounds and T.rounds.index[key], T.fire and T.fire.index[key]
-    if r then add_projectile(u32(T.rounds.blob, r + AT.rounds_projectile), 'rounds') end
-    if f then add_projectile(u32(T.fire.blob, f + AT.fire_projectile), 'fire mode') end
-    -- explosive record: the explosions it sets off (+36 main, +40 second)
-    local e = target.explosive and T.explosive and T.explosive.index[key]
-    if e then
-        for _, x in ipairs({ { 36, 'explosive record (main)' }, { 40, 'explosive record (second)' } }) do
-            local id = u32(T.explosive.blob, e + x[1])
-            if id and id > 0 and T.explosion.index[id] and not out.explosions[id] then
-                out.explosions[id] = x[2]
-                queue[#queue + 1] = { 'explosion', id, x[2] }
-            elseif id and id > 0 and not T.explosion.index[id] then
-                out.notes[#out.notes + 1] = x[2] .. ' names explosion ' .. id .. ', which is not in the table'
-            end
-        end
-    end
-    if not r and not f and not target.explosions and #queue == 0 then
-        return nil, (T.fire and ('weapon ' .. target.entity .. ' is not in the fire-mode tables') or 'its fire-mode table was not found')
-    end
-    -- cross-check (or, without the explosive record, the way in): recognise the explosions by their values
-    for _, sig in ipairs((not r and not f) and target.explosions or {}) do
-        local hits, xb, db = {}, T.explosion.blob, T.damage.blob
-        for id, x in pairs(T.explosion.index) do
-            local function near(off, want) return math.abs(f32(u32(xb, x + off)) - want) < 0.05 end
-            if near(AT.expl_inner, sig[2]) and near(AT.expl_outer, sig[3]) and near(AT.expl_shock, sig[4]) then
-                local d = T.damage.index[u32(xb, x + AT.expl_damage) or 0]
-                if d and u32(db, d + AT.dmg_damage) == sig[5] and u32(db, d + AT.dmg_ap) == sig[6] then hits[#hits + 1] = id end
-            end
-        end
-        if #hits == 1 and e then
-            if not out.explosions[hits[1]] then
-                out.notes[#out.notes + 1] = sig[1] .. ': its values now match explosion ' .. hits[1] .. ', which the explosive record does not name (game changed?)'
-            end
-        elseif #hits == 1 then
-            out.explosions[hits[1]] = sig[1] .. ' (recognised by radius and damage)'
-            queue[#queue + 1] = { 'explosion', hits[1], out.explosions[hits[1]] }
-        elseif e then
-            out.notes[#out.notes + 1] = sig[1] .. ': values changed since this build (explosive record used as is)'
-        else
-            out.notes[#out.notes + 1] = string.format('%s (radius %g/%g/%g m, damage %d, armour pen. %d): %d matches, need exactly 1',
-                sig[1], sig[2], sig[3], sig[4], sig[5], sig[6], #hits)
-        end
-    end
-    if #queue == 0 then return nil, 'not in the fire-mode tables and its explosions were not recognised: ' .. table.concat(out.notes, '; ') end
-    local steps = 0
-    while #queue > 0 and steps < 64 do
-        steps = steps + 1
-        local job = table.remove(queue, 1)
-        if job[1] == 'projectile' then
-            local p, pb = T.projectile.index[job[2]], T.projectile.blob
-            add_damage(u32(pb, p + AT.proj_damage), job[3] .. ' -> projectile ' .. job[2] .. ' direct hit')
-            for _, x in ipairs({ { AT.proj_impact, 'impact' }, { AT.proj_expiry, 'expiry' } }) do
-                local id = u32(pb, p + x[1])
-                if id and id > 0 and not out.explosions[id] then
-                    if T.explosion.index[id] then
-                        out.explosions[id] = job[3] .. ' -> projectile ' .. job[2] .. ' ' .. x[2]
-                        queue[#queue + 1] = { 'explosion', id, out.explosions[id] }
-                    else
-                        out.notes[#out.notes + 1] = 'explosion ' .. id .. ' not in the table'
-                    end
-                end
-            end
-        else
-            local x, xb = T.explosion.index[job[2]], T.explosion.blob
-            add_damage(u32(xb, x + AT.expl_damage), job[3] .. ' explosion ' .. job[2], job[2])
-            local count = u32(xb, x + AT.expl_frag_count) or 0
-            if count > 0 and count <= 1000 then add_projectile(u32(xb, x + AT.expl_frag_projectile), job[3] .. ' explosion ' .. job[2] .. ' fragments') end
-        end
-    end
-    if #out.order == 0 then return nil, 'no damage records found (the table layout may have changed)' end
-    return out
-end
-
--- What else uses these records: rows outside this weapon's chain that point at them.
-local function sharing(T, chains)
-    local mine_p, mine_x, mine_keys = {}, {}, {}
-    for _, c in ipairs(chains) do
-        for id in pairs(c.res.projectiles) do mine_p[id] = true end
-        for id in pairs(c.res.explosions) do mine_x[id] = true end
-        mine_keys[key_of(c.target.entity)] = true
-    end
-    local dmg_refs, proj_refs = {}, {}
-    local function ref(t, id, who) if id and id > 0 then t[id] = t[id] or {}; table.insert(t[id], who) end end
-    local pb, ps = T.projectile.blob, T.projectile.stride
-    for row = 0, u32(pb, 8) - 1 do
-        local o = 16 + row * ps
-        local id = u32(pb, o)
-        if not mine_p[id] then ref(dmg_refs, u32(pb, o + AT.proj_damage), 'projectile ' .. id) end
-    end
-    local xb, xs = T.explosion.blob, T.explosion.stride
-    for row = 0, u32(xb, 8) - 1 do
-        local o = 16 + row * xs
-        local id = u32(xb, o)
-        if not mine_x[id] then
-            ref(dmg_refs, u32(xb, o + AT.expl_damage), 'explosion ' .. id)
-            if (u32(xb, o + AT.expl_frag_count) or 0) > 0 then ref(proj_refs, u32(xb, o + AT.expl_frag_projectile), 'explosion ' .. id) end
-        end
-    end
-    for _, k in ipairs({ { 'fire', AT.fire_projectile }, { 'rounds', AT.rounds_projectile } }) do
-        local t = T[k[1]] or { index = {} }
-        for key, o in pairs(t.index) do
-            if not mine_keys[key] then ref(proj_refs, u32(t.blob, o + k[2]), 'weapon ' .. hex_of(key)) end
-        end
-    end
-    return dmg_refs, proj_refs
-end
-
-
 -- ---------------------------------------------------------------- what is wanted
 -- (Test 11, the tester: "Fire rate should only go from 1x, 1.5x, 2x. and only in the reload context menu, make Fire rate selector
 -- a toggle in the mod options") Fire Rate on = the hold-reload choice of the game's rate x1 / x1.5 / x2 (1200 / 1800 /
 -- 2400; it starts at the middle one, the game's default slot).
--- The picks come from the option addons (ArmoredOverhaulMaelstromPicks: missile, rpm and belt = true), read when the
+-- The picks come from the option addons (ArmoredOverhaulMaelstromPicks: rpm and belt = true), read when the
 -- tables are applied; the Mod Options Menu turns each on or off in game.
 local RPM_MID = 1.5        -- the middle of the three rates (x1 / x1.5 / x2)
 local function picks()
     local p = rawget(_G, 'ArmoredOverhaulMaelstromPicks')
     return type(p) == 'table' and p or {}
 end
-S.want = nil                -- {missile = bool, rpm = bool, belt = bool}
+S.want = nil                -- {rpm = bool, belt = bool}
 local function wanted()
     if not S.want then
         local p = picks()
-        S.want = {missile = p.missile == true, rpm = p.rpm == true, belt = p.belt == true}
+        S.want = {rpm = p.rpm == true, belt = p.belt == true}
     end
     return S.want
 end
@@ -593,12 +419,11 @@ local function env_save()
 end
 
 -- ---------------------------------------------------------------- the values written
--- A watched value: group ('missile' / 'rpm' / 'belt'), table kind, `rel` = its place in the table's payload, `idrel` /
+-- A watched value: group ('rpm' / 'rpm_lo' / 'rpm_hi' / 'rof' / 'name' / 'belt'), table kind, `rel` = its place in the table's payload, `idrel` /
 -- `idb` = where the record's id is and what it must be (row tables), `game` = the game's raw value, `base` = the
 -- game's value as a number (the float for rpm), `last` = what this addon wrote last.
 local function desired(w)
     local want = wanted()
-    if w.group == 'missile' then return want.missile and TO or w.game end
     if w.group == 'rpm' then return want.rpm and f32_bits(w.base * RPM_MID) or w.game end
     -- (the hold-reload fire-rate choice: the game's rate as the low one, twice it as the high one, the function on)
     if w.group == 'rpm_lo' then return want.rpm and f32_bits(w.base) or w.game end
@@ -612,7 +437,6 @@ end
 -- whose record has the right id, for row tables); returns how many copies were written
 -- the value an entry has when its option is on (what this mod writes)
 local function on_value(w)
-    if w.group == 'missile' then return TO end
     if w.group == 'rpm' then return f32_bits(w.base * RPM_MID) end
     if w.group == 'rpm_lo' then return f32_bits(w.base) end
     if w.group == 'rpm_hi' then return f32_bits(w.base * 2) end
@@ -829,103 +653,15 @@ local function apply(T)
             lines[#lines + 1] = string.format('table %-10s %d records, %d cop%s, record size %d', name,
                 n, #T[name].copies, #T[name].copies == 1 and 'y' or 'ies', T[name].stride)
         else
-            lines[#lines + 1] = string.format('table %-10s not found (optional)', name)
+            lines[#lines + 1] = string.format('table %-10s not found', name)
         end
     end
     S.T, S.live = {}, {}
     for _, name in ipairs(KIND_NAMES) do if T[name] then S.T[name] = {copies = T[name].copies, payload = T[name].payload} end end
     local p = picks()
-    -- the missiles: demolition FROM-TO-1 -> TO on the hit and the blast (records nothing else uses: the hit, in this game)
-    if p.missile then
-        local res, why = resolve(T, MISSILE)
-        lines[#lines + 1] = ''
-        if not res then
-            lines[#lines + 1] = MISSILE.name .. ': NOT FOUND - ' .. why
-        else
-            local dmg_refs, proj_refs = sharing(T, { { target = MISSILE, res = res } })
-            local fired_by = {}          -- explosion id -> the projectiles (not the missiles') that set it off
-            do
-                local pb, ps = T.projectile.blob, T.projectile.stride
-                for row = 0, u32(pb, 8) - 1 do
-                    local o = 16 + row * ps
-                    local pid = u32(pb, o)
-                    if not res.projectiles[pid] then
-                        for _, at in ipairs({AT.proj_impact, AT.proj_expiry}) do
-                            local x = u32(pb, o + at)
-                            if x and x > 0 then fired_by[x] = fired_by[x] or {}; table.insert(fired_by[x], 'projectile ' .. pid) end
-                        end
-                    end
-                end
-                for key, e in pairs(T.explosive and T.explosive.index or {}) do
-                    for _, at in ipairs({36, 40}) do
-                        local x = u32(T.explosive.blob, e + at)
-                        if x and x > 0 then fired_by[x] = fired_by[x] or {}; table.insert(fired_by[x], 'stratagem ' .. hex_of(key)) end
-                    end
-                end
-                if not T.explosive then fired_by.unknown = true end
-                for _, l in pairs(fired_by) do if type(l) == 'table' then table.sort(l) end end
-            end
-            lines[#lines + 1] = MISSILE.name .. ' (Maelstrom Missile Demolition' .. (want.missile and ')' or ', off in the Mod Options Menu)')
-            for id, via in pairs(res.projectiles) do
-                local users = proj_refs[id]
-                lines[#lines + 1] = '  projectile ' .. id .. ' via ' .. via .. (users and ('; also used by ' .. table.concat(users, ', ')) or '')
-            end
-            for _, id in ipairs(res.order) do
-                local d = res.damage[id]
-                local db, row = T.damage.blob, d.row
-                local radii = ''
-                if d.explosion then
-                    local x = T.explosion.index[d.explosion]
-                    radii = string.format(', radius %.1f / %.1f / %.1f m', f32(u32(T.explosion.blob, x + AT.expl_inner)),
-                        f32(u32(T.explosion.blob, x + AT.expl_outer)), f32(u32(T.explosion.blob, x + AT.expl_shock)))
-                end
-                local live = api.read(T.damage.copies[1] + HEADER + row + AT.dmg_demolition, 4)
-                local demo = live and u32(live, 0) or u32(db, row + AT.dmg_demolition)
-                local text = string.format('  damage record %d (%s): damage %d, armor pen. %d, demolition %d%s', id, d.via,
-                    u32(db, row + AT.dmg_damage), u32(db, row + AT.dmg_ap), demo, radii)
-                local users = dmg_refs[id]
-                -- (Test 11 raised a record whose other users are only explosions nothing sets off, for the blast (392,
-                -- shared with explosion 371): Test 12, the tester: "the missle blast radius hasnt changed anything, put it back
-                -- to how it was". Shared records are left alone again; the log still says who else uses them.)
-                local named = {}
-                for k, who in ipairs(users or {}) do
-                    local pid = tonumber(who:match('^projectile (%d+)$') or '')
-                    local xid = tonumber(who:match('^explosion (%d+)$') or '')
-                    local fired = xid and (fired_by[xid] or (fired_by.unknown and {'unknown: the explosive table not found'}))
-                    local radii = ''
-                    local xr = xid and T.explosion.index[xid]
-                    if xr then
-                        radii = string.format(', radius %.1f / %.1f / %.1f m', f32(u32(T.explosion.blob, xr + AT.expl_inner)),
-                            f32(u32(T.explosion.blob, xr + AT.expl_outer)), f32(u32(T.explosion.blob, xr + AT.expl_shock)))
-                    end
-                    named[k] = who .. radii .. (pid and proj_refs[pid] and (' (fired by ' .. table.concat(proj_refs[pid], ', ') .. ')') or '')
-                        .. (xid and (fired and (' (fired by ' .. table.concat(fired, ', ') .. ')') or ' (no projectile fires it)') or '')
-                end
-                if users then text = text .. '; also used by ' .. table.concat(named, ', ') end
-                if users then
-                    -- used by something else in the game too (another weapon's hit or blast): left as the game has it
-                    text = text .. ' -> left alone'
-                else
-                    local game = game_value('damage:' .. id .. ':' .. AT.dmg_demolition, demo, function(v) return v == TO end)
-                    if game >= FROM and game < TO then
-                        local w = {group = 'missile', kind = 'damage', rel = row + AT.dmg_demolition, idrel = row, idb = u32_bytes(id), game = game, base = game, id = id}
-                        watch[#watch + 1] = w
-                        local n = write_entry(w, desired(w))
-                        changed = changed + n
-                        text = text .. (want.missile and string.format(' -> %d (the game\'s %d; %d of %d copies written)', TO, game, n, #T.damage.copies)
-                            or string.format(' -> the game\'s %d', game))
-                    else
-                        text = text .. string.format(' -> left alone (not %d-%d)', FROM, TO - 1)
-                    end
-                end
-                lines[#lines + 1] = text
-            end
-            for _, n in ipairs(res.notes) do lines[#lines + 1] = '  note: ' .. n end
-        end
-    end
     -- the main gun (3.6.0 Test 6): its rounds per minute (fire-mode record +4/+8/+12 floats: low / default / high), the
     -- hold-reload fire-rate choice (weapon data +184, the LEFT input's function: 2 = fire rate; the FRV's MG-206 has it on
-    -- the right, +188, but in the Maelstrom's gun seat the right button also fires the missiles: Test 9, the tester: "lets move
+    -- the right, +188, but in the Maelstrom's gun seat the right button fires the missiles: Test 9, the tester: "lets move
     -- that to the main fire button";
     -- then the low and high rates are the game's and twice it) and its belt (magazine record +136: rounds, then
     -- magazines, refill, most). Each written in the LDLD table and in the game's own copy (the one the game reads).
@@ -933,7 +669,7 @@ local function apply(T)
         local live, live_lines = find_live(T)
         S.live = live
         local key = key_of(GUN.entity)
-        local f, r = T.fire and T.fire.index[key], T.rounds and T.rounds.index[key]
+        local f = T.fire and T.fire.index[key]
         local m, wd = T.magazine and T.magazine.index[key], T.weapondata and T.weapondata.index[key]
         lines[#lines + 1] = ''
         lines[#lines + 1] = GUN.name .. (f and '' or ' (not in the fire-mode table)') .. (m and '' or ' (not in the magazine table)')
@@ -942,7 +678,6 @@ local function apply(T)
         if TESTER then
             if f then lines[#lines + 1] = '  fire-mode record: ' .. hexdump(T.fire.blob, f, math.min(160, T.fire.stride)) end
             if m then lines[#lines + 1] = '  magazine record: ' .. hexdump(T.magazine.blob, m, T.magazine.stride) end
-            if r then lines[#lines + 1] = '  rounds record: ' .. hexdump(T.rounds.blob, r, T.rounds.stride) end
         end
         -- a watched value at `rel` in kind's table: also at the same place in the game's own copy, when that is its own
         local function place(w)
@@ -1081,66 +816,13 @@ local function check()
         if held_now(w) then held = held + 1 end
     end
     if S.switched then
-        -- (Test 13, the tester: "I dont think the demo force of the missles is being put back when its turned off mid game")
-        -- the change and what the game's tables hold right after it
-        local want, now = wanted(), {}
-        for _, w in ipairs(S.watch) do
-            if w.group == 'missile' then
-                local v = api.read(S.T.damage.copies[1] + HEADER + w.rel, 4)
-                now[#now + 1] = string.format('damage record %d demolition %s', w.id or 0, v and tostring(u32(v, 0)) or '?')
-            end
-        end
-        event(string.format('changed in the Mod Options Menu: missile demolition %s, fire rate %s, single belt %s%s', want.missile and 'on' or 'off',
-            want.rpm and 'on' or 'off', want.belt and 'on' or 'off', #now > 0 and ('; now ' .. table.concat(now, ', ')) or ''))
+        -- (Test 13) the change, in the log
+        local want = wanted()
+        event(string.format('changed in the Mod Options Menu: fire rate %s, single belt %s', want.rpm and 'on' or 'off', want.belt and 'on' or 'off'))
         S.switched = false
     end
     S.checks, S.last_check, S.held = S.checks + 1, api.now(), held
     return 'ok'
-end
-
--- ---------------------------------------------------------------- (tester) where the hold-reload fire-rate choice lives
--- (3.6.0 Test 5, the tester: "make the Maelstrom RPM adjustments available in-game while you hold the reload button,
--- similar to how the vanilla game handles RPM tweaks"). The game offers that choice for weapons whose WeaponData names
--- the ROF function (2) for an input (the FRV's MG-206, 085C1EDB038EC24E, has it on the right; so do the Liberator,
--- 587878FB76F4B9B1, and the Stalwart, A6A735ACCB4A327F), with the rounds per minute low / default / high. Tester builds
--- look once through every settings table for the keyed ones listing the Maelstrom's gun and those three, and log the
--- table types and the record offsets where all three hold 2 with 0 before it while the Maelstrom's holds 0.
-local REF = {mg = '085C1EDB038EC24E', lib = '587878FB76F4B9B1', stal = 'A6A735ACCB4A327F'}
-local function research(skip_low)
-    local keys = {gun = key_of(GUN.entity)}
-    for k, v in pairs(REF) do keys[k] = key_of(v) end
-    local out = {}
-    scan_pass(skip_low, false, true, function(address, kind, payload)
-        if payload > 8 * 1024 * 1024 then return end
-        local blob = api.read(address + HEADER, payload)
-        if not blob or not blob:find(keys.gun, 1, true) or not blob:find(keys.mg, 1, true) then return end
-        local index, why, stride = parse_keyed(blob, {stride = 4, name = string.format('%08X', kind)})
-        if not index then out[#out + 1] = string.format('type %08X (%d bytes): lists the gun, not readable as keyed (%s)', kind, payload, tostring(why)); return end
-        local g, m, l, s = index[keys.gun], index[keys.mg], index[keys.lib], index[keys.stal]
-        local cand = {}
-        if g and m then
-            for o = 4, stride - 4, 4 do
-                local function at(r) return r and u32(blob, r + o) end
-                local function before(r) return r and u32(blob, r + o - 4) end
-                if at(m) == 2 and before(m) == 0 and (not l or at(l) == 2) and (not s or at(s) == 2) and at(g) == 0 then cand[#cand + 1] = '+' .. o end
-            end
-        end
-        out[#out + 1] = string.format('type %08X (%d bytes, record %d): gun %s, MG-206 %s, Liberator %s, Stalwart %s; ROF candidates: %s', kind, payload, stride,
-            g and 'yes' or 'no', m and 'yes' or 'no', l and 'yes' or 'no', s and 'yes' or 'no', #cand > 0 and table.concat(cand, ' ') or 'none')
-        if g then
-            -- (Test 6) where the gun's record holds 1200.0 (its rate) or 300 (its belt); the weapon data in full
-            local at = {}
-            for o = 0, stride - 4, 4 do
-                local v = u32(blob, g + o)
-                if v == 0x44960000 then at[#at + 1] = '+' .. o .. '=1200.0' elseif v == 300 then at[#at + 1] = '+' .. o .. '=300' end
-            end
-            if #at > 0 then out[#out + 1] = '    gun record holds: ' .. table.concat(at, ' ') end
-            local n = kind == KINDS.weapondata.type and stride or math.min(stride, 256)
-            for o = 0, n - 4, 256 do out[#out + 1] = string.format('    gun record +%d: ', o) .. hexdump(blob, g + o, math.min(256, n - o)) end
-        end
-    end)
-    S.research = #out > 0 and table.concat(out, '\n') or 'no table lists both the gun and the MG-206'
-    S.dirty = true
 end
 
 -- ---------------------------------------------------------------- main loop
@@ -1175,24 +857,26 @@ local function run()
             local sweep = passes > 1 and (api.now() - started) > 180 and not S.swept
             if sweep then S.swept = true end
             local chains = scan_pass(skip_low, sweep)
-            local T, missing = parse_found()
-            if #missing == 0 then shared_found = shared_found or api.now() end
-            -- the weapon's own tables can load a little later than the shared ones: wait for them a while
+            local T = parse_found()
+            -- (3.6.0) every table is the gun's own: the wait for the rest starts once one of them is in (the game has
+            -- loaded its settings), so a long load screen never counts towards it
+            local any = false
+            for _, name in ipairs(KIND_NAMES) do if T[name] then any = true end end
+            if any then shared_found = shared_found or api.now() end
+            -- the gun's tables can load a little apart: wait for all of them a while
             local all_in = true
-            for _, name in ipairs(KIND_NAMES) do if KINDS[name].optional and not T[name] then all_in = false end end
-            if #missing == 0 and (all_in or api.now() - shared_found >= OPTIONAL_WAIT) then
+            for _, name in ipairs(KIND_NAMES) do if not T[name] then all_in = false end end
+            if shared_found and (all_in or api.now() - shared_found >= OPTIONAL_WAIT) then
                 S.sig = found_sig()
                 S.switched = false
                 local n, ok = apply(T)
                 S.status = string.format('%s; tables found in %.1f s (%d pass%s, %d table chains); %d value(s) written',
                     ok and 'active' or 'nothing to change (see below)', api.now() - started, passes, passes == 1 and '' or 'es', chains, n)
                 event('tables found; ' .. n .. ' value(s) written')
-                if TESTER and not S.researched then S.researched = true; research(skip_low); event('research pass done') end
                 write_log()
                 S.next_log = api.now() + 60
             else
-                S.status = 'searching (pass ' .. passes .. '); waiting for: ' ..
-                    (#missing > 0 and table.concat(missing, ', ') or (T.absent or 'the weapon\'s own tables'))
+                S.status = 'searching (pass ' .. passes .. '); waiting for: ' .. (T.absent or 'the gun\'s tables')
                 if passes == 1 or passes % 20 == 0 then event(S.status) end
                 wait(passes < 60 and 0.5 or 5)
             end
@@ -1203,10 +887,10 @@ end
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
 local menu_rows, menu_set, menu_link = {}, nil, nil
 do
-    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'missile', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'run_flat', 'indicator', 'loadout'}
+    local MENU_ORDER = {'speed', 'power', 'grip', 'steering', 'throttle', 'stability', 'collision', 'maelstrom', 'turret', 'autoloader', 'gunner_drive', 'driver_panel', 'camera', 'run_flat', 'indicator', 'loadout'}
     local hub = rawget(_G, 'ArmoredOverhaulMenu')
     if type(hub) ~= 'table' or type(hub.groups) ~= 'table' then hub = {groups = {}, done = {}}; rawset(_G, 'ArmoredOverhaulMenu', hub) end
-    for _, g in ipairs({'missile'}) do
+    for _, g in ipairs({'maelstrom'}) do
         hub.groups[g] = {status = S,
             rows = function() local r = menu_rows[g]; if type(r) == 'function' then r = r() end; return r or {} end,
             set = function(key, value) return menu_set(key, value) end}
@@ -1238,7 +922,7 @@ do
         if frame ~= true and frame < at then return end   -- (true: after_startup, at once)
         at = (frame == true and 0 or frame) + 60
         local mine = true
-        for _, g in ipairs({'missile'}) do if not hub.done[g] then mine = false end end
+        for _, g in ipairs({'maelstrom'}) do if not hub.done[g] then mine = false end end
         if mine then at = math.huge; return end
         local M = rawget(_G, 'ModOptionsMenu')
         if type(M) ~= 'table' or M.api ~= 1 or type(M.register_option) ~= 'function' then return end
@@ -1251,13 +935,9 @@ do
     if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
 -- the installed options' rows (built when the menu is found: the option addons have all loaded by then)
-menu_rows.missile = function()
+menu_rows.maelstrom = function()
     local p, rows = rawget(_G, 'ArmoredOverhaulMaelstromPicks'), {}
     if type(p) ~= 'table' then p = {} end
-    if p.missile then
-        rows[#rows + 1] = {'armored_overhaul.missile_demolition', {type = 'toggle', label = 'Maelstrom Missile Demolition', default = true,
-            description = 'The Maelstrom\'s missiles hit with demolition force 40 instead of the game\'s 30, so they break tree branches, fences and walls in their way. Turning it off puts the game\'s own back.'}, 'missile'}
-    end
     if p.rpm == true then
         rows[#rows + 1] = {'armored_overhaul.maelstrom_fire_rate', {type = 'toggle', label = 'Maelstrom Fire Rate', default = true,
             description = 'Hold reload in the Maelstrom\'s gun seat to switch its main gun\'s fire rate on the fly: 1200, 1800 or 2400 rounds a minute (the game: 1200 only). A change here reaches the next Maelstrom called in, not one already out. Off: the game\'s own.'}, 'rpm'}
@@ -1270,7 +950,7 @@ menu_rows.missile = function()
 end
 -- A Maelstrom takes its belt and fire rate when it is called in, and one already out keeps them (Test 6). A Fire Rate /
 -- Single Belt change applies at once, for the next Maelstrom called in (Tests 7-11 waited until none was out; Test 12,
--- the tester: a new tank dropped next to the old one got the old values). Missile Demolition is read at every hit: at once.
+-- the tester: a new tank dropped next to the old one got the old values).
 local MAELSTROM_HULL = 'content/fac_helldivers/vehicles/tank_storm/tank_storm'
 local function maelstrom_out()     -- true / false, nil when the engine can't tell (then changes apply at once)
     local SR = rawget(_G, 'stingray')
@@ -1284,11 +964,6 @@ local function maelstrom_out()     -- true / false, nil when the engine can't te
 end
 menu_set = function(key, v)
     local want = wanted()
-    if key == 'missile' then
-        want.missile = v == true or v == 1
-        S.switched = true; S.dirty = true
-        return
-    end
     local val
     if key == 'rpm' then val = v == true or v == 1
     elseif key == 'belt' then val = v == true or v == 1
