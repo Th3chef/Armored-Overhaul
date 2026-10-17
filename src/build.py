@@ -32,7 +32,7 @@ LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV G
                'Power Stronger', 'Power Strongest', 'Throttle Quick', 'Throttle Quicker', 'Throttle Instant', 'Shift Quick',
                'Shift Quicker', 'Shift Instant', 'Stability Stable',
                'Stability Steady', 'Stability Planted', 'Collision Damage', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
-               'Turret Indicator', 'Run Flat', 'Maelstrom Weapons', 'Missile Demolition',
+               'Turret Indicator', 'Run Flat', 'Maelstrom Weapons',
                'Fire Rate', 'Single Belt', 'Vehicle Loadout']
 # (3.1.0 Test 26) folders made from another folder's Lua: the MBT Turrets 180 choice is the MBT Turrets addon with one line
 # more (its flag asks the turret core for 90 degrees each side), so the two can't drift apart
@@ -46,7 +46,7 @@ GAME_FOLDERS = [('Turret Skull', 'skull'), ('Turret Models', 'models'), ('Turret
 IMAGES = ['tank_speed', 'sub/speed_fast', 'sub/speed_faster', 'sub/speed_fastest', 'tank_power', 'sub/power_strong', 'sub/power_stronger', 'sub/power_strongest', 'tank_grip', 'sub/grip_moderate',
           'sub/grip_strong', 'sub/grip_maximum', 'tank_steering', 'sub/steering_responsive', 'sub/steering_quick',
           'sub/steering_sharp', 'tank_throttle', 'sub/throttle_quick', 'sub/throttle_quicker', 'sub/throttle_instant',
-          'tank_stability', 'sub/stability_stable', 'sub/stability_steady', 'sub/stability_planted', 'tank_collision_damage', 'maelstrom_missile_demolition', 'maelstrom_fire_rate',
+          'tank_stability', 'sub/stability_stable', 'sub/stability_steady', 'sub/stability_planted', 'tank_collision_damage', 'maelstrom_fire_rate',
           'maelstrom_belt', 'mbt_turrets', 'sub/mbt_360',
           'sub/mbt_180', 'tank_suspension', 'sub/suspension_firm', 'sub/suspension_heavy',
           'turret_traverse', 'sub/traverse_quick', 'sub/traverse_fast', 'sub/traverse_very_fast', 'turret_elevation',

@@ -3,7 +3,7 @@
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
   "Name": "Armored Overhaul 3.6.0",
   "IconPath": "thumbnail.png",
-  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; a collision damage boost for ramming; stronger Maelstrom missiles, a faster Maelstrom gun with all its ammo on one belt; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; FRV run-flat tires; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
+  "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; a collision damage boost for ramming; a faster Maelstrom gun with all its ammo on one belt; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; FRV run-flat tires; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
   "Options": [
     {
       "Name": "Tank Top Speed",
@@ -216,15 +216,6 @@
       "Include": [
         "Tank Core",
         "Collision Damage"
-      ]
-    },
-    {
-      "Name": "Maelstrom Missile Demolition",
-      "Description": "The Maelstrom's missiles hit with demolition force 40 instead of the game's 30, on the hit and the blast, so they break the tree branches, fences and walls in their way instead of being stopped by them. Only the missiles change (nothing else in the game uses their settings). Can be turned off in game with the Mod Options Menu.",
-      "Image": "options/maelstrom_missile_demolition.png",
-      "Include": [
-        "Maelstrom Weapons",
-        "Missile Demolition"
       ]
     },
     {
