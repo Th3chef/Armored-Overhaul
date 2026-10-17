@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.6.1
+
+New:
+- **Fire rate pop-up:** as the fire-rate menu closes, the rate you picked pops up next to the gun's ammo bar for a moment (for example "2400 RPM"), then fades. Part of Maelstrom Fire Rate.
+
+Changed:
+- **Maelstrom Fire Rate on right click:** pick the rate with right click now, like the FRV's gun. While the fire-rate menu is open neither the gun nor the missiles fire, so a click in the menu only picks a rate.
+- **Gunner camera zoom:** the mouse wheel and the zoom keys no longer move the gunner camera while the pause menu or the map is open, in every seat it zooms (the tanks, the M-102 FRV's gunner seat and the HMG and Anti-Tank Emplacements).
+
+Fixed:
+- **MBT Turrets:** a small flat piece of the turret's floor stuck out past the side of the turret on both tanks; it's gone.
+
+**Known issues:** Freelook in multiplayer: the game keeps one setting for both tanks' main guns, so while you hold Freelook as the host, another player's turret may stop turning too. Tell me if you see it. Maelstrom Fire Rate with a controller: the guns can still fire while the fire-rate menu is open, and the new rate pops up once you fire.
+
 ## 3.6.0
 
 New:
