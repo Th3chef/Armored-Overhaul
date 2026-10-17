@@ -33,7 +33,7 @@ LUA_FOLDERS = ['Tank Core', 'Gunner Drive', 'Driver Panel', 'Autoloader', 'FRV G
                'Shift Quicker', 'Shift Instant', 'Stability Stable',
                'Stability Steady', 'Stability Planted', 'Collision Damage', 'Camera Close', 'Camera Far', 'Camera Farther', 'Camera Farthest',
                'Turret Indicator', 'Run Flat', 'Maelstrom Weapons',
-               'Fire Rate', 'Single Belt', 'Vehicle Loadout']
+               'Fire Rate', 'Fire Rate Display', 'Single Belt', 'Vehicle Loadout']
 # (3.1.0 Test 26) folders made from another folder's Lua: the MBT Turrets 180 choice is the MBT Turrets addon with one line
 # more (its flag asks the turret core for 90 degrees each side), so the two can't drift apart
 DERIVED = {'MBT Turrets 180': ('MBT Turrets', b'o.mbt = true\n',
