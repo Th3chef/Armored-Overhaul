@@ -220,7 +220,7 @@
     },
     {
       "Name": "Maelstrom Fire Rate",
-      "Description": "Hold reload in the Maelstrom's gun seat to switch its main gun's fire rate on the fly, like other weapons with fire-rate settings: 1200, 1800 (where it starts) or 2400 rounds a minute (the game: 1200 only). Pick it with right click; the tank's guns don't fire while the menu is open. Its menu is titled Maelstrom. When you close the menu, the new rate pops up next to the gun's ammo bar for a moment. Only the Maelstrom's gun changes. Can be turned off in game with the Mod Options Menu.",
+      "Description": "Hold reload in the Maelstrom's gun seat to switch its main gun's fire rate on the fly, like other weapons with fire-rate settings: 1200, 1800 (where it starts) or 2400 rounds a minute (the game: 1200 only). Pick it with right click; the tank's guns don't fire while the menu is open. When you close the menu, the new rate pops up next to the gun's ammo bar for a moment. Only the Maelstrom's gun changes. Can be turned off in game with the Mod Options Menu.",
       "Image": "options/maelstrom_fire_rate.png",
       "Include": [
         "Maelstrom Weapons",
