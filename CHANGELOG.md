@@ -3,7 +3,6 @@
 ## 3.6.0
 
 New:
-- **Maelstrom Missile Demolition** (new option): the Maelstrom's missiles hit with demolition force 40 instead of the game's 30 on a direct hit, so they break the walls and fences in their way. On/off in the Mod Options Menu, at once.
 - **Maelstrom Fire Rate** (new option): hold reload in the Maelstrom's gunner seat to switch its main gun between 1200, 1800 and 2400 rounds a minute, like other weapons with fire-rate settings. Pick with left click (right click stays the missiles); the menu is titled Maelstrom. The gun starts at 1800.
 - **Maelstrom Single Belt** (new option): all 2,100 of the main gun's rounds on one belt, so it never reloads.
 - **FRV Run-Flat Tires** (new option): the M-102 FRV's and M-103 Supply FRV's tires never pop or lose health. On/off in the Mod Options Menu, at once. Works when you host or play alone.
