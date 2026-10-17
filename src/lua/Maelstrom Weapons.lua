@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_maelstrom_weapons
--- Armored Overhaul 3.6.0 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
+-- Armored Overhaul 3.6.1 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
 -- pick (its option addon sets ArmoredOverhaulMaelstromPicks): Maelstrom Fire Rate (a hold-reload choice of the main gun's
 -- rounds per minute x1 / x1.5 / x2) and Maelstrom Single Belt (all its ammo on one belt, no reload). Written for Armored
 -- Overhaul from the author's own Leveller & Solo Silo Demo Force 50 core (the same settings-table scan).
@@ -7,7 +7,7 @@
 -- How it works: the game keeps its weapon settings in tables in memory (each behind a 24-byte 'LDLD' header; found by
 -- their table type and layout, never by fixed addresses). The main gun (tank_storm_maingun, D58AE6A04EDB10DE: 12.5mm,
 -- 1200 rpm, 300-round belt, 6 spare belts): its fire-mode record's rates (+4/+8/+12), its weapon data's left-input
--- function (+184: the fire-rate choice), one encyclopedia look-up slot (the menu's title) and its magazine record's belt
+-- function (+188, the right input, since 3.6.1 Test 6: the fire-rate choice), one encyclopedia look-up slot (the menu's title) and its magazine record's belt
 -- and spare belts. Every copy of a table is written and read back. Every 5 s the values are checked (set again if the
 -- game put its own back); every 5 minutes a headers-only scan looks for moved or new tables. Turning it off in the Mod
 -- Options Menu puts the game's values back (also kept in a process environment variable, so a copy of this addon loaded
@@ -28,7 +28,7 @@ end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
-local VERSION = ({version = '3.6.0'}).version   -- (as the other addons write it, so test builds name themselves)
+local VERSION = ({version = '3.6.1'}).version   -- (as the other addons write it, so test builds name themselves)
 
 local GUN = { name = 'Maelstrom main gun', entity = 'D58AE6A04EDB10DE', belt = 300, mags = 6, rpm = 1200 }   -- (the game's belt, spare belts and rate)
 local ENV_NAME = 'ARMORED_OVERHAUL_MAELSTROM_GAME'
@@ -378,10 +378,18 @@ end
 -- ---------------------------------------------------------------- what is wanted
 -- (Test 11, the tester: "Fire rate should only go from 1x, 1.5x, 2x. and only in the reload context menu, make Fire rate selector
 -- a toggle in the mod options") Fire Rate on = the hold-reload choice of the game's rate x1 / x1.5 / x2 (1200 / 1800 /
--- 2400; it starts at the middle one, the game's default slot).
+-- 2400).
 -- The picks come from the option addons (ArmoredOverhaulMaelstromPicks: rpm and belt = true), read when the
 -- tables are applied; the Mod Options Menu turns each on or off in game.
-local RPM_MID = 1.5        -- the middle of the three rates (x1 / x1.5 / x2)
+-- (3.6.1 Test 7, the tester: "1800 starting is fine then") The list reads low, start, high and the gun starts on the middle
+-- one, so for 1200 · 1800 · 2400 in order it starts at 1800 (x1.5); the low slot is the game's 1200 (3.6.1 Tests 2-6
+-- started at 1200 with 1800 in the low slot: the list read out of order)
+local RPM_START = 1.5
+-- (3.6.1 Test 6, the tester: "would it be possible to move to the right context menu and then not fire a missile when change
+-- the RPM with right click") The fire-rate choice is back on the RIGHT input (weapon data +188, as the FRV's MG-206 has
+-- it; 3.6.0 Test 9 to 3.6.1 Test 5: the left, +184). Tank Core now holds both tank fire actions off while the menu is
+-- open, so a right click there only picks a rate (the missiles fired with it in 3.6.0 Test 8).
+local ROF_AT, ROF_OTHER = 188, 184
 local function picks()
     local p = rawget(_G, 'ArmoredOverhaulMaelstromPicks')
     return type(p) == 'table' and p or {}
@@ -424,7 +432,7 @@ end
 -- game's value as a number (the float for rpm), `last` = what this addon wrote last.
 local function desired(w)
     local want = wanted()
-    if w.group == 'rpm' then return want.rpm and f32_bits(w.base * RPM_MID) or w.game end
+    if w.group == 'rpm' then return want.rpm and f32_bits(w.base * RPM_START) or w.game end
     -- (the hold-reload fire-rate choice: the game's rate as the low one, twice it as the high one, the function on)
     if w.group == 'rpm_lo' then return want.rpm and f32_bits(w.base) or w.game end
     if w.group == 'rpm_hi' then return want.rpm and f32_bits(w.base * 2) or w.game end
@@ -437,7 +445,7 @@ end
 -- whose record has the right id, for row tables); returns how many copies were written
 -- the value an entry has when its option is on (what this mod writes)
 local function on_value(w)
-    if w.group == 'rpm' then return f32_bits(w.base * RPM_MID) end
+    if w.group == 'rpm' then return f32_bits(w.base * RPM_START) end
     if w.group == 'rpm_lo' then return f32_bits(w.base) end
     if w.group == 'rpm_hi' then return f32_bits(w.base * 2) end
     if w.group == 'rof' then return 2 end
@@ -660,9 +668,9 @@ local function apply(T)
     for _, name in ipairs(KIND_NAMES) do if T[name] then S.T[name] = {copies = T[name].copies, payload = T[name].payload} end end
     local p = picks()
     -- the main gun (3.6.0 Test 6): its rounds per minute (fire-mode record +4/+8/+12 floats: low / default / high), the
-    -- hold-reload fire-rate choice (weapon data +184, the LEFT input's function: 2 = fire rate; the FRV's MG-206 has it on
-    -- the right, +188, but in the Maelstrom's gun seat the right button fires the missiles: Test 9, the tester: "lets move
-    -- that to the main fire button";
+    -- hold-reload fire-rate choice (weapon data ROF_AT, the input's function: 2 = fire rate; the FRV's MG-206 has it on
+    -- the right, +188; 3.6.0 Test 9 moved it to the left, +184, as the right button fired the missiles; 3.6.1 Test 6 back
+    -- on the right, with Tank Core holding the tank's fire off while the menu is open);
     -- then the low and high rates are the game's and twice it) and its belt (magazine record +136: rounds, then
     -- magazines, refill, most). Each written in the LDLD table and in the game's own copy (the one the game reads).
     if p.rpm or p.belt then
@@ -696,7 +704,7 @@ local function apply(T)
             -- even when the choice was refused), and only when the gun's rate is the game's 1200 (a patch that changed it,
             -- or moved the fields, is refused rather than scaled)
             local now = f and live_now('fire', f + 8)
-            local game = now and game_value('fire:' .. GUN.entity .. ':8', now, function(v, g) local a, b = f32(v), f32(g); return b > 0 and math.abs(a / b - RPM_MID) < 0.01 end)
+            local game = now and game_value('fire:' .. GUN.entity .. ':8', now, function(v, g) local a, b = f32(v), f32(g); return b > 0 and math.abs(a / b - RPM_START) < 0.01 end)
             local base = game and f32(game)
             local mg = wd and T.weapondata.index[key_of('085C1EDB038EC24E')]
             local why = nil
@@ -707,11 +715,11 @@ local function apply(T)
             end
             local g_rof, g_lo, g_hi
             if not why then
-                local rof_now, right_now = live_now('weapondata', wd + 184), live_now('weapondata', wd + 188)
+                local rof_now, right_now = live_now('weapondata', wd + ROF_AT), live_now('weapondata', wd + ROF_OTHER)
                 local lo_now, hi_now = live_now('fire', f + 4), live_now('fire', f + 12)
                 if not (rof_now and right_now and lo_now and hi_now) then why = 'its records could not be read'
                 else
-                    g_rof = game_value('weapondata:' .. GUN.entity .. ':184', rof_now, function(v) return v == 2 end)
+                    g_rof = game_value('weapondata:' .. GUN.entity .. ':' .. ROF_AT, rof_now, function(v) return v == 2 end)
                     g_lo = game_value('fire:' .. GUN.entity .. ':4', lo_now, function(v) return v == f32_bits(base) end)
                     g_hi = game_value('fire:' .. GUN.entity .. ':12', hi_now, function(v) return v == f32_bits(base * 2) end)
                     if g_rof ~= 0 or right_now ~= 0 then why = 'the gun already has an input function'
@@ -721,14 +729,14 @@ local function apply(T)
             if why then
                 lines[#lines + 1] = '  Maelstrom Fire Rate: not added (' .. why .. ')'
             else
-                for _, e in ipairs({{'rpm', 'fire', f + 8, game}, {'rof', 'weapondata', wd + 184, g_rof}, {'rpm_lo', 'fire', f + 4, g_lo}, {'rpm_hi', 'fire', f + 12, g_hi}}) do
+                for _, e in ipairs({{'rpm', 'fire', f + 8, game}, {'rof', 'weapondata', wd + ROF_AT, g_rof}, {'rpm_lo', 'fire', f + 4, g_lo}, {'rpm_hi', 'fire', f + 12, g_hi}}) do
                     local w2 = place({group = e[1], kind = e[2], rel = e[3], game = e[4], base = base})
                     watch[#watch + 1] = w2
                     changed = changed + write_entry(w2, desired(w2))
                 end
-                lines[#lines + 1] = string.format('  rounds per minute (fire-mode +8, the middle choice): the game\'s %.0f -> %s%s', base,
-                    want.rpm and string.format('%.0f (x%g)', base * RPM_MID, RPM_MID) or 'the game\'s (off in the Mod Options Menu)', where_note('fire'))
-                lines[#lines + 1] = string.format('  hold-reload fire-rate choice (weapon data +184, the left input -> 2; fire-mode +4 / +12 -> %.0f / %.0f): %s%s', base, base * 2,
+                lines[#lines + 1] = string.format('  rounds per minute (fire-mode +8, where it starts): the game\'s %.0f -> %s%s', base,
+                    want.rpm and string.format('%.0f (x%g)', base * RPM_START, RPM_START) or 'the game\'s (off in the Mod Options Menu)', where_note('fire'))
+                lines[#lines + 1] = string.format('  hold-reload fire-rate choice (weapon data +%d, the %s input -> 2; fire-mode +4 / +12 -> %.0f / %.0f): %s%s', ROF_AT, ROF_AT == 188 and 'right' or 'left', base, base * 2,
                     want.rpm and 'on' or 'off (the game\'s: none)', where_note('weapondata'))
                 -- (Test 10, the tester: "you can just put Maelstrom as the title for the context menu") The menu's title is the
                 -- weapon's name from its encyclopedia entry; the gun has none (the menu kept the last weapon's name, e.g.
@@ -940,7 +948,7 @@ menu_rows.maelstrom = function()
     if type(p) ~= 'table' then p = {} end
     if p.rpm == true then
         rows[#rows + 1] = {'armored_overhaul.maelstrom_fire_rate', {type = 'toggle', label = 'Maelstrom Fire Rate', default = true,
-            description = 'Hold reload in the Maelstrom\'s gun seat to switch its main gun\'s fire rate on the fly: 1200, 1800 or 2400 rounds a minute (the game: 1200 only). A change here reaches the next Maelstrom called in, not one already out. Off: the game\'s own.'}, 'rpm'}
+            description = 'Hold reload in the Maelstrom\'s gun seat to switch its main gun\'s fire rate on the fly: 1200, 1800 (where it starts) or 2400 rounds a minute (the game: 1200 only); the new rate pops up by the ammo bar as the menu closes. A change here reaches the next Maelstrom called in, not one already out. Off: the game\'s own.'}, 'rpm'}
     end
     if p.belt == true then
         rows[#rows + 1] = {'armored_overhaul.maelstrom_single_belt', {type = 'toggle', label = 'Maelstrom Single Belt', default = true,

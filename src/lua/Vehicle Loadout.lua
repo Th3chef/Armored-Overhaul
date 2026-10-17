@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_vehicle_loadout
--- Armored Overhaul 3.6.0 - Vehicle Loadout option: lets you pick more than one tank, exosuit or FRV in your stratagem
+-- Armored Overhaul 3.6.1 - Vehicle Loadout option: lets you pick more than one tank, exosuit or FRV in your stratagem
 -- loadout. Written from scratch.
 --
 -- How the game limits it (game.dll, Sept 2026 build): each stratagem has a data record (the stratagem list,
@@ -30,7 +30,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.6.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.6.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            vehicles = 'none yet', groups = 'none yet', changed = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (on)', frames = 0}
 rawset(_G, 'ArmoredOverhaulVehicleLoadout', S)

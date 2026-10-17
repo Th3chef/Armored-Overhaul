@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.6.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.6.1 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -216,7 +216,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.6.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.6.1', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -351,8 +351,8 @@ end
 -- The log is what a user attaches to a bug report: what the addon found in this game build, where you sat and
 -- what it did, and the last error. Tester builds add the counters and per-frame details used during development.
 TC.LOG_MAIN = {'version', 'loader', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
-    'response', 'overwritten', 'control', 'engine', 'smoke', 'smoke_keys', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'turret_ammo', 'run_flat', 'kinds', 'autoloader', 'reloads', 'brakes', 'errors', 'last_error'}
-TC.LABELS = {loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
+    'response', 'overwritten', 'control', 'engine', 'smoke', 'smoke_keys', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'turret_ammo', 'run_flat', 'kinds', 'autoloader', 'reloads', 'fire_rate', 'rate_raw', 'rate_menu', 'fire_hold', 'fire_hold_last', 'fire_hold_keys', 'map_seen', 'brakes', 'errors', 'last_error'}
+TC.LABELS = {fire_hold = 'Maelstrom guns held while the fire-rate menu is open', fire_hold_last = 'after the last menu', fire_hold_keys = 'keys down as the menu last opened', map_seen = 'the map (gunner seat, for the zoom gate)', map_history = 'the map: the last opens and closes', fire_hold_resets = 'times the game put you back as operator while held', fire_ops = 'Gatling / missile pods operator entries (changes)', fire_hold_moved = 'operator entries found moved at the menu close', fire_hold_healed = 'weapons put back to you after being left with nobody', rate_menu = 'fire rate picked in the menu (read as it closes)', rate_menu_log = 'fire-rate menu: the last reads', input_timeline = 'gunner seat inputs (byte 0 of each action\'s state, changes)', ui_tags = 'input tags at the last zoom (Gunner Camera)', fire_rate = 'Maelstrom gun fire rate (Fire Rate Display)', rate_raw = 'fire rate measurements (rounds a minute, the last 8)', rate_measures = 'fire rate measurements taken', rate_off_choice = 'measurements not near 1200 / 1800 / 2400', rate_changes = 'fire rate changes shown', loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
                 engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3, right stick click or a bound key, gunner seat)',
                 sessions = 'times driven from the gunner seat', drive_frames = 'frames driven',
                 response = 'tank answers the throttle', health = 'vehicle health (Vehicle Indicator color)',
@@ -389,8 +389,8 @@ local function itrace(what)
     if #input_trace >= 40 then table.remove(input_trace, 1) end
     input_trace[#input_trace + 1] = string.format('f%d %s', S.frames, what)
 end
-TC.LOG_TESTER = {'pad_buttons', 'tires', 'turret_near', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
-    'frames', 'polls', 'reads', 'page_checks', 'gear_read', 'engine_starts', 'hud_font', 'smoke_shots'}
+TC.LOG_TESTER = {'fire_ops', 'fire_hold_moved', 'fire_hold_healed', 'map_history', 'rate_menu_log', 'input_timeline', 'fire_hold_resets', 'rate_measures', 'rate_off_choice', 'rate_changes', 'pad_buttons', 'tires', 'turret_near', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
+    'frames', 'polls', 'reads', 'page_checks', 'gear_read', 'engine_starts', 'hud_font', 'smoke_shots', 'ui_tags'}
 local logged = {}
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
 -- With CowboyBingus's Mod Options Menu installed, these settings show in the game's MODS tab under ARMORED OVERHAUL
@@ -1391,6 +1391,83 @@ local SEAT_PUB = {kind = nil, role = 0, vehicle = 0, frame = 0, driving = false,
 S.engine, S.engine_starts, S.gear_read, S.hud_font = 'not driven yet', 0, 'not read yet', 'not read yet'
 S.control = 'no other driver seen'
 rawset(_G, 'ArmoredOverhaulSeat', SEAT_PUB)
+-- (3.6.1 review) the 3.6.1 parts' names in two tables (Lua allows 200 top-level locals; Tank Core was at 190)
+local UI, FIRE = {}, {}
+-- (3.6.1, the tester: "the gunner camera zoom shouldnt be active when the map or pause menu is active") Does the game's UI
+-- hold the input right now (the pause menu, the map: the input tag Gunner Drive pauses for, 64 + 9)? Asked by the Gunner
+-- Camera only when the wheel or a zoom key moved, so it costs nothing otherwise. nil when the player isn't found.
+-- (3.6.1 Test 9, the tester again: "Id like to fix the issue of zooming in and out with the tank while a map is open or the
+-- game is at the pause menu") Test 3's input tag never showed the menus (Test 6 log: "the UI does not hold the input" at
+-- the last zoom). Now also the game's UI screens (facts from CowboyBingus's Mod Options Menu and Galactic Menu Hotkey
+-- sources): the UI state [game.dll+0x347CE28]: a screen stack at +0x429C (five u32 screen types, then their count; the
+-- escape menu is type 1; the Galactic Menu Hotkey reads the same count as its presenter manager's depth, +17032 +40).
+-- The UI counts as open when the escape menu is on the stack, or when the stack is deeper than the least seen in this
+-- gunner seat (UI.base, kept by Tank Core's poll: the screens of a plain mission, whatever they are).
+-- Only on the known game build, or while the Mod Bindings Menu says it is ready (its game build check).
+UI.state, UI.stack, UI.entries, UI.escape, UI.base, UI.next = 0x347CE28, 0x429C, 5, 1, nil, 0
+UI.screens = function()
+    if not game then return nil end
+    if not S.known_build then
+        local B = rawget(_G, 'ModBindingsMenu')
+        local okr, r = false, nil
+        if type(B) == 'table' and type(B.ready) == 'function' then okr, r = pcall(B.ready) end
+        if not (okr and r == true) then return nil end
+    end
+    local ui = fetch_ptr(game + UI.state)
+    if not ui or not fetch(ui + UI.stack, 4 * (UI.entries + 1)) then return nil end
+    local depth = mem_u32(4 * UI.entries)
+    if depth > UI.entries then return nil end
+    local types, escape = {}, false
+    for i = 0, depth - 1 do local t = mem_u32(4 * i); types[#types + 1] = t; if t == UI.escape then escape = true end end
+    return {depth = depth, types = types, escape = escape}
+end
+-- (poll) the least deep screens seen in this gunner seat: a plain mission's
+-- (3.6.1 RC, the tester: "The zoom fix for map and pause menu should be applicable for all of the gunner camera vehicles")
+-- the seats whose camera the Gunner Camera zooms: the tanks', the M-102 FRV's gunner seat, the HMG and Anti-Tank
+-- Emplacements (Tank Core's every-seat kind, as the camera reads it)
+UI.zoom_seat = function()
+    local k = SEAT_PUB.any_kind
+    return SEAT_PUB.any_role == GUNNER and k ~= nil and (VEHICLES[k] ~= nil or k == FRV_KIND or k == 0x20 or k == 0x01)
+end
+UI.watch = function(mine)
+    if not mine or mine.role ~= GUNNER or not UI.zoom_seat() then UI.base = nil; return end
+    local u = UI.screens()
+    if not u or u.escape then return end
+    if not UI.base or UI.base.vehicle ~= mine.vehicle or u.depth < UI.base.depth then
+        UI.base = {vehicle = mine.vehicle, depth = u.depth}
+    end
+end
+-- (3.6.1 Tests 9-13) The map adds no screen to the stack, and the wheel's map zoom actions (1:8 / 1:9) are no use either
+-- (the wheel's notch often lands a frame after them). The map is opened with the avatar's own Map action (2:28: named
+-- through the register that also names the Map group, between CameraSwitchSide 2:27 and WeaponFunctionUp 2:29).
+-- Followed every frame in a zooming gunner seat (UI.zoom_seat) by FIRE.map_tick (with the fire hold, below): a press held 0.35 s or more
+-- (Map itself, or a key down at the press: the Tab key, less the movement keys) is a hold-to-show map, open while held;
+-- a shorter one is a toggle-mode map, open until the next press, Esc or 120 s (Test 13).
+UI.map = {open = false, since = 0, keys = nil, mode = nil, down = false}
+UI.map_takes_wheel = function() return UI.map.open end
+SEAT_PUB.ui_input = function()
+    local me = local_player()
+    if not me then return nil end
+    local from = PLAYERS.vstate + PLAYERS.leaving
+    if not fetch(me.tags_at, PLAYERS.tags + 16 - from) then return nil end
+    local at = PLAYERS.tags - from
+    local held = floor(mem_u32(at + 8) / 512) % 2 == 1
+    local tags = TESTER and string.format('%08x %08x %08x %08x', mem_u32(at), mem_u32(at + 4), mem_u32(at + 8), mem_u32(at + 12))
+    local ok, u = pcall(UI.screens)
+    u = ok and u or nil
+    local why = held and 'input tag' or nil
+    if not why and u then
+        if u.escape then why = 'escape menu'
+        elseif UI.base and u.depth > UI.base.depth then why = 'a screen over the mission' end
+        if not why then local okm, m = pcall(UI.map_takes_wheel); if okm and m then why = 'the map' end end
+    end
+    if TESTER then
+        S.ui_tags = string.format('%s; screens %s [%s]; plain mission: %s (the UI %s)', tostring(tags),
+            u and u.depth or '?', u and table.concat(u.types, ' ') or '', UI.base and string.format('%d screen(s)', UI.base.depth) or 'not seen yet',
+            why and ('holds the input: ' .. why) or 'does not hold the input')
+    end
+    return why ~= nil
+end
 -- (3.1.1 review: one place; it was written out twice) the driving fields: nothing driven any more
 local function clear_drive_pub()
     SEAT_PUB.driving, SEAT_PUB.gear, SEAT_PUB.selector, SEAT_PUB.rpm, SEAT_PUB.speed, SEAT_PUB.fuel, SEAT_PUB.engine, SEAT_PUB.smoke, SEAT_PUB.smoke_full, SEAT_PUB.remote = false
@@ -1426,6 +1503,7 @@ SMK = {kind = 0x2C, restore = 3, retry = 300}   -- (3.0.1 review: restore in sec
 local NOSMOKE = {}     -- (no smoke places in this game version: every table look-up finds nothing)
 smoke = {id = nil, vehicle = nil, next_find = 0, held = false, active = nil, full = {}, memo = {}, check = 0, rounds_at = 0}
 S.smoke, S.smoke_shots = 'not used yet', 0
+S.ui_tags = 'not asked yet (the Gunner Camera asks when the wheel or a zoom key moves)'
 -- the key of the entry holding `value` in the map at `at` of header `h`
 local function map_key(h, at, value)
     local entries, cap, empty = str_ptr(h, at), le32(h, at + 8), le32(h, at + 12)
@@ -2142,6 +2220,7 @@ autoload = function(mine, me)
     end
     if S.frames < auto.next_check then return end
     auto.next_check = S.frames + AUTO.every
+    if S.fire_held_now then S.autoloader = 'waiting (the fire-rate menu is open)'; return end   -- (3.6.1 Test 8: nobody operates the gun then)
     local gun = auto.gun
     if not gun or auto.seat ~= mine.vehicle or S.frames >= auto.gun_at then
         local th = table_hdr(F.trigger, 0x70)
@@ -2208,6 +2287,552 @@ autoload = function(mine, me)
     if TESTER then atrace(string.format('reload start asked (try %d, %.1f s after it ran dry)', auto.tries, S.time - auto.empty_at)) end
 end
 
+end
+-- ------------------------------------------------------------------------------------------ fire rate (3.6.1)
+-- (3.6.1) For the Fire Rate Display: the Maelstrom gun's rounds a minute, read from the game as the hold-reload menu
+-- closes (menu_rate, below) and measured from its rounds left while you fire. Only with Fire Rate on and the Fire Rate Display
+-- addon loaded, in a Maelstrom's gunner seat. Between bursts the rounds are looked at once a poll; once they drop, every
+-- frame until the gun has been quiet for RT.live seconds. A burst's first RT.skip seconds are left out (a spin-up), then
+-- every RT.span seconds of steady fire is one measurement, taken as 1200, 1800 or 2400 when within RT.within of one
+-- (the three choices Fire Rate sets: the game's 1200 x1, x1.5, x2). Published as SEAT_PUB.rate_rpm; rate_seq goes up
+-- each time it differs from the gun's last one (a gun starts at 1800 since Test 7), which pops the number up on screen.
+do
+local RT = {start = 1800, choices = {1200, 1800, 2400}, within = 0.12, skip = 0.15, span = 0.5, gap = 0.25, live = 0.3, least = 6, gun_every = 60}
+local rate = {gun = nil, seat = nil, gun_at = 0, at = nil, prev = nil, burst = nil, run = nil, fast_until = -1, until_frame = -1,
+              memo = {}, tmemo = {}, last = {}, raws = {}}
+SEAT_PUB.rate_rpm, SEAT_PUB.rate_seq = nil, 0
+S.fire_rate, S.rate_measures, S.rate_off_choice, S.rate_changes, S.rate_raw = 'off (the Fire Rate Display is not installed)', 0, 0, 0, 'none yet'
+local function wanted()
+    if rawget(_G, 'ArmoredOverhaulFireRateDisplay') == nil then return false, 'off (the Fire Rate Display is not installed)' end
+    local mw = rawget(_G, 'ArmoredOverhaulMaelstromWeapons')
+    local w = type(mw) == 'table' and mw.want
+    if type(w) ~= 'table' or w.rpm ~= true then return false, 'off (Maelstrom Fire Rate is off)' end
+    return true
+end
+local function snap(rpm)
+    for _, c in ipairs(RT.choices) do if math.abs(rpm / c - 1) <= RT.within then return c end end
+    return nil
+end
+local function quiet() rate.prev, rate.burst, rate.run = nil, nil, nil end
+local function f32b(v) local f = ffi.new('float[1]', v); local u = ffi.cast('uint32_t *', f)[0]; return u end
+local function u32s(u) return string.char(u % 256, floor(u / 256) % 256, floor(u / 65536) % 256, floor(u / 16777216) % 256) end
+-- (3.6.1 Test 14) The choice is read as the menu is used (Tests 11-12 found where the game keeps it by measuring bursts at
+-- different rates; Test 13: a choice made without firing showed nothing): when the fire-rate menu opens, the
+-- two blocks it was found in (behind the ammo table's +0x50 and the trigger table's +0xD0, 64 KB each)
+-- are searched once for 1200.0 / 1800.0 / 2400.0 (floats, 4-byte aligned); the places found are read at each poll while
+-- the menu is open and as it closes (2 s at most). A place that went from one of the three to another is the gun's choice:
+-- the new rate pops up as the menu closes (a burst after it no longer pops it again). Read-only.
+local MR = {after = 2, most = 400, blocks = {{'ammo', 0x50, 'ammo'}, {'triggers', 0xD0, 'trigger'}}}
+local mr = {cands = nil, closed_at = nil, known = nil}
+S.rate_menu, S.rate_menu_log = 'not used yet', 'none yet'
+local mr_log = {}
+local CHOICE_OF = {}
+for _, c in ipairs(RT.choices) do CHOICE_OF[f32b(c)] = c end
+local function mr_note(what)
+    S.rate_menu = what
+    if #mr_log >= 8 then table.remove(mr_log, 1) end
+    mr_log[#mr_log + 1] = string.format('f%d %s', S.frames, what)
+    S.rate_menu_log = '\n    ' .. table.concat(mr_log, '\n    ')
+end
+local function mr_search()
+    local F, cands, nblk = FEAT.reload, {}, 0
+    for _, b in ipairs(MR.blocks) do
+        local obj = F and F[b[3]] and fetch_ptr(F[b[3]])
+        local blk = obj and fetch_ptr(obj + b[2])
+        local data = blk and fetch_str(blk, 0x10000)
+        if data then
+            nblk = nblk + 1
+            for u, c in pairs(CHOICE_OF) do
+                local pat, at = u32s(u), 1
+                while #cands < MR.most do
+                    local i = data:find(pat, at, true)
+                    if not i then break end
+                    if (i - 1) % 4 == 0 then cands[#cands + 1] = {at = blk + (i - 1), was = c, tag = string.format('%s +0x%X +0x%X', b[1], b[2], i - 1)} end
+                    at = i + 1
+                end
+            end
+        end
+    end
+    return cands, nblk
+end
+-- (3.6.1 Test 16) Test 15: each right click in the menu moves the choice, and the place follows each one; the first change
+-- was taken, so two clicks showed the wrong rate until a burst measured the right one (the tester: "switching between
+-- two values"). The rate shown is now the place's value as the menu closes (the last click), if it differs from the open.
+local function menu_rate()
+    local open = S.fire_menu_open == true
+    if open and (not mr.cands or mr.closed_at) then
+        -- (3.6.1 review) the place found last time in this tank, while it still holds one of the three: just that one
+        local kn = mr.known
+        local kc = kn and kn.seat == rate.seat and CHOICE_OF[fetch_u32(kn.at) or 0]
+        if kc then
+            mr.cands, mr.closed_at = {{at = kn.at, was = kc, tag = kn.tag, known = true}}, nil
+            mr_note('menu opened: the place found before holds ' .. kc)
+            return
+        end
+        mr.known = nil
+        local cands, nblk = mr_search()
+        mr.cands, mr.closed_at = cands, nil
+        mr_note(string.format('menu opened: %d place(s) hold 1200 / 1800 / 2400 in %d block(s)', #cands, nblk))
+        return
+    end
+    if not mr.cands then return end
+    local moved, now, from, where = 0, nil, nil, {}
+    for _, k in ipairs(mr.cands) do
+        local c = CHOICE_OF[fetch_u32(k.at) or 0]
+        if c and c ~= k.was then k.moved = true end
+        if k.moved then
+            moved = moved + 1
+            if c and not now then now, from = c, k.was; mr.known = {at = k.at, seat = rate.seat, tag = k.tag} end
+            where[#where + 1] = k.tag
+        end
+    end
+    if open then return end
+    if not mr.closed_at then mr.closed_at = S.time end
+    if now and now ~= from then
+        local last = rate.last[rate.gun]
+        if now ~= last then
+            rate.last[rate.gun] = now
+            SEAT_PUB.rate_rpm, SEAT_PUB.rate_seq = now, SEAT_PUB.rate_seq + 1
+            S.rate_changes = S.rate_changes + 1
+        end
+        S.fire_rate = string.format('%d rounds a minute (picked in the menu)', now)
+        mr_note(string.format('menu closed: %d -> %d, shown %.2f s after the close (%s)', from, now, S.time - mr.closed_at, table.concat(where, ', ')))
+        mr.cands = nil
+    elseif moved > 0 then
+        mr_note(string.format('menu closed: back to %d (no change shown)', from or now or 0))
+        mr.cands = nil
+    elseif S.time - mr.closed_at > MR.after then
+        mr_note(string.format('menu closed: no place changed in %d s (the same rate picked, or not found)', MR.after))
+        mr.cands, mr.known = nil, nil                   -- (searched afresh at the next menu)
+    end
+end
+local function rounds_now()
+    local r = rate.at and fetch_u32(rate.at)
+    if not r or r > 100000 then return nil end
+    return r
+end
+-- one look at the rounds left, at S.time
+local function sample(r)
+    local t, prev = S.time, rate.prev
+    rate.prev = r
+    if not r or not prev or r > prev then rate.burst, rate.run = nil, nil; return end     -- (unread, or a new magazine)
+    if r == prev then
+        if rate.burst and t - rate.burst.tl > RT.gap then rate.burst, rate.run = nil, nil end
+        return
+    end
+    rate.fast_until = t + RT.live
+    local b = rate.burst
+    if not b or t - b.tl > RT.gap then b = {t0 = t, tl = t}; rate.burst, rate.run = b, nil end
+    b.tl = t
+    if t - b.t0 < RT.skip then return end
+    local run = rate.run
+    if not run then rate.run = {t0 = t, r0 = r}; return end
+    local span, fired = t - run.t0, run.r0 - r
+    if span < RT.span or fired < RT.least then return end
+    local rpm = fired / span * 60
+    run.t0, run.r0 = t, r                                  -- the next measurement starts here
+    S.rate_measures = S.rate_measures + 1
+    local raws = rate.raws
+    if #raws >= 8 then table.remove(raws, 1) end
+    raws[#raws + 1] = string.format('%.0f', rpm)
+    S.rate_raw = table.concat(raws, ' ')
+    local c = snap(rpm)
+    if not c then S.rate_off_choice = S.rate_off_choice + 1; return end
+    if mr.known and CHOICE_OF[fetch_u32(mr.known.at) or 0] ~= c then mr.known = nil end   -- (3.6.1 review: it no longer follows the gun)
+    local last = rate.last[rate.gun] or RT.start           -- (3.6.1 Test 7: a gun starts at 1800, the middle of the list)
+    SEAT_PUB.rate_rpm = c
+    if c ~= last then
+        rate.last[rate.gun] = c
+        SEAT_PUB.rate_seq = SEAT_PUB.rate_seq + 1
+        S.rate_changes = S.rate_changes + 1
+    end
+    S.fire_rate = string.format('%d rounds a minute (measured %.0f)', c, rpm)
+end
+FIRE.rate_poll = function(mine, me)
+    local on, why = wanted()
+    if not on or not mine or mine.kind ~= SMK.kind or mine.role ~= GUNNER or not me then
+        if rate.until_frame >= 0 or rate.at then rate.until_frame, rate.at = -1, nil; quiet() end
+        mr.cands = nil
+        SEAT_PUB.rate_rpm = nil
+        S.fire_rate = why or (S.fire_rate:find('^%d') and S.fire_rate or 'ready (not in a Maelstrom gunner seat)')
+        return
+    end
+    local F = FEAT.reload
+    if not F then S.fire_rate = 'not available in this game version (the ammo table was not found)'; return end
+    rate.until_frame = S.frames + 30
+    if not rate.gun or rate.seat ~= mine.vehicle or S.frames >= rate.gun_at then
+        local th = mgr_hdr(F.trigger, 0x70)
+        local ti = th and map_get(th, 0x30, me.entity, rate.tmemo)
+        local recs = th and str_ptr(th, 0x60)
+        local gun = ti and recs and fetch_u32(recs + ti * 0x1D0)
+        if not gun or gun == 0 or gun == invalid_entity() then rate.gun, rate.at = nil, nil; quiet(); S.fire_rate = 'waiting (no gun in your hands yet)'; return end
+        if gun ~= rate.gun or rate.seat ~= mine.vehicle then
+            quiet()
+            if rate.seat ~= mine.vehicle then rate.last[gun] = nil end      -- (another tank: it starts at 1800)
+            mr.known = nil                                                  -- (3.6.1 review: the game reuses ids; searched afresh)
+        end
+        rate.gun, rate.seat, rate.gun_at = gun, mine.vehicle, S.frames + RT.gun_every
+    end
+    if not rate.at or rate.at_gun ~= rate.gun or S.frames >= (rate.at_until or 0) then   -- (3.6.1 review: once a second, not every poll)
+        local ah = mgr_hdr(F.ammo, 0x50)
+        local ai = ah and map_get(ah, 0x20, rate.gun, rate.memo)
+        local arr = ah and str_ptr(ah, 0x48)
+        rate.at, rate.at_gun, rate.at_until = ai and arr and (arr + ai * 16) or nil, rate.gun, S.frames + 60
+    end
+    if not rate.at then quiet(); S.fire_rate = 'waiting (the gun\'s rounds are unreadable)'; return end
+    if not S.fire_rate:find('^%d') then S.fire_rate = 'watching (fire a burst of half a second or more to measure)' end
+    local okm, merr = pcall(menu_rate)
+    if not okm then mr.cands = nil; S.rate_menu = 'error: ' .. tostring(merr) end
+    if S.time >= rate.fast_until then sample(rounds_now()) end
+end
+FIRE.rate_tick = function()
+    if S.frames > rate.until_frame or not rate.at or S.time >= rate.fast_until then return end
+    sample(rounds_now())
+end
+end
+-- ------------------------------------------------------------------------------------------ fire held off (3.6.1)
+-- (3.6.1 Tests 6-8, the tester: "on a Primary rifle, if you hold reload, the context menu comes up and you can left click
+-- and right click and its not firing or aiming in during it. Can we accomplish the same thing on the maelstrom") On foot
+-- the game keeps your weapon from firing while its hold-reload menu is open; in a vehicle seat the guns answer the
+-- vehicle's own fire actions, which it doesn't hold back. Test 6 took the keys off those actions in the game's live
+-- binding table (the game doesn't re-read it in play: the missiles still fired); Test 7 made the guns read 0 rounds (the
+-- tester: "lets not affect the ammo counts"). Test 8: the game only fires a weapon for the player named in its operator
+-- entry (the smoke launcher's code: [game+0x3326730], map +0x18, one u32 per weapon at +0x38; 0 = nobody, as with nobody
+-- in the seat). While the menu is open (from the avatar's WeaponFunctionOpen, action 2:38, while the key that opened it
+-- stays down: see menu_open) the Gatling's and the missile pods' entries (your
+-- trigger record's slots 0 and 1) read nobody where they read you, set again every frame should the game put you back
+-- (counted); you're put back the moment it closes, where the entry still reads nobody. Put back too when you leave the
+-- seat, Fire Rate goes off, on an error and when the game closes. The Autoloader waits while it is held. The menu's state:
+-- the input owner [game.dll+0x347CF18] +808 + 32 x (group x 97 + action), byte 0 (the Mod Bindings Menu's source); only
+-- on the known game build, or while the Mod Bindings Menu says it is ready (its game build check).
+do
+local FH = {owner = 0x347CF18, states = 808, stride = 32, menu = {2, 38}, slots = 2}
+local fh = {until_frame = -1, owner = nil, held = nil, weapons = nil, me = nil, tmemo = {}, omemo = {{}, {}}, zeroed = {}, nobody_since = {}}
+S.fire_hold_moved, S.fire_hold_healed, S.fire_ops = 0, 0, 'none yet'
+S.fire_hold, S.fire_holds, S.fire_hold_resets, S.fire_hold_last = 'off (Maelstrom Fire Rate is off)', 0, 0, 'not held yet'
+S.fire_held_now = false
+local function put_u32(p, v)                -- (plain read/write data pages only, as everywhere in this addon)
+    if p == nil or not data_pages(p, 4) then return false end
+    ffi.cast(U32P, p)[0] = v
+    return true
+end
+local function build_ok()
+    if S.known_build then return true end
+    local B = rawget(_G, 'ModBindingsMenu')
+    if type(B) ~= 'table' or type(B.ready) ~= 'function' then return false end
+    local ok, r = pcall(B.ready)
+    return ok and r == true
+end
+-- you back as each held weapon's operator (only where the entry still reads nobody: one the game gave someone else stays)
+-- (3.6.1 Test 15) the entry looked up again by the weapon's id (the operator table may have moved while held)
+fh.op_entry = function(id, k)
+    local F = FEAT.reload
+    local oh = F and mgr_hdr(F.oper, 0x40)
+    local arr = oh and str_ptr(oh, 0x38)
+    local oi = arr and map_get(oh, 0x18, id, fh.omemo[k or 1])
+    return oi and (arr + oi * 4) or nil
+end
+FIRE.hold_release = function(why)
+    local held = fh.held
+    if not held then return end
+    fh.held, S.fire_held_now = nil, false
+    local back, kept = {}, {}
+    for i, h in ipairs(held) do
+        local okp, p = pcall(fh.op_entry, h.id, i)
+        if okp and p and p ~= h.op then S.fire_hold_moved = S.fire_hold_moved + 1; h.op = p end
+        local now = fetch_u32(h.op)
+        if now == 0 then put_u32(h.op, h.me); back[#back + 1] = h.name
+        else kept[#kept + 1] = string.format('%s (%08x)', h.name, now or 0) end
+    end
+    S.fire_hold_last = string.format('%s: you back as operator of %s%s', tostring(why), #back > 0 and table.concat(back, ' and ') or 'none',
+        #kept > 0 and ('; left as the game set them: ' .. table.concat(kept, ', ')) or '')
+end
+-- your gun's and missile pods' operator entries (trigger slots 0 and 1), found once a poll while not held
+local function weapons(me)
+    local F = FEAT.reload
+    local th = F and mgr_hdr(F.trigger, 0x70)
+    local ti = th and map_get(th, 0x30, me.entity, fh.tmemo)
+    local recs = th and str_ptr(th, 0x60)
+    if not (ti and recs) then return nil, 'your weapon slots are unreadable' end
+    local oh = mgr_hdr(F.oper, 0x40)
+    local arr = oh and str_ptr(oh, 0x38)
+    if not arr then return nil, 'the operator table is unreadable' end
+    local list = {}
+    for k = 1, FH.slots do
+        local id = fetch_u32(recs + ti * 0x1D0 + (k - 1) * 0x50)
+        if id and id ~= 0 and id ~= invalid_entity() then
+            local oi = map_get(oh, 0x18, id, fh.omemo[k])
+            if oi then list[#list + 1] = {name = k == 1 and 'Gatling' or 'missiles', id = id, op = arr + oi * 4} end
+        end
+    end
+    if #list == 0 then return nil, 'no weapon of yours in the operator table' end
+    return list
+end
+-- (3.6.1 Test 9) Test 8 held for one frame only: the menu's WeaponFunctionOpen (2:38) is down for the one frame the menu
+-- opens (a hold trigger fires once), not while it stays open. The menu now counts as open from that frame for as long as
+-- the reload input that opened it stays down (byte 0 of the avatar's Reload 2:10 or the vehicle's Reload 4:11), at most
+-- FH.longest seconds. (Tester) Every change of byte 0 of the watched actions in the seat goes in the log with its frame.
+FH.longest = 20
+FH.reload = {{2, 10}, {4, 11}}
+FH.watch = {{2, 28, 'Map'}, {2, 8, 'Aim'}, {2, 9, 'Fire'}, {2, 10, 'Reload'}, {2, 38, 'WeaponFunctionOpen'}}   -- (3.6.1 review: the 5 that matter)
+local seen_states, timeline = {}, {}
+S.input_timeline = 'none yet'
+local function state_at(owner, g, a) return fetch(owner + FH.states + FH.stride * (g * 97 + a), 1) and mem[0] ~= 0 end
+-- (3.6.1 review) Map (2:28) and WeaponFunctionOpen (2:38), ten entries apart, in one read a frame for the map and the menu
+local AK = {frame = -1, owner = nil, map = false, menu = false}
+local function avatar_keys(owner)
+    if AK.frame ~= S.frames or AK.owner ~= owner then
+        AK.frame, AK.owner = S.frames, owner
+        if fetch(owner + FH.states + FH.stride * (2 * 97 + 28), FH.stride * 10 + 1) then AK.map, AK.menu = mem[0] ~= 0, mem[FH.stride * 10] ~= 0
+        else AK.map, AK.menu = false, false end
+    end
+    return AK
+end
+local function watch_inputs(owner)
+    local changed = false
+    for _, e in ipairs(FH.watch) do
+        local k = e[1] * 97 + e[2]
+        local v = state_at(owner, e[1], e[2]) or false
+        if (seen_states[k] or false) ~= v then
+            seen_states[k] = v; changed = true
+            if #timeline >= 40 then table.remove(timeline, 1) end
+            timeline[#timeline + 1] = string.format('f%d %s %s', S.frames, e[3], v and 'down' or 'up')
+        end
+    end
+    if changed then S.input_timeline = '\n    ' .. table.concat(timeline, '\n    ') end
+end
+local menu = {open = false, since = 0}
+-- (3.6.1 Test 10) Test 9: neither Reload (2:10, 4:11) is ever seen down while reload is held (only the frame's WeaponFunctionOpen
+-- pulse), so the menu held one frame again. The menu now stays open while a key that was down when it opened stays down:
+-- the keyboard's buttons down at the pulse (the engine's Keyboard), less the driving and movement keys (W A S D, space,
+-- shift, ctrl: you may hold one while opening it), so normally just the reload key, whatever it is bound to. Mouse
+-- buttons and controllers are not looked at (a controller's hold counts one frame). At most FH.longest seconds.
+local SKIP_KEYS = {w = true, a = true, s = true, d = true, space = true, ['left shift'] = true, ['right shift'] = true,
+                   ['left ctrl'] = true, ['right ctrl'] = true, shift = true, ctrl = true, ['left control'] = true, ['right control'] = true}
+local kb = {dev = nil, button = nil, name = nil, count = nil}
+local function keyboard()
+    if kb.dev == nil then
+        local SR = rawget(_G, 'stingray')
+        local dev = type(SR) == 'table' and field(SR, 'Keyboard') or nil
+        kb.dev = dev or false
+        if dev then
+            kb.button, kb.name = field(dev, 'button'), field(dev, 'button_name')
+            local nb = field(dev, 'num_buttons')
+            local okn, n = false, nil
+            if nb then okn, n = pcall(nb) end
+            kb.count = okn and type(n) == 'number' and n > 0 and n <= 512 and n or 256
+        end
+    end
+    return kb.dev and kb.button and kb
+end
+local function key_down(k, i) local ok, v = pcall(k.button, i); return ok and type(v) == 'number' and v > 0.5 end
+local function keys_now()
+    local k = keyboard()
+    if not k then return {} , 'no keyboard' end
+    local list, names = {}, {}
+    for i = 0, k.count - 1 do
+        if key_down(k, i) then
+            local nm = ''
+            if k.name then local okn, v = pcall(k.name, i); nm = okn and type(v) == 'string' and v:lower() or '' end
+            if not SKIP_KEYS[nm] then list[#list + 1] = i end
+            names[#names + 1] = (nm ~= '' and nm or tostring(i)) .. (SKIP_KEYS[nm] and ' (left out)' or '')
+        end
+    end
+    return list, table.concat(names, ', ')
+end
+S.fire_hold_keys = 'none yet'
+local function menu_open(owner)
+    if TESTER then pcall(watch_inputs, owner) end
+    local opened = avatar_keys(owner).menu
+    if opened and not menu.open then
+        local ok, list, names = pcall(keys_now)
+        menu.open, menu.since, menu.keys = true, S.time, ok and list or {}
+        S.fire_hold_keys = ok and ((names ~= '' and names or 'none') .. ' (held for the menu)') or ('unreadable: ' .. tostring(list))
+    end
+    if menu.open and not opened then
+        local held = false
+        local k = keyboard()
+        if k then for _, i in ipairs(menu.keys or {}) do if key_down(k, i) then held = true; break end end end
+        if not held then for _, r in ipairs(FH.reload) do if state_at(owner, r[1], r[2]) then held = true end end end
+        if not held or S.time - menu.since > FH.longest then menu.open = false; S.menu_closed_at = S.frames end
+    end
+    return menu.open
+end
+-- (3.6.1 Test 12) the map, for ui_input (see UI.map): every frame in a zooming gunner seat on a build vouched for
+-- (3.6.1 Test 13) Test 12 counted Map down past its first frame as a hold, so a toggle-mode map's ordinary tap (Map down a
+-- few frames) closed it again at the key's release (the tester: "camera still scrolls with map open"; log: "closed (hold)", Map
+-- up at every zoom). A press is now judged by how long it lasts: Map (or a key down at its press) held 0.35 s or more = a
+-- hold (open until let go); let go sooner = a toggle (open until the next press, Esc, leaving the seat, or 120 s).
+S.map_seen = 'not opened yet'
+local MAP_HOLD, MAP_LONGEST = 0.35, 120
+local map_log = {}
+local function map_note(what)
+    S.map_seen = what
+    if #map_log >= 8 then table.remove(map_log, 1) end
+    map_log[#map_log + 1] = string.format('f%d %s', S.frames, what)
+    if TESTER then S.map_history = '\n    ' .. table.concat(map_log, '\n    ') end
+end
+S.map_history = 'none yet'
+local function esc_index(k)
+    if k.esc == nil then
+        k.esc = false
+        if k.name then
+            for i = 0, k.count - 1 do
+                local okn, v = pcall(k.name, i)
+                v = okn and type(v) == 'string' and v:lower() or ''
+                if v == 'esc' or v == 'escape' then k.esc = i; break end
+            end
+        end
+    end
+    return k.esc or nil
+end
+FIRE.map_tick = function()
+    if not game or not UI.zoom_seat() then
+        if UI.map.open then map_note('closed (left the gunner seat)') end
+        UI.map.open, UI.map.down, UI.map.pressing, UI.map.owner = false, false, false, nil; return
+    end
+    -- (3.6.1 review) the input owner and the build check once a second, not every frame (one read a frame: Map's state)
+    if not UI.map.owner or S.frames >= (UI.map.owner_until or 0) then
+        UI.map.owner = (S.known_build or build_ok()) and fetch_ptr(game + FH.owner) or nil
+        UI.map.owner_until = S.frames + 60
+        if UI.map.owner and fh.owner then fh.owner = UI.map.owner end
+    end
+    local owner = UI.map.owner
+    if not owner then return end
+    local down = avatar_keys(owner).map
+    local edge = down and not UI.map.down
+    UI.map.down = down
+    local k = keyboard()
+    if edge then
+        if UI.map.open and UI.map.mode == 'toggle' then
+            UI.map.open, UI.map.pressing = false, false
+            map_note('closed (toggle: Map pressed again)')
+        else
+            local ok, list, names = pcall(keys_now)
+            UI.map.open, UI.map.since, UI.map.keys, UI.map.mode, UI.map.pressing = true, S.time, ok and list or {}, nil, true
+            map_note('opened (keys ' .. (ok and names ~= '' and names or 'none') .. ')')
+        end
+        return
+    end
+    if not UI.map.open then return end
+    if UI.map.pressing then                 -- (the press that opened it: still down?)
+        local held = down
+        if not held and k then for _, i in ipairs(UI.map.keys or {}) do if key_down(k, i) then held = true; break end end end
+        local long = S.time - UI.map.since
+        if held then
+            if long >= MAP_HOLD and UI.map.mode ~= 'hold' then UI.map.mode = 'hold'; map_note('open (hold)') end
+            if long <= MAP_LONGEST then return end
+        end
+        UI.map.pressing = false
+        if UI.map.mode == 'hold' then UI.map.open = false; map_note(string.format('closed (hold, let go after %.2f s)', long)); return end
+        UI.map.mode = 'toggle'; map_note(string.format('open (toggle: let go after %.2f s)', long))
+        return
+    end
+    -- a toggle: Esc closes it too (the game's back key on the map); and 120 s at most
+    local e = k and esc_index(k)
+    if e and key_down(k, e) then UI.map.open = false; map_note('closed (Esc)'); return end
+    if S.time - UI.map.since > MAP_LONGEST then UI.map.open = false; map_note('closed (120 s without a press)') end
+end
+-- (3.6.1 Test 15, the tester: "the missle launcher isnt working though"; Test 14 log: the last menu took only the Gatling, so the
+-- missile pods' entry already read someone other than you as it opened). A weapon of yours whose entry this addon set to
+-- nobody, read as nobody for 1 s with no menu open, gets you back as its operator (counted). Tester: every change of
+-- the two entries, with the frame and whether the menu was open.
+fh.ops_log, fh.ops_seen = {}, {}
+fh.heal = function(list, me)
+    local ops_log, ops_seen = fh.ops_log, fh.ops_seen
+    for k, wpn in ipairs(list) do
+        local v = fetch_u32(wpn.op)
+        if TESTER and v ~= ops_seen[k] then
+            ops_seen[k] = v
+            if #ops_log >= 24 then table.remove(ops_log, 1) end
+            ops_log[#ops_log + 1] = string.format('f%d %s %08x: operator %08x%s%s', S.frames, wpn.name, wpn.id, v or 0, v == me and ' (you)' or v == 0 and ' (nobody)' or '',
+                menu.open and ', menu open' or '')
+            S.fire_ops = '\n    ' .. table.concat(ops_log, '\n    ')
+        end
+        if v == 0 and fh.zeroed[wpn.id] and not menu.open then
+            local t0 = fh.nobody_since[wpn.id]
+            if not t0 then fh.nobody_since[wpn.id] = S.time
+            elseif S.time - t0 >= 1 and put_u32(wpn.op, me) then
+                fh.nobody_since[wpn.id] = nil
+                S.fire_hold_healed = S.fire_hold_healed + 1
+                S.fire_hold_last = string.format('%s left with nobody as operator: you put back (%d time(s))', wpn.name, S.fire_hold_healed)
+            end
+        else fh.nobody_since[wpn.id] = nil end
+    end
+end
+-- once a poll: whether it applies (Maelstrom gunner seat, Fire Rate on, the build known), the owner and the weapons
+FIRE.hold_poll = function(mine, me)
+    local mw = rawget(_G, 'ArmoredOverhaulMaelstromWeapons')
+    local w = type(mw) == 'table' and mw.want
+    local why = nil
+    if type(w) ~= 'table' or w.rpm ~= true then why = 'off (Maelstrom Fire Rate is off)'
+    elseif not mine or mine.kind ~= SMK.kind or mine.role ~= GUNNER or not me then why = 'ready (not in a Maelstrom gunner seat)'
+    elseif not game or not FEAT.reload then why = 'not available in this game version (the operator table was not found)'
+    elseif not build_ok() then why = 'not available (game build not known, and the Mod Bindings Menu is not ready to vouch for it)' end
+    if why then
+        fh.until_frame, fh.owner = -1, nil
+        FIRE.hold_release('seat or option')
+        if not S.fire_hold:find('^held') then S.fire_hold = why end
+        return
+    end
+    -- (3.6.1 review) the input owner and your weapons' operator entries looked up once a second, not every poll (and
+    -- again the moment the menu opens, before anything is written: see hold_tick); the nobody check every 15 frames
+    if not fh.owner or S.frames >= (fh.owner_until or 0) then
+        fh.owner, fh.owner_until = fetch_ptr(game + FH.owner), S.frames + 60
+    end
+    if not fh.owner then FIRE.hold_release('owner gone'); fh.until_frame = -1; S.fire_hold = 'waiting (the input owner is unreadable)'; return end
+    if fh.me ~= me.entity or fh.seat ~= mine.vehicle then fh.weapons = nil end
+    fh.me, fh.me_rec, fh.seat = me.entity, me, mine.vehicle
+    if not fh.held then                     -- (the entries are kept while held: the ones written are the ones put back)
+        if not fh.weapons or S.frames >= (fh.list_until or 0) then
+            local list, lwhy = weapons(me)
+            fh.weapons, fh.list_until = list, S.frames + 60
+            if not list then fh.until_frame = -1; S.fire_hold = 'waiting (' .. tostring(lwhy) .. ')'; return end
+        end
+        if S.frames >= (fh.heal_at or 0) then fh.heal_at = S.frames + 15; pcall(fh.heal, fh.weapons, me.entity) end
+    end
+    fh.until_frame = S.frames + 30
+    if not fh.held and not S.fire_hold:find('^held') then S.fire_hold = 'ready (Maelstrom gunner seat: no firing while the fire-rate menu is open)' end
+end
+-- every frame in the seat: nobody operates the guns while the menu is open, you again once it closes
+FIRE.hold_tick = function()
+    -- (the seat as published this poll: leaving it puts you back at once)
+    if S.frames > fh.until_frame or not fh.owner or SEAT_PUB.kind ~= SMK.kind or SEAT_PUB.role ~= GUNNER then
+        if fh.held then FIRE.hold_release('left the seat') end
+        menu.open, S.fire_menu_open = false, false
+        return
+    end
+    local open = menu_open(fh.owner)
+    S.fire_menu_open = open                  -- (3.6.1 Test 14: the rate block reads the choice as the menu closes)
+    if open then
+        if fh.held then                      -- (the game may put you back: set again, counted)
+            for _, h in ipairs(fh.held) do
+                if fetch_u32(h.op) == h.me and put_u32(h.op, 0) then S.fire_hold_resets = S.fire_hold_resets + 1 end
+            end
+            return
+        end
+        if not fh.weapons then return end
+        if fh.fresh_for ~= menu.since then              -- (3.6.1 review) looked up again before writing, once a menu
+            fh.fresh_for = menu.since
+            local okw, fresh = pcall(weapons, fh.me_rec)
+            if okw and fresh then fh.weapons, fh.list_until = fresh, S.frames + 60 end
+        end
+        local held = {}
+        for _, wpn in ipairs(fh.weapons) do
+            if fetch_u32(wpn.op) == fh.me and put_u32(wpn.op, 0) then
+                held[#held + 1] = {name = wpn.name, op = wpn.op, me = fh.me, id = wpn.id}
+                fh.zeroed[wpn.id] = true
+            end
+        end
+        if #held > 0 then
+            fh.held, S.fire_held_now = held, true
+            S.fire_holds = S.fire_holds + 1
+            S.fire_hold = string.format('held %d time(s) (the menu open: nobody operates the Gatling and the missiles)', S.fire_holds)
+        end
+    elseif fh.held then
+        FIRE.hold_release('menu closed')
+    end
+end
 end
 -- (1.3) The vehicle's health as a share of its maximum (0..1), for the Vehicle Indicator's outline color: read the
 -- way the game's own driver HUD reads it (see SITES.health), every 15 frames while you sit in a supported vehicle.
@@ -2502,6 +3127,11 @@ local function poll()
         local oka, aerr = pcall(autoload, mine, seats.me)
         if not oka then S.errors = S.errors + 1; S.last_error = 'autoloader: ' .. tostring(aerr); S.autoloader = 'error (see last error)' end
     end
+    do local okr, rerr = pcall(FIRE.rate_poll, mine, seats.me)                      -- (3.6.1) the Fire Rate Display's rounds a minute
+        if not okr then S.errors = S.errors + 1; S.last_error = 'fire rate: ' .. tostring(rerr); pcall(FIRE.rate_poll, nil, nil) end end
+    if S.frames >= (UI.next or 0) then UI.next = S.frames + 30; pcall(UI.watch, mine) end   -- (3.6.1 Test 9) a plain mission's screens, for ui_input
+    do local okh, herr = pcall(FIRE.hold_poll, mine, seats.me)                      -- (3.6.1 Test 6) fire held off while the menu is open
+        if not okh then S.errors = S.errors + 1; S.last_error = 'fire hold: ' .. tostring(herr); pcall(FIRE.hold_release, 'error'); pcall(FIRE.hold_poll, nil, nil) end end
     if not FONT_PUB.font and S.frames >= (font_next or 0) then font_next = S.frames + 120; read_font() end
     if shown_seat.index ~= mine.index or shown_seat.kind ~= mine.kind or shown_seat.role ~= mine.role
         or shown_seat.vehicle ~= mine.vehicle then
@@ -2690,6 +3320,12 @@ local function tick()
             if drive then stop_driving(drive.kind == FRV_KIND and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off') end
             next_poll = S.frames + TUNING.menu_every
         end
+        local okr, rerr = pcall(FIRE.rate_tick)                                        -- (3.6.1) while the Maelstrom gun fires
+        if not okr then S.errors = S.errors + 1; S.last_error = 'fire rate: ' .. tostring(rerr); pcall(FIRE.rate_poll, nil, nil) end
+        local okh, herr = pcall(FIRE.hold_tick)                                        -- (3.6.1 Test 6) every frame in the seat
+        local okm, merr = pcall(FIRE.map_tick)                                         -- (3.6.1 Test 12) the map, for the zoom gate
+        if not okm then S.errors = S.errors + 1; S.last_error = 'map: ' .. tostring(merr); UI.map.open = false end
+        if not okh then S.errors = S.errors + 1; S.last_error = 'fire hold: ' .. tostring(herr); pcall(FIRE.hold_release, 'error') end
     end
     write_log(S.frames % TUNING.report_every == 0)
 end
@@ -2703,6 +3339,7 @@ local function after_game(ok, ...)
         local fine, err = pcall(tick)
         if not fine then
             broken = true; S.errors = S.errors + 1; S.last_error = tostring(err)
+            pcall(FIRE.hold_release, 'error')                -- (3.6.1 Test 6) you back as the guns' operator
             -- never leave keys held: if stopping failed too, the record is looked up again (never the one kept from
             -- an earlier frame, which may belong to a tank the game has taken apart)
             if not pcall(stop_driving, 'error') and drive then
@@ -2735,6 +3372,7 @@ local function after_game(ok, ...)
 end
 update = function(...) S.dt = ...; return after_game(pcall(game_update, ...)) end   -- (3.0.1 review) dt: see tick
 shutdown = function(...)
+    pcall(FIRE.hold_release, 'game closing')                -- (3.6.1 Test 6) you back as the guns' operator before anything else
     pcall(stop_driving, 'game closing'); publish(nil)
     S.phase = 'off'
     write_log(true)
