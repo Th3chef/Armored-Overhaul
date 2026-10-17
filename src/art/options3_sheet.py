@@ -1,9 +1,9 @@
-"""Page image with the Arsenal option icons and their names, in the Arsenal order (options_icons.png), two rows (3.6: 24 options)."""
+"""Page image with the Arsenal option icons and their names, in the Arsenal order (options_icons.png), two rows (3.6: 23 options)."""
 from PIL import Image, ImageDraw, ImageFont
 f = ImageFont.truetype('Oswald-VF.ttf', 30); f.set_variation_by_axes([600])
 names = [('tank_speed', 'TANK TOP SPEED'), ('tank_power', 'ENGINE TORQUE'), ('tank_grip', 'TANK GRIP'), ('tank_steering', 'TANK STEERING'),
          ('tank_throttle', 'THROTTLE RESPONSE'), ('tank_stability', 'TANK STABILITY'), ('tank_collision_damage', 'COLLISION DAMAGE BOOST'),
-         ('maelstrom_missile_demolition', 'MISSILE DEMOLITION'), ('maelstrom_fire_rate', 'MAELSTROM FIRE RATE'), ('maelstrom_belt', 'MAELSTROM SINGLE BELT'),
+         ('maelstrom_fire_rate', 'MAELSTROM FIRE RATE'), ('maelstrom_belt', 'MAELSTROM SINGLE BELT'),
          ('mbt_turrets', 'TANK MBT TURRETS'), ('tank_suspension', 'TANK SUSPENSION'), ('turret_traverse', 'TURRET TRAVERSE'),
          ('turret_elevation', 'TURRET ELEVATION'), ('gun_depression', 'TANK GUN DEPRESSION'), ('gun_raise', 'TANK GUN RAISE'),
          ('autoloader', 'TANK AUTOLOADER'), ('gunner_drive', 'GUNNER DRIVE'), ('driver_panel', 'DRIVER PANEL'),
