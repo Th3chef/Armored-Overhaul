@@ -22,7 +22,6 @@ CARDS = [
     ('tank_throttle', 'THROTTLE RESPONSE', 'HANDLING', 'Snappier throttle, brake and gear changes.', None),
     ('tank_stability', 'TANK STABILITY', 'HANDLING', 'Downforce keeps the tank on the ground.', None),
     ('tank_collision_damage', 'COLLISION DAMAGE', 'HANDLING', 'Ram through walls and small buildings at speed.', None),
-    ('maelstrom_missile_demolition', 'MISSILE DEMOLITION', 'MAELSTROM', 'Missile hits break walls and fences.', 'NEW'),
     ('maelstrom_fire_rate', 'FIRE RATE', 'MAELSTROM', 'Hold reload: 1200, 1800 or 2400 rpm.', 'NEW'),
     ('maelstrom_belt', 'SINGLE BELT', 'MAELSTROM', 'All 2,100 rounds on one belt, no reload.', 'NEW'),
     ('mbt_turrets', 'TANK MBT TURRETS', 'TURRET', 'New turret, working hatches, hit areas follow it.', 'UPDATED'),
@@ -77,7 +76,7 @@ def main():
     d.text((326, 106), 'ARMORED ', font=font(84, 700), fill=(255, 255, 255), anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
     x = 326 + d.textlength('ARMORED ', font=font(84, 700))
     d.text((x, 106), 'OVERHAUL', font=font(84, 700), fill=YELLOW, anchor='ls', stroke_width=2, stroke_fill=(10, 10, 12))
-    d.text((330, 160), 'TWENTY-FOUR OPTIONS  •  NEW: MAELSTROM WEAPONS, FRV RUN-FLAT TIRES', font=font(27, 500), fill=(215, 215, 215), anchor='ls')
+    d.text((330, 160), 'TWENTY-THREE OPTIONS  •  NEW: MAELSTROM WEAPONS, FRV RUN-FLAT TIRES', font=font(27, 500), fill=(215, 215, 215), anchor='ls')
     d.text((1860, 106), "WHAT'S IN 3.6", font=font(64, 700), fill=YELLOW, anchor='rs', stroke_width=2, stroke_fill=(10, 10, 12))
     d.text((1860, 158), 'TD-220 BASTION  •  TD-110 MAELSTROM  •  FRVS', font=font(30, 600), fill=(255, 255, 255), anchor='rs')
     cols, x0, y0, gx, gy = 6, 60, 204, 14, 14
