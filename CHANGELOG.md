@@ -8,6 +8,7 @@ New:
 Changed:
 - **Maelstrom Fire Rate on right click:** pick the rate with right click now, like the FRV's gun. While the fire-rate menu is open neither the gun nor the missiles fire, so a click in the menu only picks a rate.
 - **Gunner camera zoom:** the mouse wheel and the zoom keys no longer move the gunner camera while the pause menu or the map is open, in every seat it zooms (the tanks, the M-102 FRV's gunner seat and the HMG and Anti-Tank Emplacements).
+- **Maelstrom Fire Rate menu title:** the fire-rate menu no longer says Maelstrom (the title carried over to the Bastion's hold-reload menu); it shows what the game's own does.
 
 Fixed:
 - **MBT Turrets:** a small flat piece of the turret's floor stuck out past the side of the turret on both tanks; it's gone.
