@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.6.1 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.6.2 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
@@ -66,7 +66,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.6.1', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.6.2', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
 S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)
@@ -131,7 +131,7 @@ local function shift_now()
 end
 -- (3.1.1 review) in seconds (3.1.0 counted frames: the 2 s wait before a new hull's gun is looked for - Test 9's crash
 -- margin - was 0.5 s at 240 fps, and the Bastion's whole-world search ran 4 times a second while a gun was missing)
-local HULL_EVERY, GUN_EVERY, GUN_WAIT = 0.5, 1, 2           -- s between looking for hulls / for a missing gun;
+local HULL_EVERY, GUN_EVERY, GUN_WAIT, NONE_EVERY = 0.5, 1, 2, 2           -- s between looking for hulls / for a missing gun;
                                                            -- s after a hull appears before its gun is looked for
 local GUN_MISSES, GUN_SLOW = 5, 10                          -- after 5 misses in a row, a missing gun is looked for every 10 s
 -- (3.4.1 Test 27) s the turret's own node is written every frame after a tank is first turned and after Turret Position
@@ -604,6 +604,9 @@ local list, next_list, shown = {}, 0, -1
 local function tick()
     S.frames = S.frames + 1
     if not api_ok() then if S.frames == 1 then log() end; return end
+    -- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") with no tank out, nothing between the
+    -- looks for one (3.6.1 asked the engine for its world every frame), and those every NONE_EVERY seconds
+    if #list == 0 and next(hulls) == nil and S.clock < next_list then return end
     local world = A.main_world()
     if world == nil then return end
     if S.clock >= next_list then
@@ -619,6 +622,7 @@ local function tick()
         for u, e in pairs(hulls) do
             if not listed[u] then hulls[u] = nil else e.ta, e.ms, e.sd = nil, nil, nil; hatch_check(u, e) end
         end
+        if #list == 0 then next_list = S.clock + NONE_EVERY end
     end
     local tanks, turned, no_gun, bad, no_seat = 0, 0, 0, 0, 0
     local hatched, no_hatch, passengers = 0, 0, 0

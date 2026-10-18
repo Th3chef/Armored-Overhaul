@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_run_flat
--- Armored Overhaul 3.6.1 - FRV Run-Flat Tires: the M-102 and M-103 FRVs' tires never pop. Written from scratch.
+-- Armored Overhaul 3.6.2 - FRV Run-Flat Tires: the M-102 and M-103 FRVs' tires never pop. Written from scratch.
 --
 -- How the game decides (game.dll, Sept 2026 build; field meanings from the game's own health settings, offsets from
 -- its code): every unit with health has a health settings record (HealthComponent, 0x5650 bytes, in the settings the
@@ -35,7 +35,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.6.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.6.2', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            frvs = 'not yet', copies = 'not looked at yet', copies_found = 'not looked for yet', writes = 0, reapplied = 0,
            errors = 0, last_error = 'none', options_menu = 'not installed (the mod manager\'s pick)', frames = 0,
            on = false, tire_full = nil}
@@ -368,6 +368,17 @@ end
 -- through the map, 512 entries a frame: a copy whose first eight zone names match an FRV's record and whose tires
 -- are as the game has them gets the same flags as the shared record (on: set; off: the game's own).
 local cp = {i = 0, cap = 0, next_at = 0}
+-- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") 3.6.1 went through every copy in the game
+-- every 5 s for as long as it ran. A copy is made from the shared record as an FRV is called in, so only FRVs called in
+-- before that record was set need theirs set: a pass now runs after this addon writes the shared record (the first time,
+-- a menu change, settings loaded again), as you get into an FRV, and every 5 s while you sit in one. With Tank Core's
+-- seat, the shared record is looked at once a minute while you're out of an FRV (every 5 s in one). Without the seat as before.
+local copies_due = false
+local function frv_seat()
+    local seat = rawget(_G, 'ArmoredOverhaulSeat')
+    if type(seat) ~= 'table' or seat.live == false then return nil end      -- ((3.6.2 review) Tank Core stopped: as without it)
+    return seat.kind == 0x1A or seat.kind == 0x1B
+end
 local copy_line = nil
 -- (3.6.0 review) the map as the game has it now (read every frame of a pass: a map the game moved or resized since the
 -- pass started ends the pass, so freed memory is never walked)
@@ -399,11 +410,13 @@ local function copies_step()
     end
     if cp.i >= cp.cap then
         if S.frames < cp.next_at then return end
-        cp.next_at = S.frames + 300
+        if frv_seat() == false and not copies_due then cp.next_at = S.frames + 30; return end
+        cp.next_at = S.frames + 300                -- ((3.6.2 review) copies_due cleared only once a pass is through)
         local entries, cap, arr, g = copies_map()
         if not entries or not arr or cap == 0 or cap > 0x100000 then
             cp.cap, cp.i = 0, 0
             S.copies = 'none yet'
+            copies_due = false                     -- ((3.6.2 review) no copies yet: none to set)
             return
         end
         cp = {i = 0, cap = cap, entries = entries, empty = u32(g + copies_at.map + 12), arr = arr, next_at = cp.next_at,
@@ -438,6 +451,7 @@ local function copies_step()
     end
     cp.i = cp.i + n
     if cp.i >= cp.cap then
+        copies_due = false
         S.copies = string.format('%d FRV(s) with a copy of their own (%d flag(s) written this pass); %d copies in all', cp.frv, cp.set, cp.all)
         local text = cp.frv .. ' ' .. cp.set        -- ((3.6.0 review) not the count of all copies: it changes all the time)
         if text ~= copy_line then copy_line = text; log() end
@@ -504,12 +518,17 @@ menu_set = function(key, v)
     want_on = v == true or v == 1
     next_check = 0                                 -- (applied at the next frame)
     cp.i, cp.cap, cp.next_at = 0, 0, 0            -- (and a new pass through the copies)
+    copies_due = true
 end
 
 local phase, shown = 'gate', nil
+local in_frv = false
 local function tick()
     S.frames = S.frames + 1
     menu_link(S.frames)
+    local fs = frv_seat()
+    if fs and not in_frv then cp.next_at = 0; next_check = 0 end      -- (3.6.2 Test 4: got into an FRV: a look at once)
+    in_frv = fs == true
     if phase == 'run' then copies_step() end
     if S.frames < next_check then return end
     if phase == 'gate' then
@@ -565,8 +584,10 @@ local function tick()
         S.copies_found = copies_at and string.format('look-up game.dll+0x%X (health global game.dll+0x%X, map +0x%X, copies +0x%X)', copies_at.rva,
             tonumber(ffi.cast('uintptr_t', copies_at.global)) - tonumber(ffi.cast('uintptr_t', game)), copies_at.map, copies_at.arr)
             or 'not found: only FRVs called in after the settings are set get it'
-        next_check = S.frames + 300                -- every ~5 s: settings the game loaded again get it again
+        next_check = S.frames + (frv_seat() == false and 3600 or 300)   -- (settings the game loaded again get it again)
+        local w0 = S.writes
         local n, line = apply()
+        if S.writes ~= w0 then copies_due, cp.next_at = true, 0 end     -- (3.6.2 Test 4: the copies made before it)
         S.frvs = line
         S.status = n == 0 and 'waiting for the vehicle settings' or (want_on and 'on' or 'off (Mod Options Menu): the game\'s own')
         if n == 0 then next_check = S.frames + 120 end

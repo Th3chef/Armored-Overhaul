@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.6.1 - Gunner camera option (Farther): how far behind the turret the tank
+-- Armored Overhaul 3.6.2 - Gunner camera option (Farther): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -52,7 +52,7 @@ local dist_own, dist_written                        -- the view's own distances;
 local distance = PRESET          -- (3.0) the pick in meters (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.6.1', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.6.2', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -2030,10 +2030,22 @@ end
 -- ---------------------------------------------------------------- main loop
 local phase = 'gate'
 local shown
+-- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") With Tank Core's seat: the preset (taken
+-- by the game as you sit down, so it stays set from the start) is checked once a minute out of a vehicle seat, every
+-- 10 s in one, and at once as you sit down. Without the seat as before.
+local in_seat = nil
+local function seat_now()
+    local seat = rawget(_G, 'ArmoredOverhaulSeat')
+    if type(seat) ~= 'table' or seat.live == false then return nil end      -- ((3.6.2 review) Tank Core stopped: as without it)
+    return seat.any_kind ~= nil or seat.kind ~= nil
+end
 local function tick()
     state.frames = state.frames + 1
     menu_link(state.frames)
     pcall(zb_link)
+    local sn = seat_now()
+    if sn and in_seat == false and phase == 'ready' then next_check = 0 end
+    in_seat = sn
     if phase == 'ready' and original and not state.turn_failed then
         local okF, err = pcall(follow_turret)
         if not okF then
@@ -2098,7 +2110,7 @@ local function tick()
         -- (3.0.1 review) the options menu and the preset too: a menu linked later is in the log
         local summary = state.status .. state.view .. state.errors .. state.turning .. state.options_menu .. state.preset .. tostring(state.zoom) .. tostring(state.zoom_keys) .. tostring(state.readout) .. tostring(state.other_views) .. tostring(state.other_zoom) .. (TESTER and tostring(state.other_detail) or '')
         if summary ~= shown then shown = summary; log() end
-        next_check = state.frames + ((okA and settled) and SETTLED_EVERY or CHECK_EVERY)
+        next_check = state.frames + ((okA and settled) and (seat_now() == false and 3600 or SETTLED_EVERY) or CHECK_EVERY)
     end
 end
 

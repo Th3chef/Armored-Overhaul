@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.6.1 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.6.2 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
 -- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
 -- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
@@ -57,6 +57,7 @@ local TUNING = {
     settle_every = 2,        -- (3.0.1 review) frames between polls while your seat moves or a new seat settles
     drive_seat_every = 3,    -- frames between seat-table checks while driving (your keys are copied every frame)
     idle_every = 6,          -- frames between polls while nobody sits in a supported vehicle
+    foot_every = 18,         -- (3.6.2 Test 4) the same while nobody is in any vehicle seat and nothing is under way
     menu_every = 30,         -- frames between polls while there is no seat table (ship, menus)
     refresh_every = 300,     -- frames before page checks (and the invalid-entity id) are re-validated
     player_every = 30,       -- frames before the local player lookup is redone
@@ -216,7 +217,7 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.6.1', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.6.2', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
@@ -351,8 +352,8 @@ end
 -- The log is what a user attaches to a bug report: what the addon found in this game build, where you sat and
 -- what it did, and the last error. Tester builds add the counters and per-frame details used during development.
 TC.LOG_MAIN = {'version', 'loader', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
-    'response', 'overwritten', 'control', 'engine', 'smoke', 'smoke_keys', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'turret_ammo', 'run_flat', 'kinds', 'autoloader', 'reloads', 'fire_rate', 'rate_raw', 'rate_menu', 'fire_hold', 'fire_hold_last', 'fire_hold_keys', 'map_seen', 'brakes', 'errors', 'last_error'}
-TC.LABELS = {fire_hold = 'Maelstrom guns held while the fire-rate menu is open', fire_hold_last = 'after the last menu', fire_hold_keys = 'keys down as the menu last opened', map_seen = 'the map (gunner seat, for the zoom gate)', map_history = 'the map: the last opens and closes', fire_hold_resets = 'times the game put you back as operator while held', fire_ops = 'Gatling / missile pods operator entries (changes)', fire_hold_moved = 'operator entries found moved at the menu close', fire_hold_healed = 'weapons put back to you after being left with nobody', rate_menu = 'fire rate picked in the menu (read as it closes)', rate_menu_log = 'fire-rate menu: the last reads', input_timeline = 'gunner seat inputs (byte 0 of each action\'s state, changes)', ui_tags = 'input tags at the last zoom (Gunner Camera)', fire_rate = 'Maelstrom gun fire rate (Fire Rate Display)', rate_raw = 'fire rate measurements (rounds a minute, the last 8)', rate_measures = 'fire rate measurements taken', rate_off_choice = 'measurements not near 1200 / 1800 / 2400', rate_changes = 'fire rate changes shown', loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
+    'response', 'overwritten', 'control', 'engine', 'smoke', 'smoke_keys', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'turret_ammo', 'run_flat', 'kinds', 'autoloader', 'reloads', 'fire_rate', 'rate_setting', 'rate_raw', 'rate_menu', 'fire_hold', 'fire_hold_last', 'fire_hold_keys', 'map_seen', 'brakes', 'errors', 'last_error'}
+TC.LABELS = {fire_hold = 'Maelstrom guns held while the fire-rate menu is open', fire_hold_last = 'after the last menu', fire_hold_keys = 'keys down as the menu last opened', map_seen = 'the map (gunner seat, for the zoom gate)', map_history = 'the map: the last opens and closes', fire_hold_resets = 'times the game put you back as operator while held', fire_ops = 'Gatling / missile pods operator entries (changes)', fire_hold_moved = 'operator entries found moved at the menu close', fire_hold_healed = 'weapons put back to you after being left with nobody', rate_menu = 'fire rate picked in the menu (read as it closes)', rate_setting = 'fire rate setting (the game\'s, read directly)', rate_menu_log = 'fire-rate menu: the last reads', rate_shown_log = 'fire rate pop-ups: the last 8', input_timeline = 'gunner seat inputs (byte 0 of each action\'s state, changes)', ui_tags = 'input tags at the last zoom (Gunner Camera)', fire_rate = 'Maelstrom gun fire rate (Fire Rate Display)', rate_raw = 'fire rate measurements (rounds a minute, the last 8)', rate_measures = 'fire rate measurements taken', rate_off_choice = 'measurements not near 1200 / 1800 / 2400', rate_changes = 'fire rate changes shown', rate_silent = 'fire rate changes measured without a menu (not shown)', loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
                 engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3, right stick click or a bound key, gunner seat)',
                 sessions = 'times driven from the gunner seat', drive_frames = 'frames driven',
                 response = 'tank answers the throttle', health = 'vehicle health (Vehicle Indicator color)',
@@ -389,7 +390,7 @@ local function itrace(what)
     if #input_trace >= 40 then table.remove(input_trace, 1) end
     input_trace[#input_trace + 1] = string.format('f%d %s', S.frames, what)
 end
-TC.LOG_TESTER = {'fire_ops', 'fire_hold_moved', 'fire_hold_healed', 'map_history', 'rate_menu_log', 'input_timeline', 'fire_hold_resets', 'rate_measures', 'rate_off_choice', 'rate_changes', 'pad_buttons', 'tires', 'turret_near', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
+TC.LOG_TESTER = {'fire_ops', 'fire_hold_moved', 'fire_hold_healed', 'map_history', 'rate_menu_log', 'rate_shown_log', 'input_timeline', 'fire_hold_resets', 'rate_measures', 'rate_off_choice', 'rate_changes', 'rate_silent', 'pad_buttons', 'tires', 'turret_near', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
     'frames', 'polls', 'reads', 'page_checks', 'gear_read', 'engine_starts', 'hud_font', 'smoke_shots', 'ui_tags'}
 local logged = {}
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
@@ -1386,7 +1387,9 @@ end
 local drive = nil      -- {vehicle, kind, me, ...} while we are feeding a vehicle
 -- The seat you sit in, published for the Vehicle Indicator, Gunner Camera and driver panel (see publish below);
 -- driving/gear while you drive from the gunner seat.
-local SEAT_PUB = {kind = nil, role = 0, vehicle = 0, frame = 0, driving = false, gear = nil, selector = nil, rpm = nil,
+-- (3.6.2 review) live: false once this core has stopped (not found after a game update, an error, the game closing): the
+-- parts that idle out of a vehicle seat then run as without Tank Core, instead of idling for good
+local SEAT_PUB = {kind = nil, role = 0, vehicle = 0, frame = 0, driving = false, gear = nil, selector = nil, rpm = nil, live = nil,
                   speed = nil, fuel = nil, engine = nil, smoke = nil, smoke_full = nil, remote = false}
 S.engine, S.engine_starts, S.gear_read, S.hud_font = 'not driven yet', 0, 'not read yet', 'not read yet'
 S.control = 'no other driver seen'
@@ -2295,13 +2298,24 @@ end
 -- frame until the gun has been quiet for RT.live seconds. A burst's first RT.skip seconds are left out (a spin-up), then
 -- every RT.span seconds of steady fire is one measurement, taken as 1200, 1800 or 2400 when within RT.within of one
 -- (the three choices Fire Rate sets: the game's 1200 x1, x1.5, x2). Published as SEAT_PUB.rate_rpm; rate_seq goes up
--- each time it differs from the gun's last one (a gun starts at 1800 since Test 7), which pops the number up on screen.
+-- when the rate shown changes (since 3.6.2 Test 2 only for a choice made in the menu, see below), which pops it up.
+-- (3.6.2 Test 1, the tester: "the RPM counter is coming on randomly and cycling as im just shooting the gun") 3.6.1 took a
+-- burst as one while the gun stopped for less than RT.gap (0.25 s), so a quick let-go and the spin-up after it went into a
+-- measurement (1328 in the tester's log, taken as 1200: popped, then 1800 popped back at the next one). Now a stop longer
+-- than RT.still (or 2.5 frames, at a low frame rate) starts the burst over (the spin-up left out again), a measurement
+-- counts only within RT.within (8%) of a choice, and a new rate only after RT.agree measurements in a row agree on it.
+-- (3.6.2 Test 2, the tester: "the firing rate should ONLY come up after selecting a fire rate") Measurements no longer pop
+-- the rate up: it pops only as the menu closes on a new choice. They keep the gun's rate known (log, and what the menu
+-- compares with), and stand in only for a menu whose choice wasn't read: the first measured rate within RT.armed
+-- seconds of that menu's close (while the read hasn't found a change, or after it found none) pops up if it differs.
 do
-local RT = {start = 1800, choices = {1200, 1800, 2400}, within = 0.12, skip = 0.15, span = 0.5, gap = 0.25, live = 0.3, least = 6, gun_every = 60}
+local RT = {start = 1800, choices = {1200, 1800, 2400}, within = 0.08, skip = 0.15, span = 0.5, gap = 0.25, still = 0.075, agree = 2,
+            live = 0.3, least = 6, gun_every = 60, armed = 30}
 local rate = {gun = nil, seat = nil, gun_at = 0, at = nil, prev = nil, burst = nil, run = nil, fast_until = -1, until_frame = -1,
-              memo = {}, tmemo = {}, last = {}, raws = {}}
+              memo = {}, tmemo = {}, last = {}, raws = {}, ts = nil, pend = nil, armed = nil}
 SEAT_PUB.rate_rpm, SEAT_PUB.rate_seq = nil, 0
 S.fire_rate, S.rate_measures, S.rate_off_choice, S.rate_changes, S.rate_raw = 'off (the Fire Rate Display is not installed)', 0, 0, 0, 'none yet'
+S.rate_silent = 0
 local function wanted()
     if rawget(_G, 'ArmoredOverhaulFireRateDisplay') == nil then return false, 'off (the Fire Rate Display is not installed)' end
     local mw = rawget(_G, 'ArmoredOverhaulMaelstromWeapons')
@@ -2313,7 +2327,18 @@ local function snap(rpm)
     for _, c in ipairs(RT.choices) do if math.abs(rpm / c - 1) <= RT.within then return c end end
     return nil
 end
-local function quiet() rate.prev, rate.burst, rate.run = nil, nil, nil end
+local function quiet() rate.prev, rate.burst, rate.run, rate.pend, rate.armed = nil, nil, nil, nil, nil end
+-- (3.6.2 Test 1) one pop-up: the rate shown, and (Tester log) where it came from
+S.rate_shown_log = 'none yet'
+local shown_log = {}
+local function rate_show(c, how)
+    rate.last[rate.gun], rate.pend = c, nil              -- (3.6.2 review: the measurements start over at the new rate)
+    SEAT_PUB.rate_rpm, SEAT_PUB.rate_seq = c, SEAT_PUB.rate_seq + 1
+    S.rate_changes = S.rate_changes + 1
+    if #shown_log >= 8 then table.remove(shown_log, 1) end
+    shown_log[#shown_log + 1] = string.format('f%d %d (%s)', S.frames, c, how)
+    S.rate_shown_log = '\n    ' .. table.concat(shown_log, '\n    ')
+end
 local function f32b(v) local f = ffi.new('float[1]', v); local u = ffi.cast('uint32_t *', f)[0]; return u end
 local function u32s(u) return string.char(u % 256, floor(u / 256) % 256, floor(u / 65536) % 256, floor(u / 16777216) % 256) end
 -- (3.6.1 Test 14) The choice is read as the menu is used (Tests 11-12 found where the game keeps it by measuring bursts at
@@ -2355,6 +2380,88 @@ local function mr_search()
     end
     return cands, nblk
 end
+-- (3.6.2 Test 3, the tester: "The rate should pop up from controller too. Is there a way to just find where the fire rate
+-- setting is located instead of tracking through the menu") It is looked for as you sit in a Maelstrom gunner seat (no
+-- menu needed): exactly one place = the gun's setting, read once a poll from then on (mr.known). Its value as you sit is
+-- the gun's rate (nothing shown); a change pops up as the menu closes, or (a controller, whose menu isn't followed) once
+-- it has held for RW.steady seconds (the last of several clicks). Several places (the tester's Test 3 log: 4, two of them,
+-- one in each block, changing together as the menu closed; the tank you sat in before, another player's Maelstrom): up
+-- to RW.most are read each poll; the one that changes alone, or the copies that change together to the same rate, are
+-- yours (taken, and the change pops up as above), and those that don't hold the rate your bursts measure are dropped (one
+-- left: yours, nothing shown). Looked for again every RW.every seconds while not found (RW.later after RW.tries), when the
+-- place stops holding one of the three, and in another tank.
+local RW = {every = 5, later = 30, tries = 3, steady = 1, most = 16}
+local rw = {next_at = 0, tries = 0, at = nil, val = nil, changed_at = nil, menu = false, cands = nil}
+local function rw_take(k, quiet_take)                   -- (this place is the gun's setting)
+    mr.known, rw.cands, rw.tries = {at = k.at, seat = rate.seat, tag = k.tag}, nil, 0
+    if quiet_take then rw.at = nil
+    else rw.at, rw.val, rw.changed_at, rw.menu = k.at, k.val, nil, false; rate.last[rate.gun] = k.val end   -- (its value before the change)
+end
+S.rate_setting = 'not looked for yet'
+local function watch_rate()
+    local kn = mr.known
+    if kn and kn.seat ~= rate.seat then mr.known, kn = nil, nil end
+    if mr.cands then return end                         -- (menu_rate is following a menu)
+    if kn then rw.cands = nil end                       -- (3.6.2 review: a place menu_rate found: the others' values are old)
+    if not kn then
+        rw.at = nil
+        if rw.cands then                                -- (several places: the one that changes alone is yours)
+            local keep, moved = {}, {}
+            for _, k in ipairs(rw.cands) do
+                local c = CHOICE_OF[fetch_u32(k.at) or 0]
+                if c then keep[#keep + 1] = k; if c ~= k.val then moved[#moved + 1] = k; k.now = c end end
+            end
+            rw.cands = #keep > 0 and keep or nil
+            local same = #moved > 0                     -- (copies of one setting change together, to the same rate)
+            for _, k in ipairs(moved) do if k.now ~= moved[1].now or k.val ~= moved[1].val then same = false end end
+            if same then
+                rw_take(moved[1])                       -- (its old value kept: the change pops up below)
+                S.rate_setting = string.format('found: %d of %d places changed (%s)', #moved, #keep, moved[1].tag)
+                mr_note(S.rate_setting)
+                kn = mr.known
+            else
+                for _, k in ipairs(moved) do k.val = k.now end
+                if rw.cands then return end
+            end
+        end
+    end
+    if not kn then
+        if S.fire_menu_open or S.time < rw.next_at then return end
+        rw.tries = rw.tries + 1
+        rw.next_at = S.time + (rw.tries < RW.tries and RW.every or RW.later)
+        local cands, nblk = mr_search()
+        local one, n, seen = nil, 0, {}
+        for _, k in ipairs(cands) do if not seen[k.at] then seen[k.at], n, one = true, n + 1, k end end
+        if n ~= 1 then
+            if n > 1 and n <= RW.most then
+                rw.cands, seen = {}, {}
+                for _, k in ipairs(cands) do if not seen[k.at] then seen[k.at] = true; rw.cands[#rw.cands + 1] = {at = k.at, val = k.was, tag = k.tag} end end
+            end
+            S.rate_setting = string.format('%s: %d place(s) hold 1200 / 1800 / 2400 in %d block(s) (look %d)', rw.cands and 'watching' or 'not found', n, nblk, rw.tries)
+            return
+        end
+        rw_take({at = one.at, tag = one.tag}, true)
+        rate.last[rate.gun], SEAT_PUB.rate_rpm = one.was, one.was   -- (the gun's rate as you sit: nothing to show)
+        S.fire_rate = string.format('%d rounds a minute (the game\'s setting)', one.was)
+        S.rate_setting = string.format('found: %d (%s; %d match(es) in %d block(s), one place)', one.was, one.tag, #cands, nblk)
+        mr_note(S.rate_setting)
+        return
+    end
+    local c = CHOICE_OF[fetch_u32(kn.at) or 0]
+    if not c then
+        mr.known, rw.at, rw.next_at = nil, nil, 0
+        S.rate_setting = 'the place stopped holding a rate: looked for again'
+        return
+    end
+    if rw.at ~= kn.at then rw.at, rw.val, rw.changed_at, rw.menu = kn.at, c, nil, false; return end   -- (taken over from menu_rate)
+    if c ~= rw.val then rw.val, rw.changed_at = c, S.time end
+    if not rw.changed_at then return end
+    if S.fire_menu_open then rw.menu = true; return end
+    if not rw.menu and S.time - rw.changed_at < RW.steady then return end
+    rw.changed_at, rw.menu, rate.armed = nil, false, nil
+    S.fire_rate = string.format('%d rounds a minute (the game\'s setting)', c)
+    if c ~= (rate.last[rate.gun] or RT.start) then rate_show(c, 'the setting changed') end
+end
 -- (3.6.1 Test 16) Test 15: each right click in the menu moves the choice, and the place follows each one; the first change
 -- was taken, so two clicks showed the wrong rate until a burst measured the right one (the tester: "switching between
 -- two values"). The rate shown is now the place's value as the menu closes (the last click), if it differs from the open.
@@ -2387,23 +2494,20 @@ local function menu_rate()
         end
     end
     if open then return end
-    if not mr.closed_at then mr.closed_at = S.time end
+    if not mr.closed_at then mr.closed_at, rate.armed = S.time, S.time + RT.armed end   -- (3.6.2 Test 2: until the read below says)
     if now and now ~= from then
-        local last = rate.last[rate.gun]
-        if now ~= last then
-            rate.last[rate.gun] = now
-            SEAT_PUB.rate_rpm, SEAT_PUB.rate_seq = now, SEAT_PUB.rate_seq + 1
-            S.rate_changes = S.rate_changes + 1
-        end
+        rate.armed = nil
+        if now ~= rate.last[rate.gun] then rate_show(now, string.format('picked in the menu, %d before', from)) end
         S.fire_rate = string.format('%d rounds a minute (picked in the menu)', now)
         mr_note(string.format('menu closed: %d -> %d, shown %.2f s after the close (%s)', from, now, S.time - mr.closed_at, table.concat(where, ', ')))
         mr.cands = nil
     elseif moved > 0 then
+        rate.armed = nil
         mr_note(string.format('menu closed: back to %d (no change shown)', from or now or 0))
         mr.cands = nil
     elseif S.time - mr.closed_at > MR.after then
         mr_note(string.format('menu closed: no place changed in %d s (the same rate picked, or not found)', MR.after))
-        mr.cands, mr.known = nil, nil                   -- (searched afresh at the next menu)
+        mr.cands, mr.known = nil, nil                   -- (searched afresh at the next menu; rate.armed stays: a measured rate stands in)
     end
 end
 local function rounds_now()
@@ -2414,7 +2518,8 @@ end
 -- one look at the rounds left, at S.time
 local function sample(r)
     local t, prev = S.time, rate.prev
-    rate.prev = r
+    local dt = rate.ts and t - rate.ts or 0
+    rate.prev, rate.ts = r, t
     if not r or not prev or r > prev then rate.burst, rate.run = nil, nil; return end     -- (unread, or a new magazine)
     if r == prev then
         if rate.burst and t - rate.burst.tl > RT.gap then rate.burst, rate.run = nil, nil end
@@ -2422,7 +2527,7 @@ local function sample(r)
     end
     rate.fast_until = t + RT.live
     local b = rate.burst
-    if not b or t - b.tl > RT.gap then b = {t0 = t, tl = t}; rate.burst, rate.run = b, nil end
+    if not b or t - b.tl > math.max(RT.still, 2.5 * dt) then b = {t0 = t, tl = t}; rate.burst, rate.run = b, nil end   -- (3.6.2: a stop starts it over)
     b.tl = t
     if t - b.t0 < RT.skip then return end
     local run = rate.run
@@ -2437,14 +2542,28 @@ local function sample(r)
     raws[#raws + 1] = string.format('%.0f', rpm)
     S.rate_raw = table.concat(raws, ' ')
     local c = snap(rpm)
-    if not c then S.rate_off_choice = S.rate_off_choice + 1; return end
+    if not c then S.rate_off_choice, rate.pend = S.rate_off_choice + 1, nil; return end
+    local p = rate.pend                                    -- (3.6.2: RT.agree in a row before it counts)
+    if p and p.c == c then p.n = p.n + 1 else p = {c = c, n = 1}; rate.pend = p end
+    if p.n < RT.agree then return end
     if mr.known and CHOICE_OF[fetch_u32(mr.known.at) or 0] ~= c then mr.known = nil end   -- (3.6.1 review: it no longer follows the gun)
+    if rw.cands and not mr.known then                      -- (3.6.2 Test 3: the places not at the measured rate aren't yours)
+        local keep = {}
+        for _, k in ipairs(rw.cands) do if CHOICE_OF[fetch_u32(k.at) or 0] == c then keep[#keep + 1] = k end end
+        rw.cands = #keep > 0 and keep or nil
+        if #keep == 1 then
+            rw_take(keep[1], true)
+            S.rate_setting = string.format('found: the one place at the measured %d (%s)', c, keep[1].tag)
+            mr_note(S.rate_setting)
+        end
+    end
     local last = rate.last[rate.gun] or RT.start           -- (3.6.1 Test 7: a gun starts at 1800, the middle of the list)
     SEAT_PUB.rate_rpm = c
+    local armed = rate.armed and S.time <= rate.armed
+    rate.armed = nil
     if c ~= last then
-        rate.last[rate.gun] = c
-        SEAT_PUB.rate_seq = SEAT_PUB.rate_seq + 1
-        S.rate_changes = S.rate_changes + 1
+        if armed then rate_show(c, string.format('measured %d times in a row after a menu not read, %d before', p.n, last))
+        else rate.last[rate.gun], S.rate_silent = c, S.rate_silent + 1 end      -- (3.6.2 Test 2: no menu, no pop-up)
     end
     S.fire_rate = string.format('%d rounds a minute (measured %.0f)', c, rpm)
 end
@@ -2469,7 +2588,7 @@ FIRE.rate_poll = function(mine, me)
         if gun ~= rate.gun or rate.seat ~= mine.vehicle then
             quiet()
             if rate.seat ~= mine.vehicle then rate.last[gun] = nil end      -- (another tank: it starts at 1800)
-            mr.known = nil                                                  -- (3.6.1 review: the game reuses ids; searched afresh)
+            mr.known, rw.next_at, rw.tries, rw.cands = nil, 0, 0, nil       -- (3.6.1 review: the game reuses ids; searched afresh)
         end
         rate.gun, rate.seat, rate.gun_at = gun, mine.vehicle, S.frames + RT.gun_every
     end
@@ -2481,8 +2600,12 @@ FIRE.rate_poll = function(mine, me)
     end
     if not rate.at then quiet(); S.fire_rate = 'waiting (the gun\'s rounds are unreadable)'; return end
     if not S.fire_rate:find('^%d') then S.fire_rate = 'watching (fire a burst of half a second or more to measure)' end
-    local okm, merr = pcall(menu_rate)
-    if not okm then mr.cands = nil; S.rate_menu = 'error: ' .. tostring(merr) end
+    local okw, werr = pcall(watch_rate)                                     -- (3.6.2 Test 3)
+    if not okw then mr.known = nil; S.rate_setting = 'error: ' .. tostring(werr) end
+    if not mr.known or mr.cands then
+        local okm, merr = pcall(menu_rate)
+        if not okm then mr.cands = nil; S.rate_menu = 'error: ' .. tostring(merr) end
+    end
     if S.time >= rate.fast_until then sample(rounds_now()) end
 end
 FIRE.rate_tick = function()
@@ -3101,7 +3224,9 @@ local function poll()
         stop_driving('left the seat'); settle = nil
         settle_engine(nil, 'not_seated', seats.others)
         S.phase, S.verdict = 'watching', seats.anyone and 'not_seated' or 'nobody_in_vehicles'
-        next_poll = S.frames + TUNING.idle_every
+        -- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") nobody in a vehicle seat and nothing
+        -- under way (a brake, an engine to switch off): looked at every 18 frames (0.3 s; the getting-in takes longer)
+        next_poll = S.frames + ((not seats.anyone and not brake and not pending_off) and TUNING.foot_every or TUNING.idle_every)
         return
     end
     local mine = seats.mine
@@ -3285,7 +3410,7 @@ local function tick()
             local r = start()
             if r == true then phase = 'run'; S.phase = 'watching'; S.status = 'ready'
             elseif r == 'search' then phase = 'search'
-            elseif r == nil then phase = 'off'; S.phase = 'off'
+            elseif r == nil then phase = 'off'; S.phase = 'off'; SEAT_PUB.live = false
             else S.status = 'waiting for game.dll' end
             if r ~= false then write_log(true) end
         end
@@ -3304,7 +3429,7 @@ local function tick()
                 cache_save(S.search_tag, picked)
                 phase = 'run'; S.phase = 'watching'; S.status = 'ready'; S.locate = 'found by search (' .. table.concat(counts, ' ') .. ')'
             else
-                phase = 'off'; S.phase = 'off'; publish(nil)
+                phase = 'off'; S.phase = 'off'; publish(nil); SEAT_PUB.live = false
                 S.status = 'not active: could not find ' .. tostring(why) .. ' after the game update'
                 S.locate = 'search failed (' .. table.concat(counts, ' ') .. ')'
             end
@@ -3320,14 +3445,21 @@ local function tick()
             if drive then stop_driving(drive.kind == FRV_KIND and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off') end
             next_poll = S.frames + TUNING.menu_every
         end
-        local okr, rerr = pcall(FIRE.rate_tick)                                        -- (3.6.1) while the Maelstrom gun fires
-        if not okr then S.errors = S.errors + 1; S.last_error = 'fire rate: ' .. tostring(rerr); pcall(FIRE.rate_poll, nil, nil) end
-        local okh, herr = pcall(FIRE.hold_tick)                                        -- (3.6.1 Test 6) every frame in the seat
-        local okm, merr = pcall(FIRE.map_tick)                                         -- (3.6.1 Test 12) the map, for the zoom gate
-        if not okm then S.errors = S.errors + 1; S.last_error = 'map: ' .. tostring(merr); UI.map.open = false end
-        if not okh then S.errors = S.errors + 1; S.last_error = 'fire hold: ' .. tostring(herr); pcall(FIRE.hold_release, 'error') end
+        -- (3.6.2 Test 4) the fire rate, fire hold and map only in a vehicle seat (and one frame after, to let go)
+        local seated = SEAT_PUB.any_kind ~= nil or drive ~= nil
+        if seated or S.fire_ticks then
+            local okr, rerr = pcall(FIRE.rate_tick)                                    -- (3.6.1) while the Maelstrom gun fires
+            if not okr then S.errors = S.errors + 1; S.last_error = 'fire rate: ' .. tostring(rerr); pcall(FIRE.rate_poll, nil, nil) end
+            local okh, herr = pcall(FIRE.hold_tick)                                    -- (3.6.1 Test 6) every frame in the seat
+            local okm, merr = pcall(FIRE.map_tick)                                     -- (3.6.1 Test 12) the map, for the zoom gate
+            if not okm then S.errors = S.errors + 1; S.last_error = 'map: ' .. tostring(merr); UI.map.open = false end
+            if not okh then S.errors = S.errors + 1; S.last_error = 'fire hold: ' .. tostring(herr); pcall(FIRE.hold_release, 'error') end
+        end
+        S.fire_ticks = seated
     end
-    write_log(S.frames % TUNING.report_every == 0)
+    -- (3.6.2 Test 4) the routine rewrite only while you sit in a vehicle (3.6.1: every 1800 frames on the title screen too);
+    -- a change of status is written at once as before
+    write_log(S.frames % TUNING.report_every == 0 and (SEAT_PUB.any_kind ~= nil or drive ~= nil))
 end
 
 local game_update, game_shutdown = update, shutdown
@@ -3363,7 +3495,7 @@ local function after_game(ok, ...)
                 if rec then pcall(clear_record, rec) end
             end
             pcall(cancel_brake)                     -- (3.1.1 review: a vehicle being braked is let go of cleanly too)
-            drive = nil; publish(nil)
+            drive = nil; publish(nil); SEAT_PUB.live = false
             S.phase, S.status = 'off', 'stopped after an error: ' .. tostring(err)
             write_log(true)
         end
@@ -3373,7 +3505,7 @@ end
 update = function(...) S.dt = ...; return after_game(pcall(game_update, ...)) end   -- (3.0.1 review) dt: see tick
 shutdown = function(...)
     pcall(FIRE.hold_release, 'game closing')                -- (3.6.1 Test 6) you back as the guns' operator before anything else
-    pcall(stop_driving, 'game closing'); publish(nil)
+    pcall(stop_driving, 'game closing'); publish(nil); SEAT_PUB.live = false
     S.phase = 'off'
     write_log(true)
     if game_shutdown then return game_shutdown(...) end

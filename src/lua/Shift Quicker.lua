@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_shift
--- Armored Overhaul 3.6.1 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
+-- Armored Overhaul 3.6.2 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
 -- Throttle Response, for the TD-220 Bastion and TD-110 Maelstrom (one source, built once per option and strength;
 -- this copy is the 'shift' option, Quicker). Written from scratch.
 --
@@ -108,7 +108,7 @@ local TANK_KINDS = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
 local CHECK_EVERY = 120
 local MAX_TANKS = 8
 
-local state = {version = '3.6.1', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
+local state = {version = '3.6.2', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
                tanks = {}, errors = 0, last_error = 'none', frames = 0, writes = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
 state.part, state.live_mult = PART, 1            -- (Test 20: what this part multiplies now, for the other parts)
@@ -806,6 +806,7 @@ log_if_changed = function()
     if summary ~= last_summary then last_summary = summary; log() end
 end
 local followed                    -- (shift) the pick last taken from the option it follows
+local idle_was = false            -- (3.6.2 Test 4)
 local last_problem
 local function tick()
     state.frames = state.frames + 1
@@ -815,6 +816,18 @@ local function tick()
         local c = type(st) == 'table' and tonumber(st.choice)
         if c and MENU_MULTS[c] and c ~= followed then followed = c; menu_set('mult', c) end
     end
+    -- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") With Tank Core's seat, nothing runs
+    -- (not even the look-up of the game's code) until you sit in a Bastion or Maelstrom: only that tank is changed anyway
+    local idle_seat = rawget(_G, 'ArmoredOverhaulSeat')
+    if type(idle_seat) == 'table' and idle_seat.live ~= false and not TANK_KINDS[tonumber(idle_seat.kind) or 0] then
+        if not idle_was then
+            idle_was = true
+            if phase ~= 'run' and phase ~= 'off' then state.status = 'idle until you sit in a Bastion or Maelstrom' end
+            log_if_changed()
+        end
+        return
+    end
+    if idle_was then idle_was = false; next_check = 0 end
     if state.frames < next_check then return end
     if phase == 'gate' then
         local m = GetModuleHandleA('game.dll')
