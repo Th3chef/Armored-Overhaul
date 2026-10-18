@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.6.1 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.6.2 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -142,7 +142,7 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.6.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.6.2', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -571,6 +571,15 @@ local function live_map()
     end
     if top < 0 then return nil, string.format('no turrets out (%d slots, empty key 0x%X)', slots, empty) end
     return {recs = recs, slots = slots, idxs = idxs, top = top, listed = listed}
+end
+-- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") With Tank Core's seat: the turrets of the
+-- tanks already out (the runtime copies, up to 128 KB of look-up) are followed only while you sit in a Bastion or
+-- Maelstrom (at once as you get in), and the settings are checked once a minute out of a tank (every 10 s in one). The
+-- static settings stay set from the start (a tank copies them as it is called in). Without the seat as before.
+local function tank_seat()
+    local seat = rawget(_G, 'ArmoredOverhaulSeat')
+    if type(seat) ~= 'table' or seat.live == false then return nil end      -- ((3.6.2 review) Tank Core stopped: as without it)
+    return seat.kind == 0x2B or seat.kind == 0x2C
 end
 local function live_apply(statics)
     -- (3.4.0 review) forgotten first: 3.4.0 kept the last mission's list through the early returns, and the shutdown
@@ -1084,7 +1093,9 @@ local function apply()
                 .. (problem and ' [' .. problem .. ']' or '')
         end
     end
-    local okL, nl = pcall(live_apply, statics)
+    local okL, nl = true, 0
+    if tank_seat() ~= false then okL, nl = pcall(live_apply, statics)
+    elseif live.phase == 'ready' then live.text = 'not followed while you are out of a tank' end   -- ((3.6.2 review) not the last count)
     if not okL then state.errors = state.errors + 1; state.last_error = 'tanks out: ' .. tostring(nl)
     else changed = changed + nl end
     state.live = live.text
@@ -1254,13 +1265,17 @@ menu_set = function(key, v)
     next_check = 0                                       -- (applied at the next frame)
 end
 local shown
+local seated = nil
 local function tick()
     state.frames = state.frames + 1
     menu_link(state.frames)
     if phase == 'ready' then slope_step() end                           -- (3.5.1 Test 5)
     fl_step()                                                            -- (3.5.1 Test 7)
     if phase ~= 'gate' and phase ~= 'off' then camera_step() end
-    if live.phase == 'search' and phase == 'ready' then
+    local ts = tank_seat()
+    if ts and seated == false and phase == 'ready' then next_check = 0 end   -- (3.6.2 Test 4: got into a tank: a look at once)
+    seated = ts
+    if live.phase == 'search' and phase == 'ready' then     -- ((3.6.2 review) the one-time search wherever you are: not on your first drive)
         live_find_step()
         if live.phase == 'ready' then next_check = 0 end
     end
@@ -1340,7 +1355,7 @@ local function tick()
             local fl_due = state.freelook ~= FL.logged and state.clock - (FL.logged_at or -1e9) >= 30
             if summary ~= shown or fl_due then shown = summary; FL.logged, FL.logged_at = state.freelook, state.clock; log() end
         end
-        next_check = state.frames + (settled and 600 or 120)
+        next_check = state.frames + (settled and (tank_seat() == false and 3600 or 600) or 120)
     end
 end
 

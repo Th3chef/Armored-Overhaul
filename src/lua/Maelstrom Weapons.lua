@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_maelstrom_weapons
--- Armored Overhaul 3.6.1 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
+-- Armored Overhaul 3.6.2 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
 -- pick (its option addon sets ArmoredOverhaulMaelstromPicks): Maelstrom Fire Rate (a hold-reload choice of the main gun's
 -- rounds per minute x1 / x1.5 / x2) and Maelstrom Single Belt (all its ammo on one belt, no reload). Written for Armored
 -- Overhaul from the author's own Leveller & Solo Silo Demo Force 50 core (the same settings-table scan).
@@ -28,7 +28,7 @@ end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
-local VERSION = ({version = '3.6.1'}).version   -- (as the other addons write it, so test builds name themselves)
+local VERSION = ({version = '3.6.2'}).version   -- (as the other addons write it, so test builds name themselves)
 
 local GUN = { name = 'Maelstrom main gun', entity = 'D58AE6A04EDB10DE', belt = 300, mags = 6, rpm = 1200 }   -- (the game's belt, spare belts and rate)
 local ENV_NAME = 'ARMORED_OVERHAUL_MAELSTROM_GAME'
@@ -778,7 +778,16 @@ local function check()
 end
 
 -- ---------------------------------------------------------------- main loop
-local REFRESH = 300   -- seconds between refresh passes (headers only) looking for moved or new tables
+-- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") Once applied: the log written only when
+-- something changes (3.6.1: every 60 s); the refresh pass through all memory every 5 minutes only for a table whose game
+-- copy (the one the game reads, followed by its settings-root global at every check) wasn't found; nothing at all with
+-- neither Maelstrom Fire Rate nor Single Belt picked. The values stay checked every 5 s (a handful of small reads): a
+-- Maelstrom takes them as it is called in, wherever you are (3.6.2 review: Test 4 checked once a minute out of a tank).
+local CHECK_EVERY, REFRESH = 5, 300
+local function needs_refresh()
+    for kind in pairs(S.T or {}) do if not (S.live and S.live[kind]) then return true end end
+    return false
+end
 local function run()
     local skip_low = (api.address_of(NEEDLE) or LOW) < LOW
     local started, passes, shared_found = api.now(), 0, nil
@@ -789,20 +798,21 @@ local function run()
         while api.now() < until_t and not (S.switched and S.sig) do coroutine.yield(); yielded = true end
         if yielded then slice_end = api.now() + BUDGET end
     end
-    local function watch_for(seconds)   -- checks every 5 s; false when a table moved
-        for _ = 1, math.floor(seconds / 5) do
-            wait(5)
-            if check() == 'moved' then event('a settings table moved; scanning again'); S.sig, S.swept = nil, nil; return false end
-            if api.now() >= (S.next_log or 0) then S.next_log = api.now() + 60; S.dirty = true end
+    local function watch()               -- checks every 5 s; returns when a table moved
+        local refreshed = api.now()
+        while true do
+            wait(CHECK_EVERY)
+            if check() == 'moved' then event('a settings table moved; scanning again'); S.sig, S.swept = nil, nil; return end
+            if api.now() - refreshed >= REFRESH and needs_refresh() then
+                refreshed = api.now()
+                scan_pass(skip_low, false, true)
+                if found_sig() ~= S.sig then event('the settings tables changed; scanning again'); S.sig, S.swept = nil, nil; return end
+            end
         end
-        return true
     end
     while true do
         if S.sig then
-            if watch_for(REFRESH) then
-                scan_pass(skip_low, false, true)
-                if found_sig() ~= S.sig then event('the settings tables changed; scanning again'); S.sig, S.swept = nil, nil end
-            end
+            watch()
             started, passes, shared_found = api.now(), 0, nil
         else
             passes = passes + 1
@@ -826,7 +836,6 @@ local function run()
                     ok and 'active' or 'nothing to change (see below)', api.now() - started, passes, passes == 1 and '' or 'es', chains, n)
                 event('tables found; ' .. n .. ' value(s) written')
                 write_log()
-                S.next_log = api.now() + 60
             else
                 S.status = 'searching (pass ' .. passes .. '); waiting for: ' .. (T.absent or 'the gun\'s tables')
                 if passes == 1 or passes % 20 == 0 then event(S.status) end
@@ -947,6 +956,14 @@ local function tick()
     S.frame = S.frame + 1
     menu_link(S.frame)
     if S.frame < 120 or coroutine.status(worker) == 'dead' then return end
+    if S.frame == 120 then
+        local p = picks()
+        if not (p.rpm or p.belt) then
+            S.status, S.nothing = 'off: neither Maelstrom Fire Rate nor Maelstrom Single Belt is picked', true
+            write_log()
+        end
+    end
+    if S.nothing then return end
     slice_end = api.now() + BUDGET
     local fine, err = coroutine.resume(worker)
     if not fine then

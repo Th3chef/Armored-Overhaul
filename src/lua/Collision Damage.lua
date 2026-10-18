@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_collision_damage
--- Armored Overhaul 3.6.1 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
+-- Armored Overhaul 3.6.2 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
 -- buildings they drive into instead of stopping dead against them. Written from scratch. (Named Tank Wall Breaking until
 -- 3.5.0 Test 3: the tester named it Tank Collision Damage Boost, since it breaks small buildings too.)
 --
@@ -55,7 +55,7 @@ local PEAK_HOLD = 0.25             -- (Test 7, the tester: "it seems to stay on 
 local GAME = {25, 35}                          -- the game's own values for both tanks (Sept 2026 build)
 local RING = 128                               -- speed samples kept per tank (PEAK_HOLD at up to ~500 frames a second; 3.5.0: 64)
 
-local S = {version = '3.6.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.6.2', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            tanks = 'not yet', writes = 0, reapplied = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (the mod manager\'s pick)', frames = 0}
 rawset(_G, 'ArmoredOverhaulCollisionDamage', S)
@@ -360,7 +360,7 @@ end
 -- one switch, on when installed; off = the game's own
 menu_rows.collision = {
     {'armored_overhaul.collision_damage', {type = 'toggle', label = 'Tank Collision Damage Boost', default = true,
-        description = 'The faster the Bastion and Maelstrom drive into things, the harder they hit: demolition force 30 when crawling, 35 at half speed, 40 from three-quarter speed (walls, fences, small buildings). Changes every tank at once; turning it off puts the game\'s own back.'}, 'on'},
+        description = 'The faster the Bastion and Maelstrom drive into things, the harder they hit: demolition force 30 when crawling, 35 at half speed, 40 from three-quarter speed (walls, fences, small buildings). Works for the tank you drive; turning it off puts the game\'s own back.'}, 'on'},
 }
 menu_set = function(key, v)
     if key ~= 'on' then return end
@@ -398,7 +398,7 @@ local KIND_NAME = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
 local drive = {kind = nil, was = nil}
 local function driving_kind()
     local seat = rawget(_G, 'ArmoredOverhaulSeat')
-    if type(seat) ~= 'table' then return 'any' end
+    if type(seat) ~= 'table' or seat.live == false then return 'any' end      -- ((3.6.2 review) Tank Core stopped: as without it)
     local name = KIND_NAME[seat.kind]
     if name and (seat.role == 1 or seat.role == 4 or seat.driving == true) then return name end
     return nil
@@ -538,9 +538,29 @@ local function follow_speed()
 end
 
 local phase, shown = 'gate', nil
+-- (3.6.2 Test 4, the tester: "Im also seeing Tank collision boost running in the background while im not even in a game.
+-- It shouldnt even really run unless a tank is being driven") With Tank Core's seat (part of this option), nothing runs
+-- until you drive a Bastion or Maelstrom: no look-up of the game's code, no settings checks, no speed. The values go in
+-- as you start driving (the game reads them at every hit) and the game's own go back as you stop. Without the seat (an
+-- old Tank Core) every tank, as before.
+local idle = {on = false}
 local function tick()
     S.frames = S.frames + 1
     menu_link(S.frames)
+    if driving_kind() == nil then
+        if not idle.on then
+            idle.on = true
+            pcall(restore)
+            for _, hd in pairs(held) do hd.now = nil end
+            drive.was = nil
+            for u in pairs(tanks) do tanks[u] = nil end
+            S.driving = 'not driving: nothing followed'
+            if phase ~= 'off' then S.status = 'idle: the game\'s own values until you drive a Bastion or Maelstrom' end
+            log()
+        end
+        return
+    end
+    if idle.on then idle.on = false; next_check = 0 end
     if phase == 'run' and want_on and next(held) then follow_speed() end
     if S.frames < next_check then return end
     if phase == 'gate' then

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_vehicle_loadout
--- Armored Overhaul 3.6.1 - Vehicle Loadout option: lets you pick more than one tank, exosuit or FRV in your stratagem
+-- Armored Overhaul 3.6.2 - Vehicle Loadout option: lets you pick more than one tank, exosuit or FRV in your stratagem
 -- loadout. Written from scratch.
 --
 -- How the game limits it (game.dll, Sept 2026 build): each stratagem has a data record (the stratagem list,
@@ -30,7 +30,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.6.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.6.2', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            vehicles = 'none yet', groups = 'none yet', changed = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (on)', frames = 0}
 rawset(_G, 'ArmoredOverhaulVehicleLoadout', S)
@@ -356,7 +356,9 @@ local function tick()
         phase = 'run'
     end
     if phase == 'run' then
-        next_check = S.frames + 600                -- every ~10 s: a record the game rebuilt gets it again
+        -- every ~60 s: a record the game rebuilt gets it again ((3.6.2 Test 4, the tester: "same with most of the Armored
+        -- Overhaul modules") every ~10 s until 3.6.1; a menu change still applies at once)
+        next_check = S.frames + 3600
         local n = apply()
         S.status = n == 0 and 'waiting for the stratagem list' or (want_on and 'on: more than one vehicle can be picked' or 'off (Mod Options Menu): the game\'s limit')
         if n == 0 then next_check = S.frames + 120 end

@@ -1,11 +1,11 @@
 -- HD2-Addon: mods/chef/armored_overhaul_fire_rate_display
--- Armored Overhaul 3.6.1 - Fire Rate Display (part of the Maelstrom Fire Rate option): when the TD-110 Maelstrom gun's
+-- Armored Overhaul 3.6.2 - Fire Rate Display (part of the Maelstrom Fire Rate option): when the TD-110 Maelstrom gun's
 -- fire rate changes (the hold-reload choice: 1200, 1800 or 2400 rounds a minute), the new rate pops up next to the gun's
 -- ammo bar for a moment, then fades. Drawn only on your screen. Written from scratch.
 --
 -- The rate comes from the Tank Core addon (ArmoredOverhaulSeat.rate_rpm / rate_seq): rate_seq goes up when Tank Core
--- reads a new choice from the game as the hold-reload menu closes (3.6.1 Test 14), or measures a different rate from the
--- gun's rounds left while you fire (a gun starts at 1800). So the number shows as the menu closes.
+-- reads a new choice from the game: as the hold-reload menu closes (3.6.1 Test 14), or (3.6.2, a controller) once the
+-- game's setting has held a new rate for a second. Firing never pops it up (3.6.2 Test 2).
 --
 -- Drawn the way HD2 HUD+ puts its widgets on screen (a retained screen GUI in the game's overlay world, made with
 -- World.create_screen_gui(world, 'scale', 1, 1)), in the game's own HUD font when Tank Core has read it, else in stroke
@@ -29,7 +29,7 @@ local PLACE = {gap = 0.165, size = 0.016, opacity = 0.9}
 local HOLD, FADE = 2.5, 1.0
 
 local TITLE, LOG_FILE = 'Fire Rate Display', 'ArmoredOverhaul-FireRateDisplay.log'
-local S = {version = '3.6.1', status = 'starting', api = 'unchecked', gui = 'none', seat = 'none', font = 'not needed yet',
+local S = {version = '3.6.2', status = 'starting', api = 'unchecked', gui = 'none', seat = 'none', font = 'not needed yet',
            shown = 'nothing yet', times_shown = 0, place = 'not drawn yet', last_error = 'none', frames = 0, errors = 0, drawn = 0}
 rawset(_G, 'ArmoredOverhaulFireRateDisplay', S)
 
