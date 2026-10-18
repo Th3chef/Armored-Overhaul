@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.6.2
+
+Changed:
+- **Fire rate pop-up only when you pick a rate:** the rate pops up as the fire-rate menu closes on a new rate, and never while you fire. It's read straight from the game's own setting, so it also works with a controller: the rate pops up a second after your last pick.
+- **Lighter in the background:** every part now does nothing while it has nothing to do. Tank Collision Damage Boost only runs while you drive a tank (the tanks have the game's own values otherwise); Tank Steering, Throttle Response, Top Speed, Engine Torque, Grip and Stability wait until you sit in a tank; Run-Flat Tires, Maelstrom Fire Rate and Single Belt, the turret options, the gunner camera, MBT Turrets and Vehicle Loadout look at things far less often in menus, on the ship and on foot.
+
+Fixed:
+- **Fire rate pop-up:** it no longer comes up at random while you fire, switching between two rates.
+
+**Known issues:** Freelook in multiplayer: the game keeps one setting for both tanks' main guns, so while you hold Freelook as the host, another player's turret may stop turning too. Tell me if you see it. Maelstrom Fire Rate with a controller: the guns can still fire while the fire-rate menu is open.
+
 ## 3.6.1
 
 New:
