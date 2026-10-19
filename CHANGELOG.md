@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.7.0
+
+New:
+- **Tank MBT Turrets for Remodels:** a new option for players using another mod that changes the shape of the Bastion or Maelstrom. Turn Tank MBT Turrets off and pick your remodel here: "360 Turret" for a remodel made for this mod's turning turret (both turrets turn), "Vanilla Turret" for a remodel of the game's own turret (that tank is left as the remodel has it). Off by default. Not every remodel mod has been tested with it, so tell me if one doesn't work.
+- **Gunner's ammo for the driver:** in the driver seat of a tank or an FRV, the Vehicle Indicator's ammo bar shows how much ammo the gunner has left, spare magazines included.
+- **M-104 FRV:** Gunner Drive, the Driver Panel, the Vehicle Indicator (its tires too) and FRV Run-Flat Tires now cover the M-104 FRV. It isn't in the game yet, so this comes from the game's files and is untested in game.
+
+Changed:
+- **Take the tank back:** in multiplayer, after another player drove the tank and got out, press forward or back in the gunner seat and the tank is handed back to you within about a second, with the Maelstrom's smoke launcher. You no longer have to take the driver seat to get it back.
+- **Smoke in any tank:** the gunner-seat smoke key now works in a tank another player called in.
+- **Tank Collision Demolition Boost:** the new name for Tank Collision Damage Boost (it raises the tanks' demolition force). It works for the tank you drive, whether or not you host.
+- **Turret models:** the turret models now ship as one file per tank, so remember to Purge & Deploy.
+
+**Known issues:** The M-104 FRV isn't in the game yet, so its support is untested in game.
+
 ## 3.6.2
 
 Changed:
