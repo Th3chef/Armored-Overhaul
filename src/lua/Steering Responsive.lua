@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_steering
--- Armored Overhaul 3.7.0 - Tank Steering and Tank Throttle Response options for the TD-220 Bastion and TD-110 Maelstrom
+-- Armored Overhaul 3.7.1 - Tank Steering and Tank Throttle Response options for the TD-220 Bastion and TD-110 Maelstrom
 -- (one source, built once per option and strength; this copy is the 'steering' option, Responsive). Written from scratch.
 --
 -- How it works: every frame the game moves each vehicle's driving input (steering, throttle, brake) towards what the
@@ -65,7 +65,7 @@ local MAX_TRIES = 5
 local CHECK_EVERY = 120     -- frames between checks while something is still missing or being written (~2 s)
 local SETTLED_EVERY = 600   -- ... once both tanks hold the preset (~10 s): anything the game reset is put back
 
-local state = {version = '3.7.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.7.1', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, preset = 'unread', tanks = {}, frames = 0, clock = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}

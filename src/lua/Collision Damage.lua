@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_collision_damage
--- Armored Overhaul 3.7.0 - Tank Collision Demolition Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
+-- Armored Overhaul 3.7.1 - Tank Collision Demolition Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
 -- buildings they drive into instead of stopping dead against them. Written from scratch. (Named Tank Wall Breaking until
 -- 3.5.0 Test 3: I named it Tank Collision Damage Boost, since it breaks small buildings too; 3.7.0: Tank Collision
 -- Demolition Boost.)
@@ -56,7 +56,7 @@ local PEAK_HOLD = 0.25             -- (Test 7: "it seems to stay on the high dem
 local GAME = {25, 35}                          -- the game's own values for both tanks (Sept 2026 build)
 local RING = 128                               -- speed samples kept per tank (PEAK_HOLD at up to ~500 frames a second; 3.5.0: 64)
 
-local S = {version = '3.7.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.7.1', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            tanks = 'not yet', writes = 0, reapplied = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (the mod manager\'s pick)', frames = 0}
 rawset(_G, 'ArmoredOverhaulCollisionDamage', S)

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.7.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
+-- Armored Overhaul 3.7.1 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
 -- TD-110 Maelstrom, M-102 FRV or M-104 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
@@ -32,7 +32,7 @@ local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.7.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.7.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
            speed = 'not measured yet', fastest = 'not measured yet', speed_check = 'none', handling_check = 'not driven yet', options_menu = 'not installed (the defaults are used)'}
@@ -1230,7 +1230,10 @@ local function tick()
     d.speed = measured or tonumber(seat.speed) or 0
     if not (d.speed >= 0 and d.speed < 1000) then d.speed = 0 end
     if d.fuel then fuel_full[seat.kind] = max(fuel_full[seat.kind] or 0, d.fuel) end
-    d.full = fuel_full[seat.kind]
+    -- (3.7.1 Test 5) Tank Core gives the fuel as the game's driver HUD shows it (0..60 L) with its full mark; without that
+    -- (its fuel gauge place not found) the most seen in this kind of vehicle is the full mark, as before
+    local ff = tonumber(seat.fuel_full)
+    d.full = (ff and ff > 0) and ff or fuel_full[seat.kind]
     d.smoke = type(seat.smoke) == 'number' and seat.smoke or nil
     d.smoke_full = type(seat.smoke_full) == 'number' and seat.smoke_full or nil
     d.controller = input_device() == 'controller'

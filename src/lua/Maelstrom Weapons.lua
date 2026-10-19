@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_maelstrom_weapons
--- Armored Overhaul 3.7.0 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
+-- Armored Overhaul 3.7.1 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
 -- pick (its option addon sets ArmoredOverhaulMaelstromPicks): Maelstrom Fire Rate (a hold-reload choice of the main gun's
 -- rounds per minute x1 / x1.5 / x2) and Maelstrom Single Belt (all its ammo on one belt, no reload). Written for Armored
 -- Overhaul from the author's own Leveller & Solo Silo Demo Force 50 core (the same settings-table scan).
@@ -7,9 +7,10 @@
 -- How it works: the game keeps its weapon settings in tables in memory (each behind a 24-byte 'LDLD' header; found by
 -- their table type and layout, never by fixed addresses). The main gun (tank_storm_maingun, D58AE6A04EDB10DE: 12.5mm,
 -- 1200 rpm, 300-round belt, 6 spare belts): its fire-mode record's rates (+4/+8/+12), its weapon data's left-input
--- function (+188, the right input, since 3.6.1 Test 6: the fire-rate choice), and its magazine record's belt
--- and spare belts. Every copy of a table is written and read back. Every 5 s the values are checked (set again if the
--- game put its own back); every 5 minutes a headers-only scan looks for moved or new tables. Turning it off in the Mod
+-- function (+188, the right input, since 3.6.1 Test 6: the fire-rate choice), and its magazine record's belt and spare
+-- belts. With Fire Rate on, the hold-reload menu is titled after the tank: the Maelstrom's gun and the Bastion's two guns
+-- get look-up slots pointing at their hull's names (3.7.1 Test 10; see menu_titles). Every copy of a table is written
+-- and read back. Every 5 s the values are checked (set again if the game put its own back); every 5 minutes a headers-only scan looks for moved or new tables. Turning it off in the Mod
 -- Options Menu puts the game's values back (also kept in a process environment variable, so a copy of this addon loaded
 -- again while the game runs knows them). A Maelstrom takes these when it is called in. Writes
 -- ArmoredOverhaul-MaelstromWeapons.log.
@@ -28,7 +29,7 @@ end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
-local VERSION = ({version = '3.7.0'}).version   -- (as the other addons write it, so test builds name themselves)
+local VERSION = ({version = '3.7.1'}).version   -- (as the other addons write it, so test builds name themselves)
 
 local GUN = { name = 'Maelstrom main gun', entity = 'D58AE6A04EDB10DE', belt = 300, mags = 6, rpm = 1200 }   -- (the game's belt, spare belts and rate)
 local ENV_NAME = 'ARMORED_OVERHAUL_MAELSTROM_GAME'
@@ -39,8 +40,9 @@ local KINDS = {
     fire = { type = 0x45171B68, stride = 616, keyed = true },    -- +4 / +8 / +12 rounds per minute
     magazine = { type = 0xFB8D88A3, stride = 160, keyed = true },    -- +136 rounds per magazine, then magazines, refill, most
     weapondata = { type = 0x88E4DBB1, stride = 1232, keyed = true }, -- +184 / +188 the inputs' functions (2 = fire rate)
+    encyclopedia = { type = 0x8A40FE2F, stride = 56, keyed = true },  -- an entity's names (+0 name, +8 upper, ...)
 }
-local KIND_NAMES = { 'fire', 'magazine', 'weapondata' }
+local KIND_NAMES = { 'fire', 'magazine', 'weapondata', 'encyclopedia' }
 local OPTIONAL_WAIT = 60   -- seconds to wait for the rest of the gun's tables once one of them is found
 
 if rawget(_G, 'ArmoredOverhaulMaelstromWeapons') then return end
@@ -73,6 +75,19 @@ end
 local function key_of(hex16)  -- entity hash as stored (u64 little-endian)
     return u32_bytes(tonumber(hex16:sub(9, 16), 16)) .. u32_bytes(tonumber(hex16:sub(1, 8), 16))
 end
+
+-- (3.7.1 Test 10) The menu titles: each tank gun -> the hull whose encyclopedia entry names its hold-reload menu. The
+-- Bastion's guns (its MountComponentData: the cannon on attach_tank_gun, the machine gun on attach_tank_gun_mg) get
+-- the Bastion's name too, so the Maelstrom's title never carries over to the Bastion's menu (3.6.1).
+local TITLES = {
+    {gun = GUN.entity, hull = 'B0C9FAF4AF8903F9', name = 'Maelstrom main gun', tank = 'Maelstrom'},
+    {gun = '1FA1F596769225C2', hull = '16474112801385B6', name = 'Bastion cannon', tank = 'Bastion'},
+    {gun = '439F9E65C18567DA', hull = '16474112801385B6', name = 'Bastion machine gun', tank = 'Bastion'},
+}
+-- (3.6.0 Test 10) the encyclopedia table may hold the guns' look-up slots this addon added (they share the hulls'
+-- records): not counted as entities of their own when the table's layout is worked out, so a later scan still reads it
+KINDS.encyclopedia.ignore = {}
+for _, t in ipairs(TITLES) do KINDS.encyclopedia.ignore[key_of(t.gun)] = true end
 
 local NEEDLE = 'LDLD' .. u32_bytes(1)
 local HEADER = 24
@@ -191,7 +206,7 @@ local function parse_keyed(blob, spec)
         local slot, pad = u32(blob, offset + 8), u32(blob, offset + 12)
         if pad ~= 0 or slot > 100000 then break end
         count = count + 1
-        if (u32(blob, offset) ~= 0 or u32(blob, offset + 4) ~= 0) and not (spec.ignore and blob:sub(offset + 1, offset + 8) == spec.ignore) then
+        if (u32(blob, offset) ~= 0 or u32(blob, offset + 4) ~= 0) and not (spec.ignore and spec.ignore[blob:sub(offset + 1, offset + 8)]) then
             live = live + 1
             if slot > top then top = slot end
         end
@@ -216,7 +231,7 @@ local function parse_keyed(blob, spec)
             local c, live, top = sh[1], sh[2], sh[3]
             local array, seen, unique = total - c * 16, {}, true
             for k = 0, c - 1 do
-                if (u32(blob, k * 16) ~= 0 or u32(blob, k * 16 + 4) ~= 0) and not (spec.ignore and blob:sub(k * 16 + 1, k * 16 + 8) == spec.ignore) then
+                if (u32(blob, k * 16) ~= 0 or u32(blob, k * 16 + 4) ~= 0) and not (spec.ignore and spec.ignore[blob:sub(k * 16 + 1, k * 16 + 8)]) then
                     local slot = u32(blob, k * 16 + 8)
                     if seen[slot] then unique = false break end
                     seen[slot] = true
@@ -423,7 +438,7 @@ local function env_save()
 end
 
 -- ---------------------------------------------------------------- the values written
--- A watched value: group ('rpm' / 'rpm_lo' / 'rpm_hi' / 'rof' / 'belt'), table kind, `rel` = its place in the table's payload, `idrel` /
+-- A watched value: group ('rpm' / 'rpm_lo' / 'rpm_hi' / 'rof' / 'name' / 'belt'), table kind, `rel` = its place in the table's payload, `idrel` /
 -- `idb` = where the record's id is and what it must be (row tables), `game` = the game's raw value, `base` = the
 -- game's value as a number (the float for rpm), `last` = what this addon wrote last.
 local function desired(w)
@@ -433,6 +448,7 @@ local function desired(w)
     if w.group == 'rpm_lo' then return want.rpm and f32_bits(w.base) or w.game end
     if w.group == 'rpm_hi' then return want.rpm and f32_bits(w.base * 2) or w.game end
     if w.group == 'rof' then return want.rpm and 2 or w.game end
+    if w.group == 'name' then return want.rpm and w.on or w.game end
     if w.group == 'belt' then return want.belt and w.on or w.game end    -- (Single Belt: w.on = the value with it on)
     return w.game
 end
@@ -596,6 +612,69 @@ local function hexdump(blob, at, n)
     for o = 0, n - 4, 4 do t[#t + 1] = string.format('%08x', u32(blob, at + o) or 0) end
     return table.concat(t, ' ')
 end
+local function slot_home(keyb, n)
+    local lo, hi = u32(keyb, 0), u32(keyb, 4)
+    return ((hi % n) * (4294967296 % n) + lo % n) % n
+end
+-- (3.6.0 Test 10; 3.7.1 Test 10 for every gun in TITLES) One slot of the encyclopedia table's look-up gets the gun's id
+-- pointing at its hull's own entry ("Maelstrom", "Bastion"): no record written. The slot is where the game's look-up
+-- (id modulo the slot count, then the next ones) stops for the gun now, so no other look-up changes. Slots taken by an
+-- earlier gun in the list count as taken for the next one.
+local function menu_titles(T, want, place, watch)
+    local E = T.encyclopedia
+    if not E or not E.buckets then return {'menu titles: the encyclopedia table not found'} end
+    local n, blob = E.buckets, E.blob
+    local zero = string.rep('\0', 8)
+    local taken = {}
+    -- the game's look-up: the id's home slot, then the next ones, up to an empty one -> slot, 'here' / 'empty'
+    local function probe(key)
+        local slot = slot_home(key, n)
+        for _ = 1, n do
+            local k = taken[slot] or blob:sub(slot * 16 + 1, slot * 16 + 8)
+            if k == key then return slot, 'here' end
+            if k == zero then return slot, 'empty' end
+            slot = slot + 1 == n and 0 or slot + 1
+        end
+    end
+    -- (the look-up must find the hulls and the FRV's MG-206 where the table has them, else the layout isn't as known)
+    for _, hx in ipairs({'B0C9FAF4AF8903F9', '16474112801385B6', '085C1EDB038EC24E'}) do
+        local k = key_of(hx)
+        local s2, f2 = probe(k)
+        if E.index[k] and (f2 ~= 'here' or n * 16 + u32(blob, s2 * 16 + 8) * E.stride ~= E.index[k]) then
+            return {'menu titles: the encyclopedia look-up is not as known (left alone)'}
+        end
+    end
+    local out = {}
+    for _, t in ipairs(TITLES) do
+        local gun, hull = key_of(t.gun), key_of(t.hull)
+        local h = E.index[hull]
+        local why
+        if not h then why = 'the ' .. t.tank .. ' hull is not in the encyclopedia table' end
+        local hull_idx = h and (h - n * 16) / E.stride
+        local slot, found
+        if not why then slot, found = probe(gun); if not found then why = 'no free slot in the encyclopedia look-up' end end
+        local o = slot and slot * 16
+        if not why and found == 'here' and u32(blob, o + 8) ~= hull_idx then why = 'it has its own encyclopedia entry now (left alone)' end
+        if not why and found == 'empty' and (u32(blob, o + 8) ~= 0 or u32(blob, o + 12) ~= 0) then why = 'the free slot is not empty (left alone)' end
+        if why then
+            out[#out + 1] = string.format('menu title, %s: %s', t.name, why)
+        else
+            taken[slot] = gun
+            -- (in order: the record index, then the id's halves; turned off, the other way round: the id first. Either
+            -- way the slot is never the gun's id with another record's index)
+            local ws = {}
+            for _, e in ipairs({{8, hull_idx}, {4, u32(gun, 4)}, {0, u32(gun, 0)}}) do
+                local w = place({group = 'name', kind = 'encyclopedia', rel = o + e[1], game = 0, base = 0, on = e[2]})
+                watch[#watch + 1] = w
+                ws[#ws + 1] = w
+            end
+            for i = want.rpm and 1 or #ws, want.rpm and #ws or 1, want.rpm and 1 or -1 do write_entry(ws[i], desired(ws[i])) end
+            out[#out + 1] = string.format('menu title, %s: -> the %s hull\'s encyclopedia entry (record %d; look-up slot %d of %d%s): %s', t.name, t.tank,
+                hull_idx, slot, n, found == 'here' and ', already set' or '', want.rpm and 'on' or 'off')
+        end
+    end
+    return out
+end
 local function apply(T)
     if not kept then env_read() end
     local want = wanted()
@@ -684,10 +763,13 @@ local function apply(T)
                     want.rpm and string.format('%.0f (x%g)', base * RPM_START, RPM_START) or 'the game\'s (off in the Mod Options Menu)', where_note('fire'))
                 lines[#lines + 1] = string.format('  hold-reload fire-rate choice (weapon data +%d, the %s input -> 2; fire-mode +4 / +12 -> %.0f / %.0f): %s%s', ROF_AT, ROF_AT == 188 and 'right' or 'left', base, base * 2,
                     want.rpm and 'on' or 'off (the game\'s: none)', where_note('weapondata'))
-                -- (3.6.1 release: "if you hold the context menu on the bastion, it also says Maelstrom on it ...
-                -- you can just remove the label for maelstrom") 3.6.0 Test 10's menu title (the gun's id added to the
-                -- encyclopedia look-up, pointing at the hull's entry) is gone: the game keeps the last title it showed, so
-                -- the Bastion's menu said Maelstrom too. The menu shows what the game's own shows.
+                -- (3.6.0 Test 10: "you can just put Maelstrom as the title for the context menu") The menu's title is the
+                -- weapon's name from its encyclopedia entry; the gun has none (the menu kept the last weapon's name, e.g.
+                -- the Verdict). (3.6.1 release: "if you hold the context menu on the bastion, it also says Maelstrom on
+                -- it": the game keeps the last title it showed, and the Bastion's guns have no name either, so it was
+                -- taken out.) (3.7.1 Test 10: "Id love to name the menu Maelstrom, but last time we did that, it also
+                -- applied it to the Bastion too") Back, with the Bastion's guns named after the Bastion as well.
+                for _, l in ipairs(menu_titles(T, want, place, watch)) do lines[#lines + 1] = '  ' .. l end
             end
         end
         if p.belt then
@@ -785,7 +867,9 @@ end
 -- Maelstrom takes them as it is called in, wherever you are (3.6.2 review: Test 4 checked once a minute out of a tank).
 local CHECK_EVERY, REFRESH = 5, 300
 local function needs_refresh()
-    for kind in pairs(S.T or {}) do if not (S.live and S.live[kind]) then return true end end
+    -- (3.7.1 Test 10) only the kinds the game has its own copy look-up for: the encyclopedia (the menu titles) has none,
+    -- its LDLD table is the one written
+    for _, kind in ipairs(LIVE_KINDS) do if S.T and S.T[kind] and not (S.live and S.live[kind]) then return true end end
     return false
 end
 local function run()

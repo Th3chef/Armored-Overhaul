@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.7.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102 FRV,
+-- Armored Overhaul 3.7.1 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102 FRV,
 -- M-103 Supply FRV or M-104 FRV (any seat), a small outline on your screen shows which way the turret points compared to
 -- the hull, like a real tank's display, colored by the vehicle's health (the FRVs' tires too), with an ammo
 -- bar for the gunner's ammo in the driver seat (and the M-103's turret in any seat). The turret always points
@@ -34,7 +34,7 @@ local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.lo
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
 local PANEL_DEFAULT = {x = 0.5, y = 0.1, size = 0.022}   -- (3.1.0 Test 26) the Driver Panel's default place (its SETTINGS)
 
-local S = {version = '3.7.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.7.1', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
