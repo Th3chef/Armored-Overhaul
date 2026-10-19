@@ -1,13 +1,13 @@
 {
   "Version": 1,
   "Guid": "370555ae-cb28-4b9d-96d0-8381505c3f89",
-  "Name": "Armored Overhaul 3.6.2",
+  "Name": "Armored Overhaul 3.7.0",
   "IconPath": "thumbnail.png",
   "Description": "Bastion, Maelstrom and FRV upgrades, each its own option: tank top speed, engine torque, grip, steering, throttle response, suspension and stability; a collision damage boost for ramming; a faster Maelstrom gun with all its ammo on one belt; 360-degree MBT turrets with traverse, elevation, gun depression and gun raise; an autoloader; driving from the gunner seat; gunner camera distance; FRV stability; FRV run-flat tires; a vehicle indicator; and more than one vehicle in your loadout. With the Mod Options Menu, the options can be changed in game. Requires Bingus Shared Loader v19 or newer.",
   "Options": [
     {
       "Name": "Tank Top Speed",
-      "Description": "A faster Bastion and Maelstrom: more engine speed and pulling power, so a higher top speed and quicker acceleration, forward and in reverse, without the extra pull tipping the hull back more than the game's own. Changes the tank you are in, at once.",
+      "Description": "A higher top speed and quicker acceleration for the Bastion and Maelstrom, forward and in reverse. Changes the tank you're in at once.",
       "Image": "options/tank_speed.png",
       "SubOptions": [
         {
@@ -41,7 +41,7 @@
     },
     {
       "Name": "Tank Engine Torque",
-      "Description": "More engine torque for the Bastion and Maelstrom: quicker off the line and up slopes, without the extra pull tipping the hull back more than the game's own. Top speed is unchanged unless Tank Top Speed is on too (their torque boosts multiply). Changes the tank you are in, at once.",
+      "Description": "More pull off the line and up slopes for the Bastion and Maelstrom. Top speed stays the game's unless Tank Top Speed is on too.",
       "Image": "options/tank_power.png",
       "SubOptions": [
         {
@@ -75,7 +75,7 @@
     },
     {
       "Name": "Tank Grip",
-      "Description": "More track grip for the Bastion and Maelstrom: less sliding on slopes and in turns. Changes the tank you are in, at once.",
+      "Description": "Less sliding on slopes and in turns for the Bastion and Maelstrom.",
       "Image": "options/tank_grip.png",
       "SubOptions": [
         {
@@ -109,7 +109,7 @@
     },
     {
       "Name": "Tank Steering",
-      "Description": "Quicker steering for the Bastion and Maelstrom: they start and stop turning sooner. Changes every tank at once.",
+      "Description": "The Bastion and Maelstrom start and stop turning sooner.",
       "Image": "options/tank_steering.png",
       "SubOptions": [
         {
@@ -140,12 +140,12 @@
     },
     {
       "Name": "Tank Throttle Response",
-      "Description": "Snappier Bastion and Maelstrom: the throttle and brake let go sooner when you release them, and gear changes and switching between forward and reverse wait less. Changes the tanks at once.",
+      "Description": "Snappier throttle, brake and gear changes for the Bastion and Maelstrom.",
       "Image": "options/tank_throttle.png",
       "SubOptions": [
         {
           "Name": "Quick",
-          "Description": "Throttle and brake let go twice as fast; half the pause when changing gear or direction.",
+          "Description": "Twice as fast; half the gear change pause.",
           "Image": "options/sub/throttle_quick.png",
           "Include": [
             "Tank Core",
@@ -165,7 +165,7 @@
         },
         {
           "Name": "Instant",
-          "Description": "The throttle and brake follow your keys at once, and gear and direction changes have no pause.",
+          "Description": "Instant throttle and brake; no gear change pause.",
           "Image": "options/sub/throttle_instant.png",
           "Include": [
             "Tank Core",
@@ -177,7 +177,7 @@
     },
     {
       "Name": "Tank Stability",
-      "Description": "Keeps the Bastion and Maelstrom flat on the ground: downforce presses the tank down harder the faster it goes, so it feels heavy and stays planted over crests and bumps instead of floating. The roll and lean are the game's own. Changes the tank you are in, at once.",
+      "Description": "Downforce keeps the Bastion and Maelstrom planted over crests and bumps instead of floating.",
       "Image": "options/tank_stability.png",
       "SubOptions": [
         {
@@ -210,8 +210,8 @@
       ]
     },
     {
-      "Name": "Tank Collision Damage Boost",
-      "Description": "The faster the Bastion and Maelstrom drive into things, the harder they hit: walls, fences and small buildings break when you ram them at speed instead of stopping the tank dead (the game lets a tank break only what a car breaks). Demolition force 30 when crawling, 35 at half speed, 40 from three-quarter speed up, never more (the game: 25 to 35). Works for the tank you drive (the driver's seat, or the gunner seat with Gunner Drive); nothing runs while you aren't driving one. Can be turned off in game with the Mod Options Menu.",
+      "Name": "Tank Collision Demolition Boost",
+      "Description": "The Bastion and Maelstrom break walls, fences and small buildings when they ram them at speed (demolition force 30 to 40; the game: 25 to 35).",
       "Image": "options/tank_collision_damage.png",
       "Include": [
         "Tank Core",
@@ -220,7 +220,7 @@
     },
     {
       "Name": "Maelstrom Fire Rate",
-      "Description": "Hold reload in the Maelstrom's gun seat to switch its main gun's fire rate on the fly, like other weapons with fire-rate settings: 1200, 1800 (where it starts) or 2400 rounds a minute (the game: 1200 only). Pick it with right click; the tank's guns don't fire while the menu is open. When you close the menu, the new rate pops up next to the gun's ammo bar for a moment. Only the Maelstrom's gun changes. Can be turned off in game with the Mod Options Menu.",
+      "Description": "Hold reload in the Maelstrom's gun seat and right click to pick 1200, 1800 or 2400 rounds a minute (the game: 1200).",
       "Image": "options/maelstrom_fire_rate.png",
       "Include": [
         "Maelstrom Weapons",
@@ -231,7 +231,7 @@
     },
     {
       "Name": "Maelstrom Single Belt",
-      "Description": "The Maelstrom's main gun carries all its ammo on one belt: 2,100 rounds instead of 300, and it never reloads. With Maelstrom Fire Rate, holding reload switches the fire rate instead. Can be turned off in game with the Mod Options Menu.",
+      "Description": "All 2,100 rounds of the Maelstrom's main gun on one belt: it never reloads.",
       "Image": "options/maelstrom_belt.png",
       "Include": [
         "Maelstrom Weapons",
@@ -240,7 +240,7 @@
     },
     {
       "Name": "Tank MBT Turrets",
-      "Description": "The Bastion and Maelstrom turrets turn like a main battle tank's: all the way round, or half way. The Maelstrom's missile pods and smoke launchers turn with it. The turret sits where the game has it; Tank Turret Position in the Mod Options Menu can center it on the hull. The turret wears your camo and shows damage like the rest of the tank. Only you see the turning turrets.",
+      "Description": "The Bastion and Maelstrom turrets turn all the way round, or half way, like a main battle tank's. Only you see them turn.",
       "Image": "options/mbt_turrets.png",
       "SubOptions": [
         {
@@ -249,32 +249,95 @@
           "Include": [
             "Turret Core",
             "MBT Turrets",
-            "Turret Models",
-            "Turret Hit Areas"
+            "Turret Models Maelstrom",
+            "Turret Models Bastion",
+            "Turret Hit Areas Maelstrom",
+            "Turret Hit Areas Bastion"
           ],
           "Image": "options/sub/mbt_360.png"
         },
         {
           "Name": "180 (90 each side)",
-          "Description": "The turret turns up to 90 degrees either side of straight ahead; the gunner view stops where the gun does.",
+          "Description": "Up to 90 degrees either side.",
           "Include": [
             "Turret Core",
             "MBT Turrets 180",
-            "Turret Models",
-            "Turret Hit Areas"
+            "Turret Models Maelstrom",
+            "Turret Models Bastion",
+            "Turret Hit Areas Maelstrom",
+            "Turret Hit Areas Bastion"
           ],
           "Image": "options/sub/mbt_180.png"
         }
       ]
     },
     {
+      "Name": "Tank MBT Turrets for Remodels",
+      "Description": "Only for a mod that remodels the Bastion or Maelstrom (skins work with Tank MBT Turrets as is). To use it: turn Tank MBT Turrets off, pick the choice for your remodel, then Purge & Deploy. Not every remodel mod has been tested with it.",
+      "Image": "options/mbt_model_mods.png",
+      "SubOptions": [
+        {
+          "Name": "Off",
+          "Description": "No remodel: Tank MBT Turrets is used.",
+          "Include": [],
+          "Image": "options/sub/mm_off.png"
+        },
+        {
+          "Name": "Bastion Remodel 360 Turret",
+          "Description": "A Bastion remodel made for this mod's turning turret: both turrets turn.",
+          "Include": [
+            "Turret Core",
+            "Model Mods 360",
+            "Turret Models Maelstrom",
+            "Turret Hit Areas Maelstrom",
+            "Turret Hit Areas Bastion"
+          ],
+          "Image": "options/sub/mm_360_bastion_remodel.png"
+        },
+        {
+          "Name": "Bastion Remodel Vanilla Turret",
+          "Description": "A Bastion remodel with the game's turret: it stays as is, and only the Maelstrom's turret turns.",
+          "Include": [
+            "Turret Core",
+            "Model Mods 360 Maelstrom",
+            "Turret Models Maelstrom",
+            "Turret Hit Areas Maelstrom"
+          ],
+          "Image": "options/sub/mm_360_bastion_untouched.png"
+        },
+        {
+          "Name": "Maelstrom Remodel 360 Turret",
+          "Description": "A Maelstrom remodel made for this mod's turning turret: both turrets turn.",
+          "Include": [
+            "Turret Core",
+            "Model Mods 360",
+            "Turret Models Bastion",
+            "Turret Hit Areas Maelstrom",
+            "Turret Hit Areas Bastion"
+          ],
+          "Image": "options/sub/mm_360_maelstrom_remodel.png"
+        },
+        {
+          "Name": "Maelstrom Remodel Vanilla Turret",
+          "Description": "A Maelstrom remodel with the game's turret: it stays as is, and only the Bastion's turret turns.",
+          "Include": [
+            "Turret Core",
+            "Model Mods 360 Bastion",
+            "Turret Models Bastion",
+            "Turret Hit Areas Bastion"
+          ],
+          "Image": "options/sub/mm_360_maelstrom_untouched.png"
+        }
+      ]
+    },
+    {
       "Name": "Tank Suspension",
-      "Description": "Longer road wheel travel for the Bastion and Maelstrom: the wheels drop into dips so the tracks stay on the ground, firmer damping settles the hull quickly after rocks and bumps, and a lower center of gravity makes them harder to tip. The tanks ride 0.1 m higher than in the game, keep their full steering angle up to a slightly higher speed for tighter turns when driving fast, and damp the hull's turning so a lean builds more slowly (tanks called in after a change).",
+      "Description": "Longer wheel travel and firmer damping keep the tracks on the ground and the hull calm over bumps. Applies to tanks called in after a change.",
       "Image": "options/tank_suspension.png",
       "SubOptions": [
         {
           "Name": "Balanced",
-          "Description": "Half a meter of wheel travel, damped about half again as much as the game's; the center of gravity as high off the ground as in the game. Light turn damping.",
+          "Description": "Half a meter of travel, damped half again as much as the game's.",
           "Include": [
             "Suspension Balanced"
           ],
@@ -282,7 +345,7 @@
         },
         {
           "Name": "Planted",
-          "Description": "A little less travel, slightly firmer springs, about twice the game's damping and the lowest center of gravity: the calmest ride, very hard to tip. Firmer turn damping.",
+          "Description": "Firmer, about twice the game's damping and the lowest center of gravity: the calmest ride.",
           "Include": [
             "Suspension Planted"
           ],
@@ -292,7 +355,7 @@
     },
     {
       "Name": "Tank Turret Traverse",
-      "Description": "How fast the Bastion and Maelstrom turrets turn (the game: 25 degrees a second), and the gunner view's left/right turning with them. Works with or without MBT Turrets.",
+      "Description": "How fast the Bastion and Maelstrom turrets turn side to side (the game: 25 degrees a second).",
       "Image": "options/turret_traverse.png",
       "SubOptions": [
         {
@@ -326,7 +389,7 @@
     },
     {
       "Name": "Tank Turret Elevation",
-      "Description": "How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second), and the gunner view's up/down turning with them.",
+      "Description": "How fast the Bastion and Maelstrom guns move up and down (the game: 35 degrees a second).",
       "Image": "options/turret_elevation.png",
       "SubOptions": [
         {
@@ -428,7 +491,7 @@
     },
     {
       "Name": "Tank Autoloader",
-      "Description": "The Bastion and Maelstrom main gun reloads by itself when it runs dry, at the normal reload speed (perks count). You can still reload by hand.",
+      "Description": "The Bastion and Maelstrom main gun reloads by itself when it runs dry.",
       "Image": "options/autoloader.png",
       "Include": [
         "Tank Core",
@@ -437,12 +500,12 @@
     },
     {
       "Name": "Gunner Drive",
-      "Description": "Drive from the gunner seat when the driver seat is empty: your movement keys drive, shift and CTRL change gear, Space is the handbrake and the gun works as normal. F sounds the horn; in the Maelstrom, Mouse 3 pops smoke. On a controller the left stick drives, its click sounds the horn and the right stick click pops smoke. A teammate who takes the wheel drives as normal, and getting out while it rolls brakes it to a stop. With the Mod Bindings Menu you can set your own keys for Forward, Back, Handbrake, Horn and Smoke (controls, tab MODS); a key set there replaces the built-in one. Pick which vehicles.",
+      "Description": "Drive from the gunner seat when the driver seat is empty: movement keys or the left stick drive, shift and CTRL change gear, Space is the handbrake, F the horn, Mouse 3 the Maelstrom's smoke. Online, press forward or back to get the tank back after someone else drove.",
       "Image": "options/gunner_drive.png",
       "SubOptions": [
         {
           "Name": "Tanks and FRV",
-          "Description": "Both the tanks and the M-102 FRV.",
+          "Description": "Both the tanks and the M-102 and M-104 FRVs.",
           "Include": [
             "Tank Core",
             "Gunner Drive",
@@ -461,7 +524,7 @@
         },
         {
           "Name": "FRV",
-          "Description": "The M-102 FRV, from its gunner seat.",
+          "Description": "The M-102 and M-104 FRVs, from their gunner seats.",
           "Include": [
             "Tank Core",
             "FRV Gunner Drive"
@@ -472,7 +535,7 @@
     },
     {
       "Name": "Driver Panel",
-      "Description": "Needs Gunner Drive. While you drive from the gunner seat, a panel like the driver's own HUD shows the gear, rpm, speed, fuel and the Maelstrom's smoke rounds. It only shows while you are the one driving: never when a teammate sits in the driver seat or another player's game runs the vehicle. Only you see it. With the Mod Options Menu you can turn it off in game.",
+      "Description": "Needs Gunner Drive. Shows the gear, rpm, speed, fuel and smoke rounds while you drive from the gunner seat. Only you see it.",
       "Image": "options/driver_panel.png",
       "Include": [
         "Tank Core",
@@ -481,7 +544,7 @@
     },
     {
       "Name": "Tank Gunner Camera",
-      "Description": "Puts the Bastion and Maelstrom gunner camera lower and further back so you see more around the tank. It stays behind the turret as it turns. The pick is where the camera starts: scroll the mouse wheel to move it closer or further back, and from the closest point scroll on to zoom in on the crosshair (shown as x2.4 and so on). With the Mod Bindings Menu you can also set Zoom In / Zoom Out keys, for a controller too.",
+      "Description": "Puts the tanks' gunner camera lower and further back. Scroll to move it, and from the closest point scroll on to zoom in.",
       "Image": "options/gunner_camera.png",
       "SubOptions": [
         {
@@ -524,12 +587,12 @@
     },
     {
       "Name": "FRV Stability",
-      "Description": "Keeps the M-102, M-103 and M-104 FRVs on their wheels over rough ground, jumps and hard turns: a firmer front, firmer damping, a lower center of mass, more grip and weight, and a little more ground clearance. Engine and steering stay the game's own.",
+      "Description": "Keeps the M-102, M-103 and M-104 FRVs on their wheels over rough ground, jumps and hard turns.",
       "Image": "options/frv_stability.png",
       "SubOptions": [
         {
           "Name": "Stable",
-          "Description": "Stays upright over rough ground, jumps and hard turns, with extra tire grip; 30% heavier.",
+          "Description": "Stays upright, with extra tire grip; 30% heavier.",
           "Include": [
             "FRV Stable"
           ],
@@ -537,7 +600,7 @@
         },
         {
           "Name": "Mild",
-          "Description": "About half the change, with a little more grip: still lively, far less likely to roll; 17% heavier.",
+          "Description": "About half the change; 17% heavier.",
           "Include": [
             "FRV Mild"
           ],
@@ -545,7 +608,7 @@
         },
         {
           "Name": "Planted",
-          "Description": "The lowest center of mass, the firmest damping and the most grip, 45% heavier: very hard to tip.",
+          "Description": "The most grip and the lowest center of mass; 45% heavier.",
           "Include": [
             "FRV Planted"
           ],
@@ -555,7 +618,7 @@
     },
     {
       "Name": "FRV Run-Flat Tires",
-      "Description": "The M-102 and M-103 FRVs' tires never pop, and the tires of the FRV you ride in stay at full health (no damage on the Vehicle Indicator). Works when you host or play alone: in someone else's game, their game decides. Can be turned off in game with the Mod Options Menu.",
+      "Description": "The M-102, M-103 and M-104 FRVs' tires never pop. Works when you host or play alone.",
       "Image": "options/frv_run_flat.png",
       "Include": [
         "Tank Core",
@@ -564,7 +627,7 @@
     },
     {
       "Name": "Vehicle Indicator",
-      "Description": "A small outline of your vehicle shows where the gun points compared to the hull, colored by health (blue to red). Works in the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV, in any seat; the FRVs' tires each show their own health and go clear when popped, and the M-103's turret gets an ammo bar. Only you see it.",
+      "Description": "A small outline shows where your gun points and your vehicle's health, the FRVs' tires, and in the driver seat the gunner's ammo. Only you see it.",
       "Image": "options/turret_indicator.png",
       "Include": [
         "Tank Core",
@@ -574,7 +637,7 @@
     },
     {
       "Name": "Vehicle Loadout",
-      "Description": "Pick more than one tank, exosuit or FRV in your stratagem loadout: the game normally puts a second one in the first one's slot. Can be turned off in game with the Mod Options Menu.",
+      "Description": "Pick more than one tank, exosuit or FRV in your loadout.",
       "Image": "options/vehicle_loadout.png",
       "Include": [
         "Vehicle Loadout"
