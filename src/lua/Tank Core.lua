@@ -1,8 +1,9 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_drive
--- Armored Overhaul 3.6.2 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
+-- Armored Overhaul 3.7.0 - Tank Core: reads which vehicle seat you sit in (published for the Vehicle
 -- Indicator, the Gunner Camera and the driver panel) and, with the Gunner Drive option's flags installed, lets you
--- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 FRV from the gunner seat when nobody is driving; also
--- the horn, the Maelstrom's smoke, the Autoloader and the vehicle's health. Written from scratch.
+-- drive the TD-220 Bastion, the TD-110 Maelstrom and the M-102 and M-104 FRVs from the gunner seat when nobody is driving;
+-- also the horn, the Maelstrom's smoke, the Autoloader, the vehicle's health and, in the driver seat, the gunner's ammo.
+-- Written from scratch.
 --
 -- You stay the gunner the whole time (gunner HUD, turret camera, aiming and fire keys are the game's own).
 -- While you sit alone in a supported gunner seat, this addon copies your driving keys into the vehicle's
@@ -29,10 +30,14 @@ local TESTER = false
 -- DRIVEN names every kind a drive can happen in.
 local VEHICLES = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
 local FRV_KIND = 0x1A
-local DRIVEN = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom', [FRV_KIND] = 'FRV'}
+-- (3.7.0) the M-104 Incinerator FRV (0x1C: driver seat 0, passenger 1, gunner 2, its flamethrower on the gunner seat's
+-- "gun" mount; from the game's seat tables, game.dll+0x11957C0 / +0x119A2A0) is driven like the M-102. Not tested in
+-- game: the M-104 isn't in the game now.
+local DRIVEN = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom', [FRV_KIND] = 'FRV', [0x1C] = 'M-104 Incinerator FRV'}
 -- (2.1 Test 15) the FRVs published for the Vehicle Indicator (any seat): the M-102 (0x1A) and the M-103 Supply FRV
--- (0x1B, found in Test 13; it has the M-102's four 350 tires at the same place). The M-104 is not in the game now.
-local FRV_KINDS = {[FRV_KIND] = 'FRV', [0x1B] = 'M-103 Supply FRV'}
+-- (0x1B, found in Test 13; it has the M-102's four 350 tires at the same place). (3.7.0) The M-104 (0x1C): the same
+-- four tires at the same place, by the same names, with 520 health each (the 3.7.0 Test 11 tester log).
+local FRV_KINDS = {[FRV_KIND] = 'FRV', [0x1B] = 'M-103 Supply FRV', [0x1C] = 'M-104 Incinerator FRV'}
 local GUNNER, DRIVER_ROLES = 2, {[1] = true, [4] = true}
 -- The options' flag addons: Gunner Drive (tanks) and FRV Gunner Drive. A seat kind is driven when its option is on.
 -- (3.0) With the Mod Options Menu installed, the Gunner Drive and Autoloader options can be changed in game (menu_opts).
@@ -42,7 +47,7 @@ local function frv_drive_on() return rawget(_G, 'ArmoredOverhaulFRVDriveOn') == 
 local drive_available = true     -- (3.1.1 review) false when this game version's driving code wasn't found (see resolve_globals)
 local function drive_wanted(kind)
     if not drive_available then return false end
-    if kind == FRV_KIND then return frv_drive_on() end
+    if FRV_KINDS[kind] then return DRIVEN[kind] ~= nil and frv_drive_on() end     -- (the FRVs with a gunner seat)
     return VEHICLES[kind] ~= nil and tank_drive_on()
 end
 -- The seat kinds whose rows are read: the tanks and the FRVs, in any seat (the Vehicle Indicator). (2.1 review) Test
@@ -190,8 +195,20 @@ SITES.horn = {rva = 0x70E7B0, anchor_at = 36, anchor_len = 20, pattern = [[41 56
 -- main-gun lookup), for smoke on any game build
 SITES.release = {rva = 0x786DF0, anchor_at = 18, anchor_len = 33, pattern = [[40 53 57 41 54 41 57 48 83 EC 28 44 8B 0D ?? ?? ?? ?? 45 33 D2 48 89 6C 24 58 48 8B F9 48 89 74 24 60 4C 89 6C 24 68 4C 89 74 24 20 45 8B E0 41 3B D1 74 ?? 44 8B 59 38 45 8B C2 8B 59 40 0F AF DA 45 8D 73 FF 45 85 DB 74 ?? 48 8B 71 30 8B 69 3C 41 8B C6 41 8D 0C 18 48 23 C8 8B 04 CE 48 8D 0C CE]]}
 SITES.guns = {rva = 0x77E8C0, anchor_at = 69, anchor_len = 31, pattern = [[48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 41 56 41 57 48 83 EC 20 8B 05 ?? ?? ?? ?? 33 F6 8B DA 3B D0 74 ?? 48 8B 0D ?? ?? ?? ?? 44 8B C6 44 8B 49 30 44 8B 59 38 44 0F AF DB 45 8D 71 FF 45 85 C9 74 ?? 48 8B 79 28 8B 69 34 0F 1F 40 00 41 8B CE 43 8D 14 18 48 23 D1 8B 0C D7 4C 8D 14 D7 3B CD 74 ?? 3B CB 74 ?? 41 FF C0 45 3B C1 72 ?? EB ?? 3B CB 75 ?? 41 83 7A 04 FF 0F 85 ?? ?? ?? ??]]}
+-- (3.7.0) Take back: in an online game the tank is run by the game of whoever sat in its driver seat last, and stays
+-- with them after they get out, so Gunner Drive's input did nothing until you took the driver seat yourself. The
+-- game's own seat code hands a vehicle's parts to a new driver: a part its game doesn't run is asked of the host
+-- (a request the host's game carries out for any player). These two places are that code: the entity's network id
+-- look-up, the network manager (your id and the host's at the offsets its code reads), the request sent to the host,
+-- and the entity look-up whose flag at +0x14 bit 0 says your game runs it.
+SITES.takeback = {rva = 0x6358E7, anchor_at = 58, anchor_len = 31, pattern = [[E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 8B D0 4C 8B C5 48 8B 89 ?? ?? ?? ?? E8 ?? ?? ?? ?? EB ?? E8 ?? ?? ?? ?? 44 8B F8 3D FF 7F 00 00 75 ?? 49 8B EE EB ?? 48 8B 0D ?? ?? ?? ?? 48 8B 41 40 48 8B A8 60 01 00 00 48 8B 41 38 FF 50 08 48 8B C8 41 8B D7 FF D5 48 8B E8 8B CF E8 ?? ?? ?? ?? 48 8B 0D ?? ?? ?? ?? 8B D0 4C 8B C5 48 8B 89 ?? ?? ?? ?? E8 ?? ?? ?? ?? 49 FF C4 49 83 ED 01 0F 85 ?? ?? ?? ??]]}
+-- (3.7.0 Test 13) the reload code's second spare-magazine table (count at +0 of 12-byte records at +0x58, its map at
+-- +0x28): the game takes a spare from it first and from the ammo table's (+0x50) only for a weapon not in it. The M-102's
+-- gun keeps its spare boxes here (the ammo table's record said 0: "M-102 has spare reloads").
+SITES.spares = {rva = 0x77723E, anchor_at = 7, anchor_len = 25, pattern = [[4C 8B 35 ?? ?? ?? ?? 41 8B CC 45 8B 46 30 45 8B 5E 38 41 8B F3 0F AF F3 41 8D 68 FF 45 85 C0 74 ?? 4D 8B 4E 28 45 8B 56 34]]}
+SITES.owned = {rva = 0x635990, anchor_at = 34, anchor_len = 6, pattern = [[44 8B C3 48 8D 54 24 58 E8 ?? ?? ?? ?? 8B 4C 24 58 E8 ?? ?? ?? ?? 4C 8B F8 48 85 C0 0F 84 ?? ?? ?? ?? F6 40 14 01 8B CE 74 ?? E8 ?? ?? ?? ??]]}
 local EXTRA_ORDER = {'engine', 'layout', 'gearread', 'component', 'selector', 'uifont', 'health', 'reload', 'ammo', 'trigger', 'horn',
-                     'release', 'guns'}
+                     'release', 'guns', 'takeback', 'owned', 'spares'}
 local ALL_ORDER = {}
 for _, n in ipairs(TC.SITE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
 for _, n in ipairs(TC.DRIVE_ORDER) do ALL_ORDER[#ALL_ORDER + 1] = n end
@@ -217,12 +234,12 @@ local BLOCK_BITS = {0x21, 0x24, 64 + 9}   -- driver-code input tags and the UI-h
 
 -- ------------------------------------------------------------------------------------------ state + loader
 -- (3.0.1 review) time: the game time in seconds (see tick), for the waits that must not depend on the frame rate
-local S = {version = '3.6.2', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
+local S = {version = '3.7.0', status = 'starting', phase = 'start', locate = 'pending', extras = 'pending', frames = 0, polls = 0, time = 0,
            gunner_drive = 'unknown', last_error = 'none',
            reads = 0, page_checks = 0, errors = 0, seat = 'none', vehicle = 'none', verdict = 'none',
            drive_frames = 0, drive_paused = 0, sessions = 0, last_input = 'none',
            local_slot = 'none', game = 'unchecked', response = 'not driven yet', overwritten = 0,
-           options_menu = 'not installed (everything installed is on)', brakes = 'not needed yet'}
+           options_menu = 'not installed (everything installed is on)', brakes = 'not needed yet', takeback = 'not looked for yet', tb_trace = 'none yet', smoke_back = 'not needed yet', gunner_records = 'none yet'}
 rawset(_G, 'ArmoredOverhaulGunnerDrive', S)
 
 -- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
@@ -352,12 +369,12 @@ end
 -- The log is what a user attaches to a bug report: what the addon found in this game build, where you sat and
 -- what it did, and the last error. Tester builds add the counters and per-frame details used during development.
 TC.LOG_MAIN = {'version', 'loader', 'status', 'game', 'locate', 'extras', 'gunner_drive', 'options_menu', 'seat', 'verdict', 'sessions', 'drive_frames',
-    'response', 'overwritten', 'control', 'engine', 'smoke', 'smoke_keys', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'turret_ammo', 'run_flat', 'kinds', 'autoloader', 'reloads', 'fire_rate', 'rate_setting', 'rate_raw', 'rate_menu', 'fire_hold', 'fire_hold_last', 'fire_hold_keys', 'map_seen', 'brakes', 'errors', 'last_error'}
+    'response', 'overwritten', 'control', 'takeback', 'smoke_back', 'engine', 'smoke', 'smoke_keys', 'horn', 'controller', 'bindings', 'bindings_off', 'bindings_used', 'health', 'turret_ammo', 'gunner_ammo', 'run_flat', 'kinds', 'autoloader', 'reloads', 'fire_rate', 'rate_setting', 'rate_raw', 'rate_menu', 'fire_hold', 'fire_hold_last', 'fire_hold_keys', 'map_seen', 'brakes', 'errors', 'last_error'}
 TC.LABELS = {fire_hold = 'Maelstrom guns held while the fire-rate menu is open', fire_hold_last = 'after the last menu', fire_hold_keys = 'keys down as the menu last opened', map_seen = 'the map (gunner seat, for the zoom gate)', map_history = 'the map: the last opens and closes', fire_hold_resets = 'times the game put you back as operator while held', fire_ops = 'Gatling / missile pods operator entries (changes)', fire_hold_moved = 'operator entries found moved at the menu close', fire_hold_healed = 'weapons put back to you after being left with nobody', rate_menu = 'fire rate picked in the menu (read as it closes)', rate_setting = 'fire rate setting (the game\'s, read directly)', rate_menu_log = 'fire-rate menu: the last reads', rate_shown_log = 'fire rate pop-ups: the last 8', input_timeline = 'gunner seat inputs (byte 0 of each action\'s state, changes)', ui_tags = 'input tags at the last zoom (Gunner Camera)', fire_rate = 'Maelstrom gun fire rate (Fire Rate Display)', rate_raw = 'fire rate measurements (rounds a minute, the last 8)', rate_measures = 'fire rate measurements taken', rate_off_choice = 'measurements not near 1200 / 1800 / 2400', rate_changes = 'fire rate changes shown', rate_silent = 'fire rate changes measured without a menu (not shown)', loader = 'mod loader', locate = 'found', options_menu = 'options menu', gunner_drive = 'gunner drive option', seat = 'last vehicle seat', verdict = 'seat check',
                 engine = 'engine (gunner seat)', extras = 'game places found', smoke = 'Maelstrom smoke (Mouse 3, right stick click or a bound key, gunner seat)',
                 sessions = 'times driven from the gunner seat', drive_frames = 'frames driven',
                 response = 'tank answers the throttle', health = 'vehicle health (Vehicle Indicator color)',
-                autoloader = 'autoloader (gunner seat)', horn = 'horn (F, left stick click or a bound key, gunner seat)', controller = 'controller (gunner seat)', bindings = 'key bindings (Mod Bindings Menu)', bindings_off = 'built-in keys turned off (a key is set for them in the Mod Bindings Menu)', bindings_used = 'bound keys used (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', turret_ammo = 'M-103 Supply FRV turret ammo (Vehicle Indicator bar)', run_flat = 'FRV run-flat tires (the FRV you ride in)', smoke_keys = 'Maelstrom smoke key (while driving from the gunner seat)', turret_near = 'ammo-table weapons near the Supply FRV id (offset: rounds)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', brakes = 'braked to a stop as you got out (Gunner Drive)', control = 'who runs the tank (multiplayer)', overwritten = 'driving input replaced by the game (frames)'}
+                autoloader = 'autoloader (gunner seat)', horn = 'horn (F, left stick click or a bound key, gunner seat)', controller = 'controller (gunner seat)', bindings = 'key bindings (Mod Bindings Menu)', bindings_off = 'built-in keys turned off (a key is set for them in the Mod Bindings Menu)', bindings_used = 'bound keys used (gunner seat)', tires = 'last vehicle parts at +0xF8 (FRV tires)', turret_ammo = 'M-103 Supply FRV turret ammo (Vehicle Indicator bar)', gunner_ammo = 'the gunner\'s ammo, driver seat (Vehicle Indicator bar)', run_flat = 'FRV run-flat tires (the FRV you ride in)', smoke_keys = 'Maelstrom smoke key (while driving from the gunner seat)', turret_near = 'ammo-table weapons near the Supply FRV id (offset: rounds)', kinds = 'vehicle kinds you sat in', kinds_others = 'vehicle kinds other players sat in', reloads = 'reloads started by the autoloader (one per empty magazine)', brakes = 'braked to a stop as you got out (Gunner Drive)', control = 'who runs the tank (multiplayer)', takeback = 'tank taken back from another player\'s game (Gunner Drive, online)', smoke_back = 'Maelstrom smoke launcher taken back (online)', overwritten = 'driving input replaced by the game (frames)'}
 -- The last few drive starts and stops (1.2: players report Gunner Drive stops working after someone else drove)
 local history = {}
 local function hist(what)
@@ -390,7 +407,7 @@ local function itrace(what)
     if #input_trace >= 40 then table.remove(input_trace, 1) end
     input_trace[#input_trace + 1] = string.format('f%d %s', S.frames, what)
 end
-TC.LOG_TESTER = {'fire_ops', 'fire_hold_moved', 'fire_hold_healed', 'map_history', 'rate_menu_log', 'rate_shown_log', 'input_timeline', 'fire_hold_resets', 'rate_measures', 'rate_off_choice', 'rate_changes', 'rate_silent', 'pad_buttons', 'tires', 'turret_near', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
+TC.LOG_TESTER = {'tb_trace', 'gunner_records', 'fire_ops', 'fire_hold_moved', 'fire_hold_healed', 'map_history', 'rate_menu_log', 'rate_shown_log', 'input_timeline', 'fire_hold_resets', 'rate_measures', 'rate_off_choice', 'rate_changes', 'rate_silent', 'pad_buttons', 'tires', 'turret_near', 'kinds_others', 'phase', 'vehicle', 'local_slot', 'drive_paused', 'last_input',
     'frames', 'polls', 'reads', 'page_checks', 'gear_read', 'engine_starts', 'hud_font', 'smoke_shots', 'ui_tags'}
 local logged = {}
 -- ---------------------------------------------------------------- Mod Options Menu (3.0)
@@ -613,9 +630,44 @@ local function resolve_extras(rvas)
         if guns then FEAT.smoke = {trig = FEAT.reload.trigger, oper = FEAT.reload.oper, pair = FEAT.reload.mgr,
             ammo = FEAT.reload.ammo, guns = guns, press = game + ok.trigger, release = game + ok.release} end
     end
+    -- (3.7.0) take back (see SITES.takeback): every call in both places must lead to the same look-up, the look-ups
+    -- must start like the game's (sub rsp,8; cmp ecx,[invalid id]) and the request must carry its message's id
+    FEAT.takeback = nil
+    if ok.takeback and ok.owned then
+        local tb, ow = site_bytes('takeback', ok.takeback), site_bytes('owned', ok.owned)
+        local g1, g2, g3 = rip_rva(tb, ok.takeback, 1, 5), rip_rva(tb, ok.takeback, 32, 36), rip_rva(tb, ok.takeback, 90, 94)
+        local g4, rec = rip_rva(ow, ok.owned, 43, 47), rip_rva(ow, ok.owned, 18, 22)
+        local net, net2 = rip_rva(tb, ok.takeback, 8, 12), rip_rva(tb, ok.takeback, 97, 101)
+        local send = rip_rva(tb, ok.takeback, 114, 118)
+        local my_off, host_off = tb and le32(tb, 20), tb and le32(tb, 109)
+        local LOOKUP = '\72\131\236\8\59\13'
+        local sendb = send and fetch_str(game + send, 0x60)
+        if g1 and g1 == g2 and g1 == g3 and g1 == g4 and rec and net and net == net2 and sendb
+            and sendb:find('\185\24\77\155\226', 1, true) and fetch_str(game + g1, 6) == LOOKUP and fetch_str(game + rec, 6) == LOOKUP
+            and my_off and host_off and my_off >= 0x100 and my_off < 0x100000 and host_off >= 0x100 and host_off < 0x100000 then
+            FEAT.takeback = {net = game + net, my_off = my_off, host_off = host_off,
+                goid_of = ffi.cast('uint32_t (*)(uint32_t)', game + g1), record_of = ffi.cast('uint8_t *(*)(uint32_t)', game + rec),
+                send = ffi.cast('void (*)(uint64_t, uint32_t, uint64_t)', game + send)}
+        end
+    end
+    S.takeback = FEAT.takeback and 'not needed yet' or 'off (the game\'s places for it were not found in this game version)'
+    -- (3.7.0 Test 13) the second spare-magazine table, if its decrement is where the code has it (+0x179: mov rcx,
+    -- [r14+0x58]; mov edx, edi; lea r8, [rdx+rdx*2]: 12-byte records)
+    FEAT.spares = nil
+    if ok.spares and fetch_str(game + ok.spares + 0x179, 10) == '\73\139\78\88\139\215\76\141\4\82' then FEAT.spares = global_at('spares', 3, 7) end
+    -- (3.7.0 Test 2) the game's mount look-up (vehicle, mount name -> the weapon on that mount), called by the same seat
+    -- code: (_, &out, vehicle, mount). Its code must load the invalid id first (cmp r8d, [rip] at +0x1E).
+    FEAT.mount = nil
+    if ok.owned then
+        local m = rip_rva(site_bytes('owned', ok.owned), ok.owned, 9, 13)
+        local mb = m and fetch_str(game + m, 0x24)
+        if mb and mb:sub(1, 5) == '\72\137\92\36\8' and mb:sub(0x1F, 0x21) == '\68\59\5' then
+            FEAT.mount = ffi.cast('uint32_t *(*)(void *, uint32_t *, uint32_t, uint32_t)', game + m)
+        end
+    end
     for _, pair in ipairs({{'engine switch', FEAT.engine}, {'instruments', FEAT.panel}, {'gear selector', FEAT.selector},
                            {'HUD font', FEAT.font}, {'tank health', FEAT.health}, {'autoloader', FEAT.reload},
-                           {'horn', FEAT.horn}, {'smoke launcher', FEAT.smoke}, {'Gunner Drive', drive_available}}) do
+                           {'horn', FEAT.horn}, {'smoke launcher', FEAT.smoke}, {'take back', FEAT.takeback}, {'Gunner Drive', drive_available}}) do
         have[#have + 1] = pair[1] .. (pair[2] and ' found' or ' not found')
     end
     if not drive_available then have[#have] = have[#have] .. ' (' .. tostring(drive_missing) .. ': the seat reader only)' end
@@ -635,7 +687,8 @@ local function cache_load(tag)
     -- (2.1 review) 'sites 2': a cache saved by 2.0.1 after a game update lacks the 2.1 places (autoloader, horn),
     -- and taking it would leave them off for good; it is searched again instead
     -- (3.1.1 review) 'sites 3': the smoke places (release, guns) added; an older cache is searched again once
-    if not text:find('^armored overhaul gunner drive sites 3\n' .. tag:gsub('%p', '%%%0') .. '\n') then return nil end
+    -- (3.7.0) 'sites 4': the take-back places added; (Test 13) 'sites 5': the second spare table
+    if not text:find('^armored overhaul gunner drive sites 5\n' .. tag:gsub('%p', '%%%0') .. '\n') then return nil end
     local out = {}
     for k, v in text:gmatch('(%a+)=(%x+)') do out[k] = tonumber(v, 16) end
     return out
@@ -644,7 +697,7 @@ local function cache_save(tag, rvas)
     local path = cache_file()
     local f = path and io and io.open and io.open(path, 'w')
     if not f then return end
-    f:write('armored overhaul gunner drive sites 3\n', tag, '\n')
+    f:write('armored overhaul gunner drive sites 5\n', tag, '\n')
     for _, name in ipairs(ALL_ORDER) do if rvas[name] then f:write(name, '=', string.format('%X', rvas[name]), '\n') end end
     f:close()
 end
@@ -1396,10 +1449,10 @@ S.control = 'no other driver seen'
 rawset(_G, 'ArmoredOverhaulSeat', SEAT_PUB)
 -- (3.6.1 review) the 3.6.1 parts' names in two tables (Lua allows 200 top-level locals; Tank Core was at 190)
 local UI, FIRE = {}, {}
--- (3.6.1, the tester: "the gunner camera zoom shouldnt be active when the map or pause menu is active") Does the game's UI
+-- (3.6.1: "the gunner camera zoom shouldnt be active when the map or pause menu is active") Does the game's UI
 -- hold the input right now (the pause menu, the map: the input tag Gunner Drive pauses for, 64 + 9)? Asked by the Gunner
 -- Camera only when the wheel or a zoom key moved, so it costs nothing otherwise. nil when the player isn't found.
--- (3.6.1 Test 9, the tester again: "Id like to fix the issue of zooming in and out with the tank while a map is open or the
+-- (3.6.1 Test 9: "Id like to fix the issue of zooming in and out with the tank while a map is open or the
 -- game is at the pause menu") Test 3's input tag never showed the menus (Test 6 log: "the UI does not hold the input" at
 -- the last zoom). Now also the game's UI screens (facts from CowboyBingus's Mod Options Menu and Galactic Menu Hotkey
 -- sources): the UI state [game.dll+0x347CE28]: a screen stack at +0x429C (five u32 screen types, then their count; the
@@ -1425,7 +1478,7 @@ UI.screens = function()
     return {depth = depth, types = types, escape = escape}
 end
 -- (poll) the least deep screens seen in this gunner seat: a plain mission's
--- (3.6.1 RC, the tester: "The zoom fix for map and pause menu should be applicable for all of the gunner camera vehicles")
+-- (3.6.1 RC: "The zoom fix for map and pause menu should be applicable for all of the gunner camera vehicles")
 -- the seats whose camera the Gunner Camera zooms: the tanks', the M-102 FRV's gunner seat, the HMG and Anti-Tank
 -- Emplacements (Tank Core's every-seat kind, as the camera reads it)
 UI.zoom_seat = function()
@@ -1502,7 +1555,8 @@ end
 local SMK, smoke, smoke_rounds, keys, field, button_of, pressed, smoke_restore, smoke_frame
 do
 -- (3.1.1 review) the tables and calls come from FEAT.smoke (found by pattern); SMK keeps the constants
-SMK = {kind = 0x2C, restore = 3, retry = 300}   -- (3.0.1 review: restore in seconds)
+SMK = {kind = 0x2C, restore = 3, retry = 300,   -- (3.0.1 review: restore in seconds)
+       mount = 0x409652FC}                         -- (3.7.0 Test 2) the Maelstrom's smoke mount (the driver seat's weapon)
 local NOSMOKE = {}     -- (no smoke places in this game version: every table look-up finds nothing)
 smoke = {id = nil, vehicle = nil, next_find = 0, held = false, active = nil, full = {}, memo = {}, check = 0, rounds_at = 0}
 S.smoke, S.smoke_shots = 'not used yet', 0
@@ -1548,6 +1602,11 @@ end
 local function find_smoke(vehicle, gun)
     local ph, ah, gh = mgr_hdr((FEAT.smoke or NOSMOKE).pair, 0x40), mgr_hdr((FEAT.smoke or NOSMOKE).ammo, 0x50), mgr_hdr((FEAT.smoke or NOSMOKE).guns, 0x40)
     if not ph or not ah or not gh then return nil, 'weapon tables unreadable' end
+    -- (3.7.0 Test 2) the game's own answer first: the weapon on the tank's smoke mount (the mount the driver seat uses),
+    -- so the launcher is found in any tank, yours or another player's; it must have rounds and not be a main gun
+    local okm, m = pcall(TC.mount_of, vehicle, SMK.mount)
+    if okm and m and m ~= gun and map_get(ah, 0x20, m) and not map_get(gh, 0x28, m) then return m, 'the tank\'s smoke mount' end
+    if TESTER then strace('  smoke mount look-up: ' .. (okm and tostring(m) or ('error ' .. tostring(m))), true) end
     local gp, ga = map_get(ph, 0x20, gun), map_get(ah, 0x20, gun)
     if not gp or not ga then return nil, 'your gun is not in the weapon tables' end
     -- (the smoke launcher is registered right after the gun: one place later in both tables. The weapon one place
@@ -1785,7 +1844,7 @@ smoke_frame = function(me, paused)
         write_log(true)
     end
     local down = smoke.id and not paused and smoke_key() or false
-    -- (3.6.0 Test 4) the tester on Test 3: the smoke "doesn't fire" from the gunner seat while driving, and the log had no
+    -- (3.6.0 Test 4) my report on Test 3: the smoke "doesn't fire" from the gunner seat while driving, and the log had no
     -- press at all (smoke launcher found, no key set for Smoke). What the smoke key reads while you drive, for the log:
     -- the middle button's index, how often it was seen held, and how often a held key was not used (input paused: the
     -- game's UI has the input; the launcher not found yet)
@@ -2047,6 +2106,118 @@ local function brake_frame()
     record[BRAKE.handbrake] = 1
 end
 
+-- (3.7.0) Take back. Online, the tank is run by the game of whoever sat in its driver seat last (1.3 finding), and
+-- the game only hands it over when someone takes the driver seat. So when another player drove and got out while you
+-- stayed in the gunner seat, Gunner Drive's input did nothing. Now, while you drive from the gunner seat (nobody in
+-- the driver seat: Gunner Drive stands down otherwise) and press forward or back, a tank your game doesn't run is
+-- asked back from the host, with the same request the game's seat code sends the host for a vehicle part another
+-- player's game runs. Checked every 15 frames; at most 3 requests, 2 s apart, per drive. Nothing is asked in a solo
+-- game, for a tank your game already runs, or while nobody presses a driving key.
+TC.TB = {asks = 0, done = 0, U64P = ffi.typeof('uint64_t *')}
+-- your network id and the host's (uint64 values), or nil when the network manager can't be read (no online game)
+function TC.peers()
+    local T = FEAT.takeback
+    local net = T and fetch_ptr(T.net)
+    if not net or not fetch(net + T.my_off, 8) then return nil end
+    local me = ffi.cast(TC.TB.U64P, mem)[0]
+    if not fetch(net + T.host_off, 8) then return nil end
+    local host = ffi.cast(TC.TB.U64P, mem)[0]
+    if me == 0 or host == 0 then return nil end
+    return host, me
+end
+-- (3.7.0 Test 2) the weapon on a vehicle's mount (by the mount's name hash), from the game's own look-up; nil if none
+TC.TB.out = ffi.new('uint32_t[1]')
+function TC.mount_of(v, mount)
+    if not FEAT.mount then return nil end
+    local out = TC.TB.out
+    out[0] = 0
+    FEAT.mount(nil, out, v, mount)
+    local w = tonumber(out[0])
+    if w == 0 or w == invalid_entity() then return nil end
+    return w
+end
+-- true: your game runs this vehicle (or weapon); false: another player's game does; nil: unknown
+function TC.owned(v)
+    local rec = FEAT.takeback.record_of(v)
+    if rec == nil or not fetch(rec + 0x14, 1) then return nil end
+    return mem[0] % 2 == 1
+end
+-- (3.7.0 Test 2) asks the host for one entity (the tank or its smoke launcher); false if it has no network id
+function TC.ask_host(host, me, e)
+    local goid = FEAT.takeback.goid_of(e)
+    if type(goid) ~= 'number' or goid >= 0x7FFF then return false end
+    FEAT.takeback.send(host, goid, me)
+    TC.TB.asks = TC.TB.asks + 1
+    return true
+end
+function TC.tb_note(what)                       -- (tester) who runs the tank and its smoke launcher, at each change
+    if not TESTER then return end
+    local t = TC.TB.trace or {}; TC.TB.trace = t
+    if #t >= 8 then table.remove(t, 1) end
+    t[#t + 1] = string.format('f%d %s', S.frames, what)
+    S.tb_trace = table.concat(t, ' | ')
+end
+function TC.take_back()
+    if S.frames < (drive.tb_at or 0) then return end
+    drive.tb_at = S.frames + 15
+    local host, me = TC.peers()
+    if not host then drive.owned = nil; return end
+    local owned = TC.owned(drive.vehicle)
+    if owned ~= drive.owned then TC.tb_note(string.format('tank runs here: %s (host: %s)', tostring(owned), host == me and 'you' or 'another player')) end
+    drive.owned = owned
+    if owned == nil then return end
+    -- (Test 2) the Maelstrom's smoke launcher: the game hands it to whoever takes the driver seat, so after another
+    -- player drove it is theirs too; it is asked for with the tank, and whenever the smoke key is held
+    local sm = drive.kind == SMK.kind and smoke.vehicle == drive.vehicle and smoke.id or nil
+    local sm_owned = sm and TC.owned(sm)
+    if sm and sm_owned ~= drive.sm_owned then TC.tb_note('smoke launcher runs here: ' .. tostring(sm_owned)) end
+    drive.sm_owned = sm_owned
+    if owned and drive.tb_asked then
+        local TB = TC.TB
+        TB.done = TB.done + 1
+        local t = S.time - (drive.tb_first or S.time)
+        S.takeback = string.format('%d time(s) (last: the tank came back %.1f s after the first of %d request(s))', TB.done, t, drive.tb_asked)
+        hist(string.format('the tank came back from the other player\'s game (%d request(s), %.1f s)', drive.tb_asked, t))
+        S.control = 'yours (taken back from the other player\'s game)'
+        last_driver[drive.vehicle] = 'me'; drive.remote_noted = nil
+        drive.silent, drive.pushed, drive.engine_tries = nil, 0, 0      -- (the engine may need switching on again)
+        drive.tb_asked, drive.tb_first, drive.tb_gave_up = nil, nil, nil
+    end
+    if sm_owned and drive.sm_asked then
+        hist(string.format('the smoke launcher came back from the other player\'s game (%d request(s))', drive.sm_asked))
+        S.smoke_back = string.format('%d time(s)', (tonumber((S.smoke_back or ''):match('^(%d+)')) or 0) + 1)
+        drive.sm_asked = nil
+    end
+    if owned and sm_owned ~= false then return end
+    local pushing = last.forward and max(last.forward, last.reverse or 0) > 0.5
+    if S.time < (drive.tb_next or 0) then return end
+    local asked = false
+    -- the tank: while you press forward or back
+    if not owned and pushing then
+        if (drive.tb_asked or 0) >= 3 then
+            if not drive.tb_gave_up then
+                drive.tb_gave_up = true
+                S.takeback = 'asked the host 3 times, the tank did not come back (take the driver seat once to get it back)'
+                hist('take back: no answer after 3 requests')
+            end
+        elseif TC.ask_host(host, me, drive.vehicle) then
+            drive.tb_asked, drive.tb_first = (drive.tb_asked or 0) + 1, drive.tb_first or S.time
+            S.takeback = string.format('asked the host for the tank (request %d; %d in all)', drive.tb_asked, TC.TB.asks)
+            S.control = 'another player\'s game runs this tank: asked the host to hand it back'
+            drive.remote_noted = true
+            hist(string.format('asked the host to hand the tank back (request %d)', drive.tb_asked))
+            asked = true
+        end
+    end
+    -- the smoke launcher: with the tank's request, or while the smoke key is held
+    if sm_owned == false and (asked or pushing or smoke.held) and (drive.sm_asked or 0) < 3 and TC.ask_host(host, me, sm) then
+        drive.sm_asked = (drive.sm_asked or 0) + 1
+        hist(string.format('asked the host to hand the smoke launcher back (request %d)', drive.sm_asked))
+        asked = true
+    end
+    if asked then drive.tb_next = S.time + 2 end
+end
+
 local function drive_frame()
     local record, index, hdr = driver_record(drive.vehicle)   -- (on failure `index` is the reason)
     if not record then
@@ -2078,11 +2249,23 @@ local function drive_frame()
             if SEAT_PUB.smoke then smoke.full[drive.vehicle] = max(smoke.full[drive.vehicle] or 0, SEAT_PUB.smoke); smoke.full_any = true end
             SEAT_PUB.smoke_full = smoke.full[drive.vehicle]
         end
+        -- (3.7.0) take back a tank another player's game runs (see TC.take_back); an error turns it off for this drive
+        if FEAT.takeback and not drive.tb_off then
+            local okt, terr = pcall(TC.take_back)
+            if not okt then        -- (3.7.0 review: and the last answer forgotten, so the panel goes back to the old guess)
+                drive.tb_off, drive.owned = true, nil
+                S.errors = S.errors + 1; S.last_error = 'take back: ' .. tostring(terr); S.takeback = 'off after an error'
+            end
+        end
         -- (1.3) another player drove this tank last (or it doesn't answer your throttle): shown on the driver panel
-        SEAT_PUB.remote = last_driver[drive.vehicle] == 'other' or (drive.silent == true and not drive.answered)
+        -- (3.7.0) online, whose game runs the tank is read directly (drive.owned) when the game's places were found
+        if drive.owned ~= nil then SEAT_PUB.remote = not drive.owned
+        else SEAT_PUB.remote = last_driver[drive.vehicle] == 'other' or (drive.silent == true and not drive.answered) end
         if SEAT_PUB.remote and not drive.remote_noted then
             drive.remote_noted = true
-            S.control = 'another player\'s game runs this tank (they drove it last): take the driver seat once to get it back'
+            S.control = FEAT.takeback and drive.owned == false
+                and 'another player\'s game runs this tank (they drove it last): press forward or back to ask the host for it'
+                or 'another player\'s game runs this tank (they drove it last): take the driver seat once to get it back'
         end
         if read_instruments(index, hdr, SEAT_PUB) then
             if not drive.sel_check or S.frames >= drive.sel_check then drive.sel_at, drive.sel_check = selector_at(drive.vehicle), S.frames + 60 end   -- (3.0 review: a miss waits too)
@@ -2299,12 +2482,12 @@ end
 -- every RT.span seconds of steady fire is one measurement, taken as 1200, 1800 or 2400 when within RT.within of one
 -- (the three choices Fire Rate sets: the game's 1200 x1, x1.5, x2). Published as SEAT_PUB.rate_rpm; rate_seq goes up
 -- when the rate shown changes (since 3.6.2 Test 2 only for a choice made in the menu, see below), which pops it up.
--- (3.6.2 Test 1, the tester: "the RPM counter is coming on randomly and cycling as im just shooting the gun") 3.6.1 took a
+-- (3.6.2 Test 1: "the RPM counter is coming on randomly and cycling as im just shooting the gun") 3.6.1 took a
 -- burst as one while the gun stopped for less than RT.gap (0.25 s), so a quick let-go and the spin-up after it went into a
--- measurement (1328 in the tester's log, taken as 1200: popped, then 1800 popped back at the next one). Now a stop longer
+-- measurement (1328 in my log, taken as 1200: popped, then 1800 popped back at the next one). Now a stop longer
 -- than RT.still (or 2.5 frames, at a low frame rate) starts the burst over (the spin-up left out again), a measurement
 -- counts only within RT.within (8%) of a choice, and a new rate only after RT.agree measurements in a row agree on it.
--- (3.6.2 Test 2, the tester: "the firing rate should ONLY come up after selecting a fire rate") Measurements no longer pop
+-- (3.6.2 Test 2: "the firing rate should ONLY come up after selecting a fire rate") Measurements no longer pop
 -- the rate up: it pops only as the menu closes on a new choice. They keep the gun's rate known (log, and what the menu
 -- compares with), and stand in only for a menu whose choice wasn't read: the first measured rate within RT.armed
 -- seconds of that menu's close (while the read hasn't found a change, or after it found none) pops up if it differs.
@@ -2380,11 +2563,11 @@ local function mr_search()
     end
     return cands, nblk
 end
--- (3.6.2 Test 3, the tester: "The rate should pop up from controller too. Is there a way to just find where the fire rate
+-- (3.6.2 Test 3: "The rate should pop up from controller too. Is there a way to just find where the fire rate
 -- setting is located instead of tracking through the menu") It is looked for as you sit in a Maelstrom gunner seat (no
 -- menu needed): exactly one place = the gun's setting, read once a poll from then on (mr.known). Its value as you sit is
 -- the gun's rate (nothing shown); a change pops up as the menu closes, or (a controller, whose menu isn't followed) once
--- it has held for RW.steady seconds (the last of several clicks). Several places (the tester's Test 3 log: 4, two of them,
+-- it has held for RW.steady seconds (the last of several clicks). Several places (my Test 3 log: 4, two of them,
 -- one in each block, changing together as the menu closed; the tank you sat in before, another player's Maelstrom): up
 -- to RW.most are read each poll; the one that changes alone, or the copies that change together to the same rate, are
 -- yours (taken, and the change pops up as above), and those that don't hold the rate your bursts measure are dropped (one
@@ -2463,7 +2646,7 @@ local function watch_rate()
     if c ~= (rate.last[rate.gun] or RT.start) then rate_show(c, 'the setting changed') end
 end
 -- (3.6.1 Test 16) Test 15: each right click in the menu moves the choice, and the place follows each one; the first change
--- was taken, so two clicks showed the wrong rate until a burst measured the right one (the tester: "switching between
+-- was taken, so two clicks showed the wrong rate until a burst measured the right one ("switching between
 -- two values"). The rate shown is now the place's value as the menu closes (the last click), if it differs from the open.
 local function menu_rate()
     local open = S.fire_menu_open == true
@@ -2614,7 +2797,7 @@ FIRE.rate_tick = function()
 end
 end
 -- ------------------------------------------------------------------------------------------ fire held off (3.6.1)
--- (3.6.1 Tests 6-8, the tester: "on a Primary rifle, if you hold reload, the context menu comes up and you can left click
+-- (3.6.1 Tests 6-8: "on a Primary rifle, if you hold reload, the context menu comes up and you can left click
 -- and right click and its not firing or aiming in during it. Can we accomplish the same thing on the maelstrom") On foot
 -- the game keeps your weapon from firing while its hold-reload menu is open; in a vehicle seat the guns answer the
 -- vehicle's own fire actions, which it doesn't hold back. Test 6 took the keys off those actions in the game's live
@@ -2783,7 +2966,7 @@ local function menu_open(owner)
 end
 -- (3.6.1 Test 12) the map, for ui_input (see UI.map): every frame in a zooming gunner seat on a build vouched for
 -- (3.6.1 Test 13) Test 12 counted Map down past its first frame as a hold, so a toggle-mode map's ordinary tap (Map down a
--- few frames) closed it again at the key's release (the tester: "camera still scrolls with map open"; log: "closed (hold)", Map
+-- few frames) closed it again at the key's release ("camera still scrolls with map open"; log: "closed (hold)", Map
 -- up at every zoom). A press is now judged by how long it lasts: Map (or a key down at its press) held 0.35 s or more = a
 -- hold (open until let go); let go sooner = a toggle (open until the next press, Esc, leaving the seat, or 120 s).
 S.map_seen = 'not opened yet'
@@ -2856,7 +3039,7 @@ FIRE.map_tick = function()
     if e and key_down(k, e) then UI.map.open = false; map_note('closed (Esc)'); return end
     if S.time - UI.map.since > MAP_LONGEST then UI.map.open = false; map_note('closed (120 s without a press)') end
 end
--- (3.6.1 Test 15, the tester: "the missle launcher isnt working though"; Test 14 log: the last menu took only the Gatling, so the
+-- (3.6.1 Test 15: "the missle launcher isnt working though"; Test 14 log: the last menu took only the Gatling, so the
 -- missile pods' entry already read someone other than you as it opened). A weapon of yours whose entry this addon set to
 -- nobody, read as nobody for 1 s with no menu open, gets you back as its operator (counted). Tester: every change of
 -- the two entries, with the frame and whether the menu was open.
@@ -2961,7 +3144,7 @@ end
 -- way the game's own driver HUD reads it (see SITES.health), every 15 frames while you sit in a supported vehicle.
 -- (2.1) The FRV's tires come from the same read of its health record (2.1 review: they were a second look-up): one
 -- health int per damageable part from +0xF8; the first four are the tires (front left, front right, rear left, rear
--- right, 350 each on the M-102 and M-103), and the byte at +0x20 has a bit per part (2k+1 for part k) the game sets when
+-- right, 350 each on the M-102 and M-103, 520 on the M-104), and the byte at +0x20 has a bit per part (2k+1 for part k) the game sets when
 -- the part is destroyed. Found in 2.1.0 Test 12 by shooting the tires out one at a time. Published as shares of full
 -- health, -1 for a popped tire.
 S.health, S.tires, S.run_flat = 'not read yet', 'not read yet', 'not in an FRV yet'
@@ -2973,6 +3156,7 @@ local read_tires, publish_health
 do
     local health_memo = {}
     local TIRES = {at = 0xF8, flags = 0x20, full = 350, size = 0x108}
+    local TIRE_FULL = {[0x1C] = 520}           -- (3.7.0) the M-104's tires (the M-102's and M-103's: TIRES.full)
     local tire_top = {}
     local function signed(v) return v >= 0x80000000 and v - TWO32 or v end
     -- the vehicle's records in the health table: current (0x1B8 bytes) and maximum (0x1C), or nil and why
@@ -2992,15 +3176,16 @@ do
             signed(mem_u32(TIRES.at + 8)), signed(mem_u32(TIRES.at + 12)), mem[TIRES.flags])
     end
     -- the tires from the record now in `mem` (fetched with TIRES.size bytes)
-    local function parse_tires(vehicle)
+    local function parse_tires(vehicle, kind)
         local t, flags = SEAT_PUB.tires, mem[TIRES.flags]
         if tire_top.vehicle ~= vehicle then tire_top = {vehicle = vehicle} end
+        local full = TIRE_FULL[kind] or TIRES.full
         for k = 0, 3 do
             local v = signed(mem_u32(TIRES.at + 4 * k))
             if v < 0 or v > 100000 then t[k + 1] = nil
             elseif v == 0 or floor(flags / 2 ^ (2 * k + 1)) % 2 == 1 then t[k + 1] = -1
             else
-                tire_top[k] = max(tire_top[k] or TIRES.full, v)
+                tire_top[k] = max(tire_top[k] or full, v)
                 t[k + 1] = v / tire_top[k]
             end
         end
@@ -3020,7 +3205,7 @@ do
     local MEMU32 = ffi.cast(U32P, mem)
     -- (3.6.0 review) only an FRV the option set, up to that FRV's own tire maximum (ArmoredOverhaulRunFlat.set: name ->
     -- maximum; Test 13 filled any FRV to 350, one the option had left alone too)
-    local RUN_FLAT_NAMES = {[FRV_KIND] = 'M-102', [0x1B] = 'M-103'}
+    local RUN_FLAT_NAMES = {[FRV_KIND] = 'M-102', [0x1B] = 'M-103', [0x1C] = 'M-104'}
     local function run_flat(rec, vehicle, kind)
         local RF = rawget(_G, 'ArmoredOverhaulRunFlat')
         if type(RF) ~= 'table' or RF.on ~= true then
@@ -3059,7 +3244,7 @@ do
         if not rec then return nil, top_at end
         if not fetch(rec, tires and TIRES.size or 0x18) then return nil, 'health unreadable' end
         local cur = signed(mem_u32(0x14))
-        if tires then run_flat(rec, vehicle, kind); parse_tires(vehicle) end
+        if tires then run_flat(rec, vehicle, kind); parse_tires(vehicle, kind) end
         local top = fetch_u32(top_at + 0x14)
         if not top then return nil, 'health unreadable' end
         top = signed(top)
@@ -3108,8 +3293,64 @@ do
         if not turret.entity then return nil, 'turret not found (not at the FRV\'s id +1, and none of the ids near it holds 9-120 rounds)' end
         return turret_rounds(ah, turret.entity, turret.memo)
     end
+    -- (3.7.0) The gunner's ammo for the driver ("if you are driving in the driver seat, you know how much ammo the
+    -- gunner has left"; tanks and FRVs). The gunner seat's main gun is the weapon on the gunner seat's mount (the game's
+    -- own mount look-up, FEAT.mount: the tanks' 0xCB79FA57, the FRVs' "gun"); its rounds come from the ammo table as
+    -- the Supply FRV turret's do, and its spare magazines from the table's second array (+0x50, 12-byte records, the
+    -- count at +0: what the game's reload code takes one from, game.dll+0x7768F0). Left = rounds + spares x the
+    -- magazine. Full = the gun's own (the game's weapon data: Bastion cannon 1 + 30 shells; Maelstrom 300 x 7 = 2,100,
+    -- the same with Single Belt; M-102 MG-206 100 x 5; M-104 flamethrower 800), or more if more is ever seen.
+    local GUNNER_GUN = {[0x2B] = {mount = 0xCB79FA57, mag = 1, full = 31}, [0x2C] = {mount = 0xCB79FA57, mag = 300, full = 2100},
+                        [0x1A] = {mount = 0x23CC0657, mag = 100, full = 500}, [0x1C] = {mount = 0x23CC0657, mag = 800, full = 800}}
+    local gunner = {memo = {}}
+    S.gunner_ammo = 'not in a driver seat yet'
+    local function read_gunner_ammo(vehicle, kind)
+        local F = FEAT.reload or FEAT.smoke
+        if not F then return nil, 'not available in this game version' end
+        if not FEAT.mount then return nil, 'the game\'s mount look-up was not found in this game version' end
+        local ah = mgr_hdr(F.ammo, 0x58)
+        if not ah then return nil, 'ammo table unreadable' end
+        local G = GUNNER_GUN[kind]
+        if gunner.vehicle ~= vehicle or not gunner.gun then
+            gunner = {vehicle = vehicle, memo = {}, memo2 = {}, top = G.full, gun = TC.mount_of(vehicle, G.mount)}
+            if not gunner.gun then return nil, 'the gunner\'s gun is not on its mount' end
+        end
+        local ai = map_get(ah, 0x20, gunner.gun, gunner.memo)
+        local recs, spares = str_ptr(ah, 0x48), str_ptr(ah, 0x50)
+        if not ai or not recs then gunner.gun = nil; return nil, 'the gunner\'s gun is not in the ammo table' end
+        local r = fetch_u32(recs + ai * 16)
+        if not r or r > 100000 then return nil, 'rounds unreadable' end
+        -- (Test 13) the spares: the second table first, as the game's reload takes them (the M-102), else the ammo table's
+        local sp, s2
+        local h2 = FEAT.spares and mgr_hdr(FEAT.spares, 0x60)
+        local si = h2 and map_get(h2, 0x28, gunner.gun, gunner.memo2)
+        local srecs = si and str_ptr(h2, 0x58)
+        if srecs then sp, s2 = fetch_u32(srecs + si * 12), srecs + si * 12
+        else sp = spares and fetch_u32(spares + ai * 12) end
+        if sp and sp > 1000 then sp = nil end
+        if TESTER then          -- (tester) the gun's two ammo records, to check the spare count in game
+            local rb, sb = fetch_str(recs + ai * 16, 16), s2 and fetch_str(s2, 12) or (spares and fetch_str(spares + ai * 12, 12))
+            S.gunner_records = string.format('gun %08x: rounds record %s, spares record (%s) %s', gunner.gun, s2 and 'second table' or 'ammo table',
+                rb and (rb:gsub('.', function(c) return string.format('%02x', c:byte()) end)) or '?',
+                sb and (sb:gsub('.', function(c) return string.format('%02x', c:byte()) end)) or '?')
+        end
+        local left = r + (sp or 0) * G.mag
+        -- (3.7.0 review) a reading over twice the gun's full load is a misread: not shown, and the full mark stays
+        if left > 2 * G.full then return nil, string.format('reading out of range (%d loaded, %s spare): not shown', r, tostring(sp)) end
+        gunner.top = max(gunner.top, left)
+        return left, r, sp
+    end
     local function publish_turret(mine)
         if mine.kind ~= 0x1B then
+            if DRIVER_ROLES[mine.role] and GUNNER_GUN[mine.kind] then
+                local ok, left, r, sp = pcall(read_gunner_ammo, mine.vehicle, mine.kind)
+                if ok and left then
+                    SEAT_PUB.ammo, SEAT_PUB.ammo_full = left, gunner.top
+                    S.gunner_ammo = string.format('%d of %d (%d loaded, %s spare)', left, gunner.top, r, sp and tostring(sp) or 'not known')
+                    return
+                end
+                S.gunner_ammo = ok and tostring(r) or ('failed: ' .. tostring(left))
+            end
             if SEAT_PUB.ammo ~= nil then SEAT_PUB.ammo, SEAT_PUB.ammo_full = nil, nil end
             return
         end
@@ -3224,7 +3465,7 @@ local function poll()
         stop_driving('left the seat'); settle = nil
         settle_engine(nil, 'not_seated', seats.others)
         S.phase, S.verdict = 'watching', seats.anyone and 'not_seated' or 'nobody_in_vehicles'
-        -- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") nobody in a vehicle seat and nothing
+        -- (3.6.2 Test 4: "same with most of the Armored Overhaul modules") nobody in a vehicle seat and nothing
         -- under way (a brake, an engine to switch off): looked at every 18 frames (0.3 s; the getting-in takes longer)
         next_poll = S.frames + ((not seats.anyone and not brake and not pending_off) and TUNING.foot_every or TUNING.idle_every)
         return
@@ -3271,7 +3512,7 @@ local function poll()
         if okr and rec then pcall(input_note, 'driver seat (the game)', ffi.cast(F32P, rec)) end
     end
     if not drive_wanted(mine.kind) then                      -- seat reader only (Vehicle Indicator without Gunner Drive)
-        stop_driving(mine.kind == FRV_KIND and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off'); settle = nil
+        stop_driving(FRV_KINDS[mine.kind] and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off'); settle = nil
         -- (3.0.1 review) a switch-off left pending by a seat move is settled here too (Gunner Drive turned Off in the Mod
         -- Options Menu during the move left the engine idling); with the option off nobody drives from the gunner seat
         if pending_off then
@@ -3442,7 +3683,7 @@ local function tick()
         end
         if S.frames >= next_poll then poll()
         elseif drive and (not drive_wanted(drive.kind) or not drive_frame()) then
-            if drive then stop_driving(drive.kind == FRV_KIND and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off') end
+            if drive then stop_driving(FRV_KINDS[drive.kind] and 'FRV Gunner Drive option off' or 'Tank Gunner Drive option off') end
             next_poll = S.frames + TUNING.menu_every
         end
         -- (3.6.2 Test 4) the fire rate, fire hold and map only in a vehicle seat (and one frame after, to let go)

@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_maelstrom_weapons
--- Armored Overhaul 3.6.2 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
+-- Armored Overhaul 3.7.0 - Maelstrom weapons: the TD-110 Maelstrom's main gun settings for two options, each its own
 -- pick (its option addon sets ArmoredOverhaulMaelstromPicks): Maelstrom Fire Rate (a hold-reload choice of the main gun's
 -- rounds per minute x1 / x1.5 / x2) and Maelstrom Single Belt (all its ammo on one belt, no reload). Written for Armored
 -- Overhaul from the author's own Leveller & Solo Silo Demo Force 50 core (the same settings-table scan).
@@ -28,7 +28,7 @@ end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
-local VERSION = ({version = '3.6.2'}).version   -- (as the other addons write it, so test builds name themselves)
+local VERSION = ({version = '3.7.0'}).version   -- (as the other addons write it, so test builds name themselves)
 
 local GUN = { name = 'Maelstrom main gun', entity = 'D58AE6A04EDB10DE', belt = 300, mags = 6, rpm = 1200 }   -- (the game's belt, spare belts and rate)
 local ENV_NAME = 'ARMORED_OVERHAUL_MAELSTROM_GAME'
@@ -372,16 +372,16 @@ local function found_sig()
 end
 
 -- ---------------------------------------------------------------- what is wanted
--- (Test 11, the tester: "Fire rate should only go from 1x, 1.5x, 2x. and only in the reload context menu, make Fire rate selector
+-- (Test 11: "Fire rate should only go from 1x, 1.5x, 2x. and only in the reload context menu, make Fire rate selector
 -- a toggle in the mod options") Fire Rate on = the hold-reload choice of the game's rate x1 / x1.5 / x2 (1200 / 1800 /
 -- 2400).
 -- The picks come from the option addons (ArmoredOverhaulMaelstromPicks: rpm and belt = true), read when the
 -- tables are applied; the Mod Options Menu turns each on or off in game.
--- (3.6.1 Test 7, the tester: "1800 starting is fine then") The list reads low, start, high and the gun starts on the middle
+-- (3.6.1 Test 7: "1800 starting is fine then") The list reads low, start, high and the gun starts on the middle
 -- one, so for 1200 · 1800 · 2400 in order it starts at 1800 (x1.5); the low slot is the game's 1200 (3.6.1 Tests 2-6
 -- started at 1200 with 1800 in the low slot: the list read out of order)
 local RPM_START = 1.5
--- (3.6.1 Test 6, the tester: "would it be possible to move to the right context menu and then not fire a missile when change
+-- (3.6.1 Test 6: "would it be possible to move to the right context menu and then not fire a missile when change
 -- the RPM with right click") The fire-rate choice is back on the RIGHT input (weapon data +188, as the FRV's MG-206 has
 -- it; 3.6.0 Test 9 to 3.6.1 Test 5: the left, +184). Tank Core now holds both tank fire actions off while the menu is
 -- open, so a right click there only picks a rate (the missiles fired with it in 3.6.0 Test 8).
@@ -684,16 +684,16 @@ local function apply(T)
                     want.rpm and string.format('%.0f (x%g)', base * RPM_START, RPM_START) or 'the game\'s (off in the Mod Options Menu)', where_note('fire'))
                 lines[#lines + 1] = string.format('  hold-reload fire-rate choice (weapon data +%d, the %s input -> 2; fire-mode +4 / +12 -> %.0f / %.0f): %s%s', ROF_AT, ROF_AT == 188 and 'right' or 'left', base, base * 2,
                     want.rpm and 'on' or 'off (the game\'s: none)', where_note('weapondata'))
-                -- (3.6.1 release, the tester: "if you hold the context menu on the bastion, it also says Maelstrom on it ...
+                -- (3.6.1 release: "if you hold the context menu on the bastion, it also says Maelstrom on it ...
                 -- you can just remove the label for maelstrom") 3.6.0 Test 10's menu title (the gun's id added to the
                 -- encyclopedia look-up, pointing at the hull's entry) is gone: the game keeps the last title it showed, so
                 -- the Bastion's menu said Maelstrom too. The menu shows what the game's own shows.
             end
         end
         if p.belt then
-            -- (3.6.0 Test 7, the tester: "remove the reload entirely and put all 2100 rounds on 1 belt") Maelstrom Single Belt: the
+            -- (3.6.0 Test 7: "remove the reload entirely and put all 2100 rounds on 1 belt") Maelstrom Single Belt: the
             -- magazine record's rounds per belt (+136) become all the gun starts with (300 x (6 spare + 1) = 2100) and its
-            -- spare belts (+140 start, +144 refill, +148 most) 0, so it never reloads (Test 8, the tester: "a maelstrom cant resupply?
+            -- spare belts (+140 start, +144 refill, +148 most) 0, so it never reloads (Test 8: "a maelstrom cant resupply?
             -- Reload shouldnt do anything, and instead it should allow you to change the RPM on the fly": with nothing to
             -- load, a tap of reload does nothing; holding it opens the Fire Rate option's fire-rate choice).
             -- Found in its magazine record as the game's 300, 6, 6, 6 (or this mod's own 2100, 0, 0, 0) only: (3.6.0 review)
@@ -778,7 +778,7 @@ local function check()
 end
 
 -- ---------------------------------------------------------------- main loop
--- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") Once applied: the log written only when
+-- (3.6.2 Test 4: "same with most of the Armored Overhaul modules") Once applied: the log written only when
 -- something changes (3.6.1: every 60 s); the refresh pass through all memory every 5 minutes only for a table whose game
 -- copy (the one the game reads, followed by its settings-root global at every check) wasn't found; nothing at all with
 -- neither Maelstrom Fire Rate nor Single Belt picked. The values stay checked every 5 s (a handful of small reads): a
@@ -911,7 +911,7 @@ menu_rows.maelstrom = function()
 end
 -- A Maelstrom takes its belt and fire rate when it is called in, and one already out keeps them (Test 6). A Fire Rate /
 -- Single Belt change applies at once, for the next Maelstrom called in (Tests 7-11 waited until none was out; Test 12,
--- the tester: a new tank dropped next to the old one got the old values).
+-- a new tank dropped next to the old one got the old values).
 local MAELSTROM_HULL = 'content/fac_helldivers/vehicles/tank_storm/tank_storm'
 local function maelstrom_out()     -- true / false, nil when the engine can't tell (then changes apply at once)
     local SR = rawget(_G, 'stingray')

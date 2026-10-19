@@ -1,7 +1,8 @@
 -- HD2-Addon: mods/chef/armored_overhaul_indicator
--- Armored Overhaul 3.6.2 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102
--- FRV or M-103 Supply FRV (any seat), a small outline on your screen shows which way the turret points compared to the
--- hull, like a real tank's display, colored by the vehicle's health (the FRV's tires too). The turret always points
+-- Armored Overhaul 3.7.0 - Vehicle Indicator option: while you sit in a TD-220 Bastion, TD-110 Maelstrom, M-102 FRV,
+-- M-103 Supply FRV or M-104 FRV (any seat), a small outline on your screen shows which way the turret points compared to
+-- the hull, like a real tank's display, colored by the vehicle's health (the FRVs' tires too), with an ammo
+-- bar for the gunner's ammo in the driver seat (and the M-103's turret in any seat). The turret always points
 -- up; the hull outline turns around it, with a notch at its front. Drawn only on your screen. Written from scratch.
 -- (The Turret indicator and the driver panel share their drawing code; each file is edited directly - (3.5.1 review) the old
 -- indicator.lua.in template is gone.)
@@ -33,11 +34,11 @@ local TITLE, LOG_FILE = 'Vehicle Indicator', 'ArmoredOverhaul-TurretIndicator.lo
 local SETTINGS = {show = 1, x = 0.1, y = 0.3, size = 0.075, opacity = 0.55, health = 1, dock = 1, skull = 1}
 local PANEL_DEFAULT = {x = 0.5, y = 0.1, size = 0.022}   -- (3.1.0 Test 26) the Driver Panel's default place (its SETTINGS)
 
-local S = {version = '3.6.2', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.7.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            angle = 'none', shapes = 'none', last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            options_menu = 'not installed (the defaults are used)',
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
-           speed = 'not measured yet', speed_check = 'none', health = 'not shown yet', tires = 'not in an FRV yet', ammo = 'not in an M-103 Supply FRV yet', skull = 'not shown yet', dock = 'not shown yet'}
+           speed = 'not measured yet', speed_check = 'none', health = 'not shown yet', tires = 'not in an FRV yet', ammo = 'no bar shown yet', skull = 'not shown yet', dock = 'not shown yet'}
 rawset(_G, 'ArmoredOverhaulIndicator', S)
 
 -- (3.3.0) The logs folder (logs, caches and markers): Bingus Shared Loader v19's log_directory, else
@@ -158,7 +159,7 @@ end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
 menu_rows.indicator = {
-    {'armored_overhaul.indicator', {type = 'toggle', label = 'Vehicle Indicator', default = true, description = 'A small outline of your vehicle shows where the gun points compared to the hull, colored by health (blue to red). Works in the Bastion, the Maelstrom, the M-102 FRV and the M-103 Supply FRV, in any seat; the FRVs\' tires each show their own health and go clear when popped, and the M-103\'s turret gets an ammo bar. Only you see it.'}, 'show'},
+    {'armored_overhaul.indicator', {type = 'toggle', label = 'Vehicle Indicator', default = true, description = 'A small outline of your vehicle shows where the gun points compared to the hull, colored by health (blue to red). Works in the Bastion, the Maelstrom and the M-102, M-103 and M-104 FRVs, in any seat; the FRVs\' tires show their own health and go clear when popped. In the driver seat a bar shows the gunner\'s ammo left (the M-103\'s turret: any seat). Only you see it.'}, 'show'},
 }
 menu_set = function(key, v)
     if key == 'show' then settings.show = (v == true or v == 1) and 1 or 0; settings.sig = settings.sig + 1 end
@@ -333,7 +334,11 @@ local TT = {
     -- (2.1) the FRV (FRV Gunner Drive): the Driver panel measures its speed (TT.hull) and the Turret indicator shows
     -- its machine gun's direction and its health. Kept apart from TANKS: the Gunner camera is tanks only.
     HULLS = {[0x1A] = {name = 'FRV', hull = 'content/fac_helldivers/vehicles/frv/frv',
-                       gun = 'content/fac_helldivers/vehicles/frv/armaments/frv_mg/frv_mg', gun_node = 'horizontal_axis'}},
+                       gun = 'content/fac_helldivers/vehicles/frv/armaments/frv_mg/frv_mg', gun_node = 'horizontal_axis'},
+             -- (3.7.0) the M-104 Incinerator FRV and its flamethrower (the same turning bone; from the game files, not
+             -- tested in game: the M-104 isn't in the game now)
+             [0x1C] = {name = 'M-104 Incinerator FRV', hull = 'content/fac_helldivers/vehicles/frv_heavy/frv_flamer',
+                       gun = 'content/fac_helldivers/vehicles/frv_heavy/armaments/frv_flamethrower/frv_flamethrower', gun_node = 'horizontal_axis'}},
     GUN_NODE = 'traverse',       -- the gun's turning bone (the whole turret turns with it)
     GUN_REACH = 5.0,             -- meters: a gun must be this close to the hull to belong to it
     FIND_EVERY = 30,             -- frames between searches while seated and not yet found
@@ -474,7 +479,7 @@ local function tt_find_tank(world, kind)
     TT.gen = TT.gen + 1
     return true
 end
--- (3.5.1 Test 14) The barrel's pitch against the hull, for Turret Core's Freelook (the tester: "can it also freeze the
+-- (3.5.1 Test 14) The barrel's pitch against the hull, for Turret Core's Freelook ("can it also freeze the
 -- tank turret elevation"), only while it asks (pub.want_pitch). The barrel's tip is the gun bone farthest out along the
 -- turning bone's forward (the bones are listed once per gun: the engine's count if it gives one, else up to the first
 -- that isn't a finite place within 12 m, as junk past the last bone isn't an error; 3.4.1 Test 6's aim probe), and the
@@ -657,7 +662,7 @@ local TANKS = TT.TANKS
 local FRV_KIND = 0x1A          -- (2.1) the FRV: its outline (FRV shape, its gun, its tires) shows in any seat
 -- (2.1 Test 15) the FRVs: the M-102 and the M-103 Supply FRV (0x1B). The M-103 has no gun: its outline points
 -- ahead (angle 0, nothing to track) and is drawn without the gun line
-local FRV_KINDS = {[FRV_KIND] = 'FRV', [0x1B] = 'M-103 Supply FRV'}
+local FRV_KINDS = {[FRV_KIND] = 'FRV', [0x1B] = 'M-103 Supply FRV', [0x1C] = 'M-104 Incinerator FRV'}   -- (3.7.0: the M-104)
 local GUNLESS = {[0x1B] = true}
 local GUNLESS_TEXT = 'M-103 Supply FRV (no gun: shown pointing ahead)'
 -- (2.1 Test 13) each FRV tire's band (Tank Core's SEAT_PUB.tires: share of full health, -1 popped): 1-5 the health
@@ -802,8 +807,9 @@ end
 -- segments as thin red outlines. One number for the redraw check: 0 empty, else filled segments + 16 x tone (0 yellow,
 -- 1 orange, 2 red); nil without a bar
 local AMMO_SEGS = 10
+-- (3.7.0) and, in the driver seat of a tank or an FRV with a gun, the gunner's ammo left (Tank Core publishes the same two
+-- values there: rounds and spare magazines together, against the gun's full load)
 local function ammo_code(seat)
-    if seat.kind ~= 0x1B then return nil end
     local r, full = seat.ammo, seat.ammo_full
     if type(r) ~= 'number' or type(full) ~= 'number' or full <= 0 then return nil end
     if r <= 0 then return 0 end
@@ -1193,7 +1199,7 @@ local function tick()
     elseif type(place) == 'table' and type(place.x) == 'number' then
         local gd = core_watch.gd
         local driven = TANKS[seat.kind] and (type(gd) ~= 'number' or gd % 2 == 1)
-            or (seat.kind == FRV_KIND and (type(gd) ~= 'number' or gd >= 2))
+            or (TT.HULLS[seat.kind] and (type(gd) ~= 'number' or gd >= 2))     -- (3.7.0: the FRVs with a gun)
         if not place.show then dock = 2
         elseif not driven then dock = 4
         else dock, px, py, ps = 3, place.x, place.y, place.size end
@@ -1243,7 +1249,7 @@ local function tick()
         local ak = ammo or (seat.kind == 0x1B and -1 or -2)
         if ak ~= ov.ammo_logged then
             ov.ammo_logged = ak
-            S.ammo = ammo == nil and (seat.kind == 0x1B and 'not known (no bar)' or 'not in an M-103 Supply FRV')
+            S.ammo = ammo == nil and ((seat.kind == 0x1B or seat.role == 1 or seat.role == 4) and 'not known (no bar)' or 'no bar in this seat')
                 or (ammo == 0 and 'empty (red outlines)' or string.format('%d of %d segments (the rounds: Tank Core\'s log)', ammo % 16, AMMO_SEGS))
         end
         if not ov.frv then

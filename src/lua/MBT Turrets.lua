@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_turret_360
--- Armored Overhaul 3.6.2 - Tank MBT Turrets: turret option flag (read by the turret core,
+-- Armored Overhaul 3.7.0 - Tank MBT Turrets: turret option flag (read by the turret core,
 -- mods/chef/armored_overhaul_mbt_turrets) and, since 3.1.0, the turret turner.
 -- (3.1.0) The turret models are the game's own tank hulls with everything above the roof line tied to the hull's
 -- second gun mount (node b7e9b43d); the guns, missile pods and smoke launchers are the game's own units on their own
@@ -36,19 +36,28 @@
 -- axis (and the Turret Position move). The passengers' places in the roof hatches and their way in are carried round
 -- with the turret too, so a passenger rides in the hatch where it is.
 -- (3.4.1 Test 19) The gunner's way in and out (node 95c8f8ec, 0.53 m behind the gunner's door) goes round with the turret too:
--- the gunner got in through the turret's door but out at the game's door place, behind the hull (the tester: "when you
+-- the gunner got in through the turret's door but out at the game's door place, behind the hull ("when you
 -- get out, you still use the old hatch location"). Where it lands over the hull's deck it is lifted onto the deck (it is
 -- 0.6 m under the roof line, at the ground behind the tank, where the game has it); off the hull it stays at its height.
 -- (3.4.1 Test 21) The turret's hit areas (its armor blocks, side and rear boxes, radar and antenna) follow node b7e9b43d, the
 -- mount this turns and moves, from the tank's physics files (Turret Hit Areas): nothing to do here. (3.4.1 Test 20 carried
 -- their own nodes from here; the game's animation put them back every frame.)
 -- (3.4.1 Test 18) The gunner's door swings up and out on its top edge (a hatchback) instead of sliding 0.94 m straight up: the
--- game's slide took it up past the turret's roof, where it stood on its own over the turret (the tester: "when the hatch
+-- game's slide took it up past the turret's roof, where it stood on its own over the turret ("when the hatch
 -- opens, it opens up like this, could the hatch animation be fixed?"). It opens as far, and as fast, as the game's slide.
 local o = rawget(_G, 'ArmoredOverhaulTurretOptions')
 if type(o) ~= 'table' then o = {}; rawset(_G, 'ArmoredOverhaulTurretOptions', o) end
 o.mbt = true
+if type(o.mbt_from) ~= 'table' then o.mbt_from = {} end
+o.mbt_from.turrets = true          -- (3.7.0) which option this copy came from (Tank MBT Turrets / its model mods version)
 if type(o.mbt_shift) ~= 'number' then o.mbt_shift = 0 end     -- (Test 8) Turret Position: the game's place by default
+-- (3.7.0) model mods: a sub-option that leaves one tank's model to the game (or to another mod that replaces that tank's
+-- model) names it in o.mbt_off ('bastion' / 'maelstrom'); this addon then never touches that tank. The guns' turn limits
+-- stay shared (both tanks' main guns use one record), so its gun keeps the picked limit (all the way round, or 90 each side).
+-- The choices for model mods are their own option, Tank MBT Turrets for Remodels: its copy of this addon has its own name
+-- (both load when both options are on) and says so in o.mbt_from; the log then tells to turn Tank MBT Turrets off, as its
+-- turret models cover the other mod's. Arsenal turns every option on when the mod is added, so with both on, Tank MBT
+-- Turrets wins: the other copy's untouched tank (o.mbt_off) is ignored and both tanks turn as Tank MBT Turrets has them.
 
 if type(jit) == 'table' and type(jit.off) == 'function' then jit.off(true, true) end
 if rawget(_G, 'ArmoredOverhaulTurretTurner') then return end
@@ -66,7 +75,7 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.6.2', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
+local S = {version = '3.7.0', status = 'starting', api = 'unchecked', frames = 0, errors = 0, last_error = 'none',
            tanks = 0, turned = 0, no_gun = 0, bad_nodes = 0, gun_searches = 0, no_seat = 0}
 rawset(_G, 'ArmoredOverhaulTurretTurner', S)
 S.clock = 0                        -- (3.1.1 review) seconds of game time (summed from the update's dt)
@@ -93,7 +102,7 @@ local PASSENGER = {{k = 160, x = -1.5488, y = -2.830774, z = 1.057916, optional 
 PASSENGER[#PASSENGER + 1] = {k = 154, x = 0.116909, y = -5.226354, z = 0.457656, optional = true, deck = true, way = true}
 for _, h in ipairs(HULLS) do for _, c in ipairs(PASSENGER) do h.carry[#h.carry + 1] = c end end
 local DECK = {x = 2.0, y0 = -4.8, y1 = 4.0, z = 1.098}      -- (3.4.1 Test 19) the hull's deck in the hull's frame (roof line 1.078, + 2 cm)
--- (3.6.0 Test 3) The Maelstrom's missile pods with the turret moved forward. A user (via the tester): "the missle pod on
+-- (3.6.0 Test 3) The Maelstrom's missile pods with the turret moved forward. A user (sent to me): "the missle pod on
 -- the maelstrom clipping into the hull when place into center position", at any turret angle. The pod unit's box
 -- (tank_storm_silo, its LODs) reaches 0.806 m under its mount (its mesh space sits 0.223 m under the unit's root: the
 -- missile tubes, at -0.743, are inside it), so its bottom is at 0.998 in the hull's frame, 10 cm under the deck plating
@@ -146,6 +155,12 @@ local help_seen = {extra = 0, offset = 0, times = 0}     -- (Test 31) the most m
 -- gun by its stops measured from the mount; and while Freelook is on (Turret Core's freelook_on) the mount stays where it
 -- is: no help, no going back to straight (3.5.1 Test 14 let it go back, so a held gun drifted by the mount's turn, up to
 -- 30 degrees after long swings with Tank Turret Traverse Fast / Very fast)
+-- (3.7.0) a tank the Tank MBT Turrets for Remodels choice leaves to the game or another mod; never while Tank MBT
+-- Turrets is on too (it wins)
+local function left_alone(h)
+    if type(o.mbt_off) ~= 'table' or not o.mbt_off[h.name:lower()] then return false end
+    return not (type(o.mbt_from) == 'table' and o.mbt_from.turrets)
+end
 local MOUNTS = rawget(_G, 'ArmoredOverhaulMounts')
 if type(MOUNTS) ~= 'table' then MOUNTS = setmetatable({}, {__mode = 'k'}); rawset(_G, 'ArmoredOverhaulMounts', MOUNTS) end
 local function log()
@@ -156,6 +171,14 @@ local function log()
             'api: ', S.api, '\n', 'tanks out: ', S.tanks, ' (turrets turning: ', S.turned, ', gun not found: ', S.no_gun,
             ', hull not as expected: ', S.bad_nodes, ')\n', 'gunner seats turned with the turret: ', S.turned - S.no_seat, (S.no_seat > 0 and (' (' .. S.no_seat .. ' seat node(s) not found: those gunners stay put)') or ''), '\n', 'errors: ', S.errors, '\n', 'last error: ', S.last_error, '\n')
         f:write(string.format('turret position: %.2f m forward of the game\'s (Mod Options Menu: Tank Turret Position)\n', S.shift or 0))
+        if type(o.mbt_off) == 'table' then         -- (3.7.0) the sub-option that leaves one tank to the game / a model mod
+            local off = {}
+            for _, h in ipairs(HULLS) do if left_alone(h) then off[#off + 1] = h.name end end
+            if #off > 0 then f:write('left to the game (or a model mod): ', table.concat(off, ', '), '\n') end
+        end
+        if type(o.mbt_from) == 'table' and o.mbt_from.turrets and o.mbt_from.model_mods then
+            f:write('both Tank MBT Turrets and Tank MBT Turrets for Remodels are on: Tank MBT Turrets is used (for a remodel, turn Tank MBT Turrets off)\n')
+        end
         f:write('hatches working: ', S.hatches or 0, ' of ', S.tanks, ' tank(s)', ((S.no_hatch or 0) > 0 and (' (' .. S.no_hatch .. ' hatch(es) not found: those stay shut)') or ''),
             '; passenger places turned with the turret: ', S.passengers or 0, '\n')
         for _, h in ipairs(HATCHES) do
@@ -180,12 +203,47 @@ local function log()
             local m = hatch_seen.driver
             f:write(string.format('driver\'s hatch (on the hull, the game\'s own): seen opening %d time(s), up to %.0f%% open\n', m.opened, m.most * 100))
             if S.hatch_find then f:write('hatch nodes found by: ', S.hatch_find, '\n') end
+            for name, pr in pairs(S.prints) do f:write('hull fingerprint (', name, '): ', pr, '\n') end      -- (3.7.0 research)
         end
         f:close()
     end)
 end
 
 local A, W, U, Q, V3
+-- (3.7.0, tester research) what a hull unit looks like to the engine, to tell this mod's turret model from the game's or
+-- another mod's later on: its mesh count, and each of the first meshes' name, geometry stats and bounding volume
+S.prints = {}
+local function fp_show(SR, v)          -- (one value as text: vectors as three numbers, tables as key=value)
+    if type(v) == 'userdata' and SR.Vector3 and type(SR.Vector3.to_elements) == 'function' then
+        local okv, x, y, z = pcall(SR.Vector3.to_elements, v)
+        if okv then return string.format('(%.3f %.3f %.3f)', x, y, z) end
+    end
+    if type(v) == 'table' then local r = {} for k2, v2 in pairs(v) do r[#r + 1] = tostring(k2) .. '=' .. tostring(v2) end return '{' .. table.concat(r, ',') .. '}' end
+    return tostring(v)
+end
+local function fingerprint(u)
+    local SR = rawget(_G, 'stingray') or {}
+    local M = SR.Mesh
+    local t = {}
+    local okn, n = pcall(U.num_meshes, u)
+    t[#t + 1] = 'meshes ' .. tostring(okn and n or ('error ' .. tostring(n)))
+    if okn and type(n) == 'number' and type(U.mesh) == 'function' and type(M) == 'table' then
+        for i = 1, math.min(n, 4) do
+            local okm, m = pcall(U.mesh, u, i)
+            if okm and m ~= nil then
+                local parts = {}
+                for _, f in ipairs({'name', 'get_geometry_stats', 'bounding_volume', 'num_materials'}) do
+                    if type(M[f]) == 'function' then
+                        local okf, a, b, c = pcall(M[f], m)
+                        parts[#parts + 1] = f .. ' ' .. (okf and (fp_show(SR, a) .. (b ~= nil and (' ' .. fp_show(SR, b)) or '') .. (c ~= nil and (' ' .. fp_show(SR, c)) or '')) or 'error')
+                    end
+                end
+                t[#t + 1] = string.format('mesh %d: %s', i, table.concat(parts, '; '))
+            else t[#t + 1] = string.format('mesh %d: %s', i, okm and 'none' or 'error') end
+        end
+    end
+    return table.concat(t, ' | ')
+end
 local function api_ok()
     if S.api == 'ok' then return true end
     if S.api ~= 'unchecked' then return false end
@@ -604,7 +662,7 @@ local list, next_list, shown = {}, 0, -1
 local function tick()
     S.frames = S.frames + 1
     if not api_ok() then if S.frames == 1 then log() end; return end
-    -- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") with no tank out, nothing between the
+    -- (3.6.2 Test 4: "same with most of the Armored Overhaul modules") with no tank out, nothing between the
     -- looks for one (3.6.1 asked the engine for its world every frame), and those every NONE_EVERY seconds
     if #list == 0 and next(hulls) == nil and S.clock < next_list then return end
     local world = A.main_world()
@@ -614,8 +672,13 @@ local function tick()
         list = {}
         local listed = {}
         for _, h in ipairs(HULLS) do
+            if left_alone(h) then goto next_hull end     -- (3.7.0) left to the game / a model mod
             local ok, us = pcall(W.units_by_resource, world, h.res)
-            for _, u in ipairs(ok and type(us) == 'table' and us or {}) do list[#list + 1] = {u = u, h = h}; listed[u] = true end
+            for _, u in ipairs(ok and type(us) == 'table' and us or {}) do
+                list[#list + 1] = {u = u, h = h}; listed[u] = true
+                if TESTER and not S.prints[h.name] then S.prints[h.name] = fingerprint(u) end      -- (3.7.0 research)
+            end
+            ::next_hull::
         end
         -- (3.1.1 review) units no longer out are forgotten; the rest are written again once (e.ta / e.ms cleared), so a pose
         -- the game itself put back (a turret parked since) is set right within half a second

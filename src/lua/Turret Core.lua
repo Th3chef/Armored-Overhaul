@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_mbt_turrets
--- Armored Overhaul 3.6.2 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
+-- Armored Overhaul 3.7.0 - Turret core: the turret settings of the TD-220 Bastion and the TD-110 Maelstrom guns,
 -- shared by four options (2.0). Each option ships this core plus a small flag addon that says what it wants, in
 -- ArmoredOverhaulTurretOptions:
 --   MBT Turrets       (mbt = true):        the guns turn all the way round (with the turret models, whose whole top
@@ -8,7 +8,7 @@
 --   Turret elevation  (elevation = x):     the up/down speed times x
 --   Gun depression    (range_lo = lo):     how far down the guns aim (degrees, below 0)
 --   Gun raise         (range_hi = hi):     how far up the guns aim (degrees)
---   (3.4.1, the tester: "lets separate the Turret Aim Range in an upper and lower option, so folks can customize how
+--   (3.4.1: "lets separate the Turret Aim Range in an upper and lower option, so folks can customize how
 --   each works") Tank Turret Aim Range (range = {lo, hi}) became these two options; the side not picked stays the game's.
 -- Whatever no picked option asks for stays the game's own. Written from scratch.
 --
@@ -24,7 +24,7 @@
 -- its preset in the game's camera preset table (0x90-byte records numbered by id; +0x4C/+0x50 pitch min/max,
 -- +0x54/+0x58 yaw min/max). The addon widens that one preset's left/right range to all the way round.
 -- (3.1.0 Test 26) The game takes a turret's turn speed when the tank is called in: Test 22 raised it while the hull turned
--- (written up to +95 deg/s) and the turret never turned faster than the option's speed. (3.4.0 Test 26, the tester: "lets adjust
+-- (written up to +95 deg/s) and the turret never turned faster than the option's speed. (3.4.0 Test 26: "lets adjust
 -- all of the tank settings so they can be tweaked mid-game") Each turret in the world has its own copy of its record,
 -- made when it is called in: the game's runtime TurretComponent (pointer at game.dll+0x3326D70: +0x68 entity map, 8-byte
 -- {entity, index} entries, +0x70 slot count, +0x74 empty key; +0xA8 the 0x4C-byte records by index), read every frame
@@ -62,15 +62,15 @@ local ARC = 180
 -- Maelstrom's laser designator sit) to the main gun's heading, so those two keep their own left/right locked straight
 -- (a sliver either way: the game wants a range) and point where the main gun does.
 local SECOND_LOCK = 0.01
--- (3.4.0 Test 14) the tester: "when you aim a rocket laser at the ground in the maelstrom, the targeting laser bugs out and aims
+-- (3.4.0 Test 14) "when you aim a rocket laser at the ground in the maelstrom, the targeting laser bugs out and aims
 -- into the air". With MBT Turrets the designator was held to +-0.01 left/right and to the guns' angles up/down, while
 -- the gunner view looks 5 degrees lower than the guns and the laser sits beside the barrel: aimed at the ground close
 -- by, what it had to point at was out of its reach. The designator (meshless: only its laser shows) got some left/right
 -- either way round its turned mount (locked again since Test 18, below) and DESIG_DOWN below / 10 above the guns' angles.
--- (Test 15, the tester: "the laser is better, but when you set the aim range to widest, it will continue to bug out") Close
+-- (Test 15: "the laser is better, but when you set the aim range to widest, it will continue to bug out") Close
 -- ground lies far steeper below the laser than the view's own angle, so the designator now reaches down to DESIG_LOW
 -- whatever the gun's range, and a little further round.
--- (Test 18, the tester: "Maelstrom laser works, but it needs to follow the turret, its detached and can be aimed in a direction
+-- (Test 18: "Maelstrom laser works, but it needs to follow the turret, its detached and can be aimed in a direction
 -- that doesnt match the barrel") Left/right is locked again (+-SECOND_LOCK, as before Test 14: its mount turns with the
 -- turret), keeping only the wider up/down reach.
 -- (3.4.0 review) Up, it reaches as far above the guns' highest angle as the gunner view does (VIEW_ABOVE, never past
@@ -142,7 +142,7 @@ local CAMERA_VANILLA = '\x00\x00\x70\xC1\x00\x00\xC8\x41\x00\x00\x20\xC2\x00\x00
 local CAMERA_PREFIX = '\x00\x00\x80\x3E\x00\x00\x80\x3E\x00\x00\x00\x40\x00\x00\xC0\x3F\x00\x00\x00\x00\x9A\x99\x19\x3E\x9A\x99\x19\x3E'
 local MAX_TRIES = 5     -- failed writes per item before giving up
 
-local state = {version = '3.6.2', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
+local state = {version = '3.7.0', status = 'starting', table = 'unresolved', how = 'none', slots = 0, game = 'unchecked',
                last_error = 'none',
                applied = 0, errors = 0, guns = {}, frames = 0, clock = 0,
                camera = 'not found yet', options = 'not read yet', options_menu = 'not installed (the mod manager\'s picks are used)'}
@@ -269,16 +269,16 @@ end
 -- limit changes, rough over bumps, and the problem stayed); Tests 35-37 only measured. What they found: the view's top
 -- stop is hull-relative (about +84 at every slope with the view opened to -60..80), so the slope never needed following;
 -- the view just stopped short of the gun. Test 38's fix is a wider view range (VIEW_BELOW under the gun's lowest angle,
--- VIEW_ABOVE over its highest, never above VIEW_TOP): near straight up the turret spins round (the tester: "the tank will spin
+-- VIEW_ABOVE over its highest, never above VIEW_TOP): near straight up the turret spins round ("the tank will spin
 -- around when you look all the way up"). (3.4.0 review) the slope code (measure-only since Test 35) is gone.
 local VIEW_BELOW, VIEW_ABOVE, VIEW_TOP = 20, 15, 60     -- (Test 38) degrees beyond the gun's range; the highest view
--- (3.5.1 Test 3) the tester: on an uphill with the turret turned back, the camera "is still locked upward". The view's low
+-- (3.5.1 Test 3) on an uphill with the turret turned back, the camera "is still locked upward". The view's low
 -- stop is measured from the hull's nose, whichever way the turret faces (Test 2 log: facing down a 30-35 degree slope with
 -- the turret turned back the view never went below +1..+4 against the horizon: nose up 35 with a -26 stop is +9), and the
 -- game takes the stops when you sit down, so they can't follow the slope (why Test 34's slope-following limits didn't help).
 -- With MBT Turrets (the turret faces any way) the low stop is VIEW_TURNED_LOW: room for a turned turret on a steep slope
 -- (Test 37 had -60 and only its top, +80, was a problem). (Test 4) Test 3's log fits the nose rule exactly (facing down 30 / 35 /
--- 40 degrees the view stopped at -30 / -27 / -19 against the horizon: nose + -60) and the tester still couldn't look down
+-- 40 degrees the view stopped at -30 / -27 / -19 against the horizon: nose + -60) and I still couldn't look down
 -- far enough: -80 (a 40 degree hill still leaves 40 down)
 local VIEW_TURNED_LOW = -80
 -- ---------------------------------------------------------------- logging
@@ -572,7 +572,7 @@ local function live_map()
     if top < 0 then return nil, string.format('no turrets out (%d slots, empty key 0x%X)', slots, empty) end
     return {recs = recs, slots = slots, idxs = idxs, top = top, listed = listed}
 end
--- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") With Tank Core's seat: the turrets of the
+-- (3.6.2 Test 4: "same with most of the Armored Overhaul modules") With Tank Core's seat: the turrets of the
 -- tanks already out (the runtime copies, up to 128 KB of look-up) are followed only while you sit in a Bastion or
 -- Maelstrom (at once as you get in), and the settings are checked once a minute out of a tank (every 10 s in one). The
 -- static settings stay set from the start (a tank copies them as it is called in). Without the seat as before.
@@ -731,7 +731,7 @@ local FOUGHT, FIGHT_BACKS, FIGHT_WINDOW = 'another mod keeps changing it: left a
 local fight = {set = {}, backs = {}, off = {}}
 -- What the picked options ask for; everything else stays the game's own.
 local opts = {}
--- (3.5.1 Test 5) The tester: on a steep uphill with the turret turned back, "the cannon will rise up and cant aim lower". The
+-- (3.5.1 Test 5) on a steep uphill with the turret turned back, "the cannon will rise up and cant aim lower". The
 -- guns' up/down stops are measured from the hull's nose, whichever way the turret faces (as the view's: Tests 2-4), so
 -- turned back up a 40 degree hill a -15 stop is +25 against the horizon. Unlike the view's, the guns' stops reach a tank
 -- already out, so with MBT Turrets they follow the slope: both stops move by the slope under the turret's heading minus
@@ -758,7 +758,7 @@ local function slope_step()
             local s = under - nose
             -- (a full step from what is set before it moves, so a slope on a step's edge doesn't flip back and forth)
             if s == s then want = math.abs(s - SLOPE.shift) < SLOPE_STEP and SLOPE.shift or math.floor(s / SLOPE_STEP + 0.5) * SLOPE_STEP end
-            -- (3.6.0 Test 4) The tester on Test 3: "if you aim up while on an angle, it limits how far up you can aim up",
+            -- (3.6.0 Test 4) my report on Test 3: "if you aim up while on an angle, it limits how far up you can aim up",
             -- with the tank leaning sideways. The view's top stop is measured against the hull along the view (3.4.0 Test 37:
             -- about +84 against the hull at every slope with an 80 top), so aiming over the low side of a leaning tank tops
             -- out the lean lower against the horizon (Test 3's log: +38 against the horizon facing 15 down). The top stops
@@ -790,7 +790,7 @@ local function slope_step()
         next_check = 0                                    -- (applied this frame: the guns and the tanks already out)
     end
 end
--- (3.5.1 Test 7) Freelook (the tester): hold the key bound in the Mod Bindings Menu ("Tank Turret: Freelook (hold)", controls,
+-- (3.5.1 Test 7) Freelook: hold the key bound in the Mod Bindings Menu ("Tank Turret: Freelook (hold)", controls,
 -- tab MODS, section ARMORED OVERHAUL) in a tank's gunner seat to look round while the gun stays where it points, and
 -- let go: the turret then turns to where you look. No key bound, no change.
 -- (Test 11) Test 10 caught the key (middle mouse, held up to 97 frames) but "the turret still turns": the turn speeds
@@ -800,14 +800,14 @@ end
 -- slopes; 0.02 degrees apart, as the second guns are locked), on the tanks already out too. The stops' sign against
 -- that angle isn't known for sure: FL_SIGN is the guess; if the turret moves away from where it was within 0.2 s, the
 -- other sign is used from then on (logged, to be fixed for the release). Up and down still follow the view for now.
--- (Test 12) Test 11's log: "stop sign +1 (learned (the other sign))": the stops' sign is +1 (the tester saw the twitch of
+-- (Test 12) Test 11's log: "stop sign +1 (learned (the other sign))": the stops' sign is +1 (I saw the twitch of
 -- the first press); the check stays, for safety.
--- (Test 13) The tester: "can the freelook keybind just use the built in keybind button config for hold/press/double tap"
+-- (Test 13) "can the freelook keybind just use the built in keybind button config for hold/press/double tap"
 -- (Test 12 had a second, toggle binding). One binding, "Tank Turret: Freelook"; the trigger picked for its key in the
 -- game's controls decides: a trigger the game keeps down while the key is held (Hold) = Freelook while held; one that
 -- fires once (Press, Double tap, Long press ...) = on, and off the next time it fires. Told apart by the binding itself:
 -- still down the frame after it fired = held. (Tests 8-12 followed the key pressed that frame instead; that is gone.)
--- (Test 14) The tester: "can it also freeze the tank turret elevation, as it moves with the mouse". The up/down stops
+-- (Test 14) "can it also freeze the tank turret elevation, as it moves with the mouse". The up/down stops
 -- (read live too, as the slope stops show) are put at the barrel's pitch when Freelook comes on: the Turret indicator /
 -- Gunner camera measure it while asked (pub.want_pitch, in the gunner seat). How the game measures its up/down stops
 -- isn't the same as that on every slope (3.5.1 Tests 3-6: the nose rule), so the hold is checked: 0.25 s after it is
@@ -979,8 +979,8 @@ local function camera_wanted()
     local o = originals.camera
     local lo, hi = o.pitch_min, o.pitch_max
     -- (3.4.0 Test 38) On slopes the view stopped short of the gun (a user; Test 35's measurements). With the view opened
-    -- to -60..80 (Test 37) the view went well past the gun's range on every slope the tester tried, and its top stop measured
-    -- against the hull (about +84 at every slope); but near straight up the turret spun round (the tester: "the tank will spin around
+    -- to -60..80 (Test 37) the view went well past the gun's range on every slope I tried, and its top stop measured
+    -- against the hull (about +84 at every slope); but near straight up the turret spun round ("the tank will spin around
     -- when you look all the way up"). So the view now goes VIEW_BELOW lower than the lowest gun angle and VIEW_ABOVE
     -- higher than the highest, never above VIEW_TOP: room for the ground's tilt without reaching the spin.
     -- (3.4.1) per side: Gun Depression moves the low stop, Gun Raise the high one; a side not picked stays the game's
@@ -1199,7 +1199,7 @@ end
 -- (3.0) the menu holds the mod manager's own options only, with their names and choices (plus Off), in the
 -- mod manager's order; it fine-tunes what is installed.
 local DEPRESSIONS = {-6, -10, -15}                     -- (3.4.1) Tank Gun Depression: Low, Lower, Lowest
-local RAISES = {30, 45, 60}                            -- (3.4.1) Tank Gun Raise: High, Higher, Highest (Test 2, the tester: "raise the gun more than 45, maybe 60"; was 30, 35, 45)
+local RAISES = {30, 45, 60}                            -- (3.4.1) Tank Gun Raise: High, Higher, Highest (Test 2: "raise the gun more than 45, maybe 60"; was 30, 35, 45)
 local SPEEDS = {1.25, 1.5, 2}                          -- Elevation: Quick, Fast, Very fast
 local TRAVERSE_SPEEDS = {1.5, 2, 3}                    -- (3.1.0 Test 26) Traverse: Quick, Fast, Very fast
 local function tag(v) return (string.format('%g', v):gsub('%.', '_')) end

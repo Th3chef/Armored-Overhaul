@@ -1,13 +1,14 @@
 -- HD2-Addon: mods/chef/armored_overhaul_run_flat
--- Armored Overhaul 3.6.2 - FRV Run-Flat Tires: the M-102 and M-103 FRVs' tires never pop. Written from scratch.
+-- Armored Overhaul 3.7.0 - FRV Run-Flat Tires: the M-102, M-103 and M-104 FRVs' tires never pop. Written from scratch.
 --
 -- How the game decides (game.dll, Sept 2026 build; field meanings from the game's own health settings, offsets from
 -- its code): every unit with health has a health settings record (HealthComponent, 0x5650 bytes, in the settings the
 -- game loads at start), with up to 38 damageable zones of 0x228 bytes from +0x208. A zone's maximum health is at
 -- zone +0xE8 and the byte at zone +0xF0 is its "immortal" flag: "this zone cannot die until the entire entity dies".
 -- The game's zone damage code (game.dll+0x9240A5) reads that byte: an immortal zone that would die stays alive (down,
--- not destroyed) while the vehicle lives. On both FRVs the first four zones are the tires (350 health each, front
--- left, front right, rear left, rear right: the same four parts Tank Core reads for the Vehicle Indicator).
+-- not destroyed) while the vehicle lives. On the FRVs the first four zones are the tires (front left, front right, rear
+-- left, rear right: the same four parts Tank Core reads for the Vehicle Indicator), 350 health each on the M-102 and
+-- M-103; (3.7.0) the M-104's are the same four zones, by the same names, with 520 health (its other zones are tougher too).
 -- This sets the tires' immortal flag in the FRVs' loaded settings, so a tire can't pop; Tank Core (part of this
 -- option) also tops the tires of the FRV you ride in back up to full, so they never show damage. Nothing else in the
 -- records is changed. The game's values go back when the game closes or the option is turned off in the menu.
@@ -35,11 +36,11 @@ local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
 
-local S = {version = '3.6.2', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.7.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            frvs = 'not yet', copies = 'not looked at yet', copies_found = 'not looked for yet', writes = 0, reapplied = 0,
            errors = 0, last_error = 'none', options_menu = 'not installed (the mod manager\'s pick)', frames = 0,
-           on = false, tire_full = nil}
--- (S.on and S.tire_full are read by Tank Core: it tops the tires of the FRV you ride in back up to tire_full while on)
+           on = false}
+-- (S.on and S.set are read by Tank Core: it tops the tires of the FRV you ride in back up to that FRV's maximum while on)
 rawset(_G, 'ArmoredOverhaulRunFlat', S)
 
 local function log()
@@ -211,9 +212,12 @@ end
 -- ---------------------------------------------------------------- the FRVs' records
 -- each zone: 0x228 bytes from +0x208; its name hash at zone +0x60, its maximum health at +0xE8, immortal at +0xF0
 -- (then four more flags, 0 or 1). The first four zones are the tires.
-local Z = {stride = 0x228, name = 0x268, health = 0x2F0, immortal = 0x2F8, tires = 4, hp = 350, sig = 8}
-local FRVS = {{name = 'M-102', lo = 0xD3EBEFB9, hi = 0xCC21C7FF}, {name = 'M-103', lo = 0x8640432E, hi = 0x9B214037},
-              {name = 'M-104', lo = 0xD8717FE5, hi = 0x2D85BFE3, optional = true}}   -- (the M-104 isn't in the game now)
+local Z = {stride = 0x228, name = 0x268, health = 0x2F0, immortal = 0x2F8, tires = 4, sig = 8}
+-- each FRV's tire health as the game has it (3.7.0: the M-104's tires, read by the 3.7.0 Test 11 tester log: 520)
+local FRVS = {{name = 'M-102', lo = 0xD3EBEFB9, hi = 0xCC21C7FF, hp = 350}, {name = 'M-103', lo = 0x8640432E, hi = 0x9B214037, hp = 350},
+              {name = 'M-104', lo = 0xD8717FE5, hi = 0x2D85BFE3, hp = 520, optional = true}}   -- (optional: not in every game build)
+local TIRE_HP = {}                   -- the tire healths above, for the per-FRV copies' first look
+for _, v in ipairs(FRVS) do TIRE_HP[v.hp] = true end
 local found = nil           -- the accessor
 local copies_at = nil       -- the per-FRV copies' look-up (tail_at)
 local held = {}             -- FRV name -> {rec, tbl, game = {4 bytes}, from, sig, set}
@@ -239,11 +243,11 @@ local function record_of(tbl, v)
     return nil, 'not in the list'
 end
 -- the tire zones of a record checked: nil and the reason when not as the game has them
-local function check_zones(rec)
+local function check_zones(rec, want_hp)
     for k = 0, Z.tires - 1 do
         local z = rec + k * Z.stride
         local hp = s32(z + Z.health)
-        if hp ~= Z.hp then return string.format('zone %d health is %d, not %d', k, hp, Z.hp) end
+        if hp ~= want_hp then return string.format('zone %d health is %d, not %d', k, hp, want_hp) end
         if u32(z + Z.name) == 0 then return string.format('zone %d has no name', k) end
         for b = 0, 4 do
             if z[Z.immortal + b] > 1 then return string.format('zone %d flag +0x%X is %d', k, 0xF0 + b, z[Z.immortal + b]) end
@@ -256,7 +260,7 @@ local function signature(rec)
     for k = 0, Z.sig - 1 do t[#t + 1] = ffi.string(rec + Z.name + k * Z.stride, 4) end
     return table.concat(t)
 end
--- (as in Tank Collision Damage Boost) the game's own values are also kept in a process environment variable: a copy of
+-- (as in Tank Collision Demolition Boost) the game's own values are also kept in a process environment variable: a copy of
 -- this addon loaded again while the game runs finds this mod's flags in the records, and takes the game's from there
 local ENV_NAME = 'ARMORED_OVERHAUL_RUNFLAT_GAME'
 local kept = nil
@@ -288,7 +292,7 @@ local function apply()
         local rec, why = record_of(tbl, v)
         local line
         if rec then
-            local bad = check_zones(rec)
+            local bad = check_zones(rec, v.hp)
             local hd = held[v.name]
             if hd and hd.rec ~= rec then
                 -- the game loaded its settings again: the game's values there again counted as a reset
@@ -309,7 +313,7 @@ local function apply()
                 if kept[v.name] then g, from = kept[v.name], 'kept'
                 elseif any and stamp == KNOWN.stamp then g, from = {0, 0, 0, 0}, 'known build'
                 else g, from = now, 'read' end
-                hd = {rec = rec, tbl = tbl, game = g, from = from, sig = signature(rec)}
+                hd = {rec = rec, tbl = tbl, game = g, from = from, sig = signature(rec), hp = v.hp}
                 held[v.name] = hd
                 env_save()
             end
@@ -344,14 +348,13 @@ local function apply()
     -- every FRV's tires at 350, a "left alone" one too)
     S.on = want_on and n > 0
     S.set = S.on and set or {}
-    S.tire_full = S.on and Z.hp or nil
     return n, table.concat(parts, '; ')
 end
 local function restore()
     -- only into the table the flags were written to (a table the game loaded again since may be somewhere else)
     local tbl = found and table_now()
     for _, hd in pairs(held) do
-        if hd.set and tbl and tbl == hd.tbl and readable(hd.rec + Z.name, Z.tires * Z.stride) and not check_zones(hd.rec) then
+        if hd.set and tbl and tbl == hd.tbl and readable(hd.rec + Z.name, Z.tires * Z.stride) and not check_zones(hd.rec, hd.hp) then
             for k = 0, Z.tires - 1 do
                 local p = hd.rec + Z.immortal + k * Z.stride
                 if p[0] ~= hd.game[k + 1] then pcall(write_byte, p, hd.game[k + 1]) end
@@ -359,7 +362,7 @@ local function restore()
             hd.set = false
         end
     end
-    S.on, S.tire_full, S.set = false, nil, {}
+    S.on, S.set = false, {}
 end
 
 -- ---------------------------------------------------------------- the FRVs' own copies
@@ -368,7 +371,7 @@ end
 -- through the map, 512 entries a frame: a copy whose first eight zone names match an FRV's record and whose tires
 -- are as the game has them gets the same flags as the shared record (on: set; off: the game's own).
 local cp = {i = 0, cap = 0, next_at = 0}
--- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") 3.6.1 went through every copy in the game
+-- (3.6.2 Test 4: "same with most of the Armored Overhaul modules") 3.6.1 went through every copy in the game
 -- every 5 s for as long as it ran. A copy is made from the shared record as an FRV is called in, so only FRVs called in
 -- before that record was set need theirs set: a pass now runs after this addon writes the shared record (the first time,
 -- a menu change, settings loaded again), as you get into an FRV, and every 5 s while you sit in one. With Tank Core's
@@ -377,7 +380,7 @@ local copies_due = false
 local function frv_seat()
     local seat = rawget(_G, 'ArmoredOverhaulSeat')
     if type(seat) ~= 'table' or seat.live == false then return nil end      -- ((3.6.2 review) Tank Core stopped: as without it)
-    return seat.kind == 0x1A or seat.kind == 0x1B
+    return seat.kind == 0x1A or seat.kind == 0x1B or seat.kind == 0x1C
 end
 local copy_line = nil
 -- (3.6.0 review) the map as the game has it now (read every frame of a pass: a map the game moved or resized since the
@@ -430,10 +433,10 @@ local function copies_step()
         if key ~= cp.empty and idx ~= 0xFFFFFFFF and idx < 0x100000 then
             cp.all = cp.all + 1
             local rec = cp.arr + idx * found.stride
-            if readable_here(rec + Z.name, (Z.sig - 1) * Z.stride + 8) and s32(rec + Z.health) == Z.hp then
+            if readable_here(rec + Z.name, (Z.sig - 1) * Z.stride + 8) and TIRE_HP[s32(rec + Z.health)] then
                 local sig = signature(rec)
                 for _, hd in pairs(held) do
-                    if hd.sig == sig and not check_zones(rec) then
+                    if hd.sig == sig and not check_zones(rec, hd.hp) then   -- (the M-102's and M-104's names are the same: told apart by their tires)
                         cp.frv = cp.frv + 1
                         for k = 0, Z.tires - 1 do
                             local p = rec + Z.immortal + k * Z.stride
@@ -511,7 +514,7 @@ end
 -- one switch, on when installed; off = the game's own
 menu_rows.run_flat = {
     {'armored_overhaul.run_flat', {type = 'toggle', label = 'FRV Run-Flat Tires', default = true,
-        description = 'The M-102 and M-103 FRVs\' tires never pop, and the tires of the FRV you ride in stay at full health. Works when you host or play alone (in someone else\'s game their game decides). Turning it off puts the game\'s own back.'}, 'on'},
+        description = 'The M-102, M-103 and M-104 FRVs\' tires never pop, and the tires of the FRV you ride in stay at full health. Works when you host or play alone (in someone else\'s game their game decides). Turning it off puts the game\'s own back.'}, 'on'},
 }
 menu_set = function(key, v)
     if key ~= 'on' then return end
@@ -561,7 +564,7 @@ local function tick()
             local root = readable(acc.root, 8) and ptr(acc.root)
             local tbl = root and readable(root + acc.table_at, 8) and ptr(root + acc.table_at)
             local rec = tbl and readable(tbl, acc.first) and record_of(tbl, FRVS[1])
-            if rec and not check_zones(rec) then break end
+            if rec and not check_zones(rec, FRVS[1].hp) then break end
             found = nil
         end
         if not found and #scan.hits == 1 then found = scan.hits[1] end      -- (settings not loaded yet: checked below)

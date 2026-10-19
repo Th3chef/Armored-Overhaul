@@ -1,7 +1,8 @@
 -- HD2-Addon: mods/chef/armored_overhaul_collision_damage
--- Armored Overhaul 3.6.2 - Tank Collision Damage Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
+-- Armored Overhaul 3.7.0 - Tank Collision Demolition Boost: the TD-220 Bastion and TD-110 Maelstrom break the walls, fences and
 -- buildings they drive into instead of stopping dead against them. Written from scratch. (Named Tank Wall Breaking until
--- 3.5.0 Test 3: the tester named it Tank Collision Damage Boost, since it breaks small buildings too.)
+-- 3.5.0 Test 3: I named it Tank Collision Damage Boost, since it breaks small buildings too; 3.7.0: Tank Collision
+-- Demolition Boost.)
 --
 -- How the game decides (game.dll, Sept 2026 build; the field meanings from its code, the values from the game's own
 -- data): every vehicle has a collision-damage record (VehicleCollisionDamageComponent, 0xD0 bytes, in the settings the
@@ -12,7 +13,7 @@
 -- vehicles; Striders and Eagle rockets; orbital bombardment; Hellbombs. Both tanks have 25 and 35 there, the same as
 -- the FRV, so a tank breaks what a car breaks and stops dead against a wall.
 -- This sets both values, for the two tank hulls only, from how fast the tanks are really going (see CURVE below): up
--- to 40, the tier of autocannons and Chargers (walls, fences and small buildings; the tester's cap), in the loaded
+-- to 40, the tier of autocannons and Chargers (walls, fences and small buildings; my cap), in the loaded
 -- settings. The game reads the record at every hit, so tanks already out change at once, and a Mod Options Menu change
 -- too. The game's values go back when the game closes or the option is turned off in the menu. Nothing else in the
 -- record (the damage the tank takes or deals, its speed limits) is changed.
@@ -36,26 +37,26 @@ end) end
 local loader = rawget(_G, 'CowboyBingusModLoader')
 if type(loader) ~= 'table' or type(loader.version) ~= 'number' or loader.version < 15 then return end
 local TESTER = false
--- (3.5.0 Test 2, the tester: "lets not add any settings to the wall breaking, it should just be toggleable, and the demo
+-- (3.5.0 Test 2: "lets not add any settings to the wall breaking, it should just be toggleable, and the demo
 -- force should be 40 at most") one setting, on or off.
--- (Test 5, the tester: "is there a way to only apply it past a certain speed?") The game blends a hit's demolition
+-- (Test 5: "is there a way to only apply it past a certain speed?") The game blends a hit's demolition
 -- between +0x14 and +0x18 by a fraction it works out from the hit (game.dll+0x129D9F5: low * (1 - t) + full * t,
 -- rounded), but that fraction is near 1 for any real contact: Test 5 (25 -> 40) broke a 40 wall with a nudge.
--- (Test 6, the tester: "lets have it scale mid range is 30 and 3/4 and up is 40"; "the default is currently 25";
+-- (Test 6: "lets have it scale mid range is 30 and 3/4 and up is 40"; "the default is currently 25";
 -- "demolition damage should not go higher than 40") So the scaling is done here instead, from how fast each tank is
 -- really going: every frame each tank type's demolition is set (both values alike, so the game's own blend changes
 -- nothing) from the fastest tank of that type out, along CURVE. Speed: the hull's root node, sideways only (a falling
 -- tank isn't fast), the highest of the last PEAK_HOLD seconds (so the hit in the frames the tank stops still counts).
 local REF_KMH = 35                             -- the tanks' full speed (the game's own speed range for these hits)
--- (3.5.0 release, the tester: "actually, lets do 30/35/40")
+-- (3.5.0 release: "actually, lets do 30/35/40")
 local CURVE = {{0, 30}, {0.5, 35}, {0.75, 40}} -- {fraction of REF_KMH, demolition}; 40 from 3/4 up, never above 40
 local CAP = 40
-local PEAK_HOLD = 0.25             -- (Test 7, the tester: "it seems to stay on the high demo for a little long before its reduced
-                                   -- again": Test 6 held 0.4 s, 3.5.0 0.15 s; 3.5.1 Test 3, the tester: "too short. .25 seconds is fine")
+local PEAK_HOLD = 0.25             -- (Test 7: "it seems to stay on the high demo for a little long before its reduced
+                                   -- again": Test 6 held 0.4 s, 3.5.0 0.15 s; 3.5.1 Test 3: "too short. .25 seconds is fine")
 local GAME = {25, 35}                          -- the game's own values for both tanks (Sept 2026 build)
 local RING = 128                               -- speed samples kept per tank (PEAK_HOLD at up to ~500 frames a second; 3.5.0: 64)
 
-local S = {version = '3.6.2', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
+local S = {version = '3.7.0', status = 'starting', game = 'unchecked', found = 'not yet', how = 'none',
            tanks = 'not yet', writes = 0, reapplied = 0, errors = 0, last_error = 'none',
            options_menu = 'not installed (the mod manager\'s pick)', frames = 0}
 rawset(_G, 'ArmoredOverhaulCollisionDamage', S)
@@ -64,7 +65,7 @@ local function log()
     pcall(function()
         local f = loader.open_log and loader.open_log('ArmoredOverhaul-CollisionDamage.log')
         if not f then return end
-        f:write('Armored Overhaul - Tank Collision Damage Boost\n', 'version: ', S.version, '\n', 'status: ', S.status, '\n',
+        f:write('Armored Overhaul - Tank Collision Demolition Boost\n', 'version: ', S.version, '\n', 'status: ', S.status, '\n',
             'game: ', S.game, '\n', 'found: ', S.found, ' (', S.how, ')\n',
             'tanks: ', S.tanks, '\n', S.speed and ('speed: ' .. S.speed .. '\n') or '', 'followed: ', tostring(S.driving or 'not driving yet'), '\n', 'put back after the game reset them: ', S.reapplied, '\n',
             'options menu: ', S.options_menu, '\n', 'errors: ', S.errors, '\n', 'last error: ', S.last_error, '\n')
@@ -359,7 +360,7 @@ do
 end
 -- one switch, on when installed; off = the game's own
 menu_rows.collision = {
-    {'armored_overhaul.collision_damage', {type = 'toggle', label = 'Tank Collision Damage Boost', default = true,
+    {'armored_overhaul.collision_damage', {type = 'toggle', label = 'Tank Collision Demolition Boost', default = true,
         description = 'The faster the Bastion and Maelstrom drive into things, the harder they hit: demolition force 30 when crawling, 35 at half speed, 40 from three-quarter speed (walls, fences, small buildings). Works for the tank you drive; turning it off puts the game\'s own back.'}, 'on'},
 }
 menu_set = function(key, v)
@@ -389,7 +390,7 @@ local next_list = 0
 local fastest_seen = {}     -- hull name -> highest km/h seen (Tester log)
 local out = {}              -- (3.5.0 review) reused each frame: name -> km/h of the fastest
 -- each tank's sideways speed this frame (km/h), the highest of the last PEAK_HOLD s; returns name -> km/h of the fastest
--- (3.5.1 Test 15) the tester: "the collision boost should only apply while driving a tank. A tank that isnt being
+-- (3.5.1 Test 15) "the collision boost should only apply while driving a tank. A tank that isnt being
 -- driven doesnt need it running". Tank Core (now part of this option) publishes your seat: only while you drive a
 -- Bastion or Maelstrom (the driver's seat, or its gunner seat with Gunner Drive driving) is a tank followed, only that
 -- kind, and only your own tank when the Turret indicator / Gunner camera say which it is. Otherwise nothing is looked
@@ -416,7 +417,7 @@ local function speeds()
     local okn, now = pcall(A.time_since_launch)
     if not okn or type(now) ~= 'number' then return out end
     if now >= next_list then                       -- the tanks out, looked for every 2 s
-        next_list = now + 2      -- ((3.5.1 Test 14) every 2 s, was 0.5: the tester, "taking up a lot of performance")
+        next_list = now + 2      -- ((3.5.1 Test 14) every 2 s, was 0.5: "taking up a lot of performance")
         local okw, world = pcall(A.main_world)     -- ((Test 14) only here: 3.5.0-Test 13 asked for it every frame)
         if not okw or not world then return out end
         local seen = {}
@@ -481,7 +482,7 @@ local function table_now()
     local root = readable(found.root, 8) and ptr(found.root)
     return root and readable(root + found.table_at, 8) and ptr(root + found.table_at)
 end
--- (3.5.1 Test 14) the tester: "tank collision damage boost is taking up a lot of performance". Test 13 asked Windows
+-- (3.5.1 Test 14) "tank collision damage boost is taking up a lot of performance". Test 13 asked Windows
 -- (VirtualQuery) about 45 times a second just to see the table hadn't moved (every 6 frames, and before writes). The
 -- settings-root global is in game.dll's own data, always there, so it is read directly; the root object it points to
 -- is checked once each time that pointer changes, and its table pointer is then read directly too. Only compared with
@@ -538,7 +539,7 @@ local function follow_speed()
 end
 
 local phase, shown = 'gate', nil
--- (3.6.2 Test 4, the tester: "Im also seeing Tank collision boost running in the background while im not even in a game.
+-- (3.6.2 Test 4: "Im also seeing Tank collision boost running in the background while im not even in a game.
 -- It shouldnt even really run unless a tank is being driven") With Tank Core's seat (part of this option), nothing runs
 -- until you drive a Bastion or Maelstrom: no look-up of the game's code, no settings checks, no speed. The values go in
 -- as you start driving (the game reads them at every hit) and the game's own go back as you stop. Without the seat (an

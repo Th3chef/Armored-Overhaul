@@ -1,6 +1,6 @@
 -- HD2-Addon: mods/chef/armored_overhaul_driver_panel
--- Armored Overhaul 3.6.2 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
--- TD-110 Maelstrom or M-102 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
+-- Armored Overhaul 3.7.0 - Driver Panel option (3.2.0: its own option; 1.2.2-3.1.1 part of Gunner Drive): while you drive a TD-220 Bastion,
+-- TD-110 Maelstrom, M-102 FRV or M-104 FRV from the gunner seat, a panel like the game's own driver HUD shows the gear selector,
 -- the gear, the rpm, the speed and the fuel (and the Maelstrom's smoke rounds). Drawn only on your screen. Written
 -- from scratch. (1.2.2: it was part of the Turret indicator until 1.2.1, and turning that option off took the panel too.)
 -- (The Turret indicator and the driver panel share their drawing code; each file is edited directly - (3.5.1 review) the old
@@ -32,7 +32,7 @@ local TITLE, LOG_FILE = 'Driver Panel', 'ArmoredOverhaul-DriverPanel.log'
 -- with the code that could only run with them off)
 local SETTINGS = {x = 0.5, y = 0.1, size = 0.022, opacity = 0.55}
 
-local S = {version = '3.6.2', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
+local S = {version = '3.7.0', status = 'starting', api = 'unchecked', gui = 'none', tank = 'none', seat = 'none',
            last_error = 'none', frames = 0, drawn = 0, finds = 0, errors = 0,
            pick = 'none', gear = 'hidden', panel = 'none', font = 'not needed yet', input = 'keyboard', input_api = 'unchecked',
            speed = 'not measured yet', fastest = 'not measured yet', speed_check = 'none', handling_check = 'not driven yet', options_menu = 'not installed (the defaults are used)'}
@@ -357,7 +357,11 @@ local TT = {
     -- (2.1) the FRV (FRV Gunner Drive): the Driver panel measures its speed (TT.hull) and the Turret indicator shows
     -- its machine gun's direction and its health. Kept apart from TANKS: the Gunner camera is tanks only.
     HULLS = {[0x1A] = {name = 'FRV', hull = 'content/fac_helldivers/vehicles/frv/frv',
-                       gun = 'content/fac_helldivers/vehicles/frv/armaments/frv_mg/frv_mg', gun_node = 'horizontal_axis'}},
+                       gun = 'content/fac_helldivers/vehicles/frv/armaments/frv_mg/frv_mg', gun_node = 'horizontal_axis'},
+             -- (3.7.0) the M-104 Incinerator FRV and its flamethrower (the same turning bone; from the game files, not
+             -- tested in game: the M-104 isn't in the game now)
+             [0x1C] = {name = 'M-104 Incinerator FRV', hull = 'content/fac_helldivers/vehicles/frv_heavy/frv_flamer',
+                       gun = 'content/fac_helldivers/vehicles/frv_heavy/armaments/frv_flamethrower/frv_flamethrower', gun_node = 'horizontal_axis'}},
     FIND_EVERY = 30,             -- frames between searches while seated and not yet found
     FIND_SLOW = 300,             -- ... after FIND_MISSES misses in a row (a search can go through every unit)
     FIND_MISSES = 5,
@@ -956,7 +960,7 @@ local function core_seat(frv)
     if cf ~= core_watch.frames then core_watch.frames, core_watch.seen = cf, S.frames end
     local core_ok = core.phase ~= 'off' and S.frames - (core_watch.seen or S.frames) <= CORE_STALL
     if not core_ok then return nil, cf, false, 'waiting: Tank Core is not running (' .. tostring(core.status) .. ')' end
-    local seated = seat.kind and (TANKS[seat.kind] or (frv and seat.kind == FRV_KIND)) and cf - (seat.frame or -1e9) <= SEAT_FRESH
+    local seated = seat.kind and (TANKS[seat.kind] or (frv and TT.HULLS[seat.kind])) and cf - (seat.frame or -1e9) <= SEAT_FRESH   -- (3.7.0: and the M-104)
     return seated and seat or nil, cf, true, 'watching'
 end
 
@@ -1231,7 +1235,7 @@ local function tick()
     d.smoke_full = type(seat.smoke_full) == 'number' and seat.smoke_full or nil
     d.controller = input_device() == 'controller'
     d.remote = seat.remote == true
-    d.frv = seat.kind == FRV_KIND
+    d.frv = TT.HULLS[seat.kind] ~= nil      -- (3.7.0: the M-102 and the M-104)
     -- (2.0.1 review) What decides a redraw is compared value by value: the frame (screen, settings, keyboard or
     -- controller, smoke, remote, font) and the live values. 2.0 built two long text keys every frame for this.
     local H, Lv = hud_now, live_now

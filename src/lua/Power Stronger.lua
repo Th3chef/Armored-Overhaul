@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_power
--- Armored Overhaul 3.6.2 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
+-- Armored Overhaul 3.7.0 - Tank Top Speed, Tank Engine Torque, Tank Grip, Tank Stability and the gear changes of Tank
 -- Throttle Response, for the TD-220 Bastion and TD-110 Maelstrom (one source, built once per option and strength;
 -- this copy is the 'torque' option, Stronger). Written from scratch.
 --
@@ -11,7 +11,7 @@
 --   +0x8 max rpm, +0xC max torque)
 --   wheel get / set: slots 0x40 / 0x48 (handle, wheel 0..9, 0x2C-byte wheel block: +0xC friction, +0x14 max friction)
 --   transmission get / set: slots 0x90 / 0x98 (handle, 0x14-byte block: +0x10 clutch delay, 0.3 s)
--- (Test 29) Tank Stability is downforce. the tester: "work more on keeping the tank flat on the ground. It should feel heavy
+-- (Test 29) Tank Stability is downforce. "work more on keeping the tank flat on the ground. It should feel heavy
 -- properly, but in this game its got a floaty physics". The tank's Havok aerodynamics (the hull physics' "VRA " block:
 -- air density 15, frontal area 8, drag 14, lift 0 on both tanks) are read and set live through slots 0x20 / 0x28
 -- (handle, density, drag, lift: the game's own call at game.dll+0x718E20 scales the density by its air factor, the two
@@ -20,14 +20,14 @@
 -- negative lift coefficient presses the hull down with 0.5 x density x area x lift x speed squared (Havok's convention:
 -- its vehicle demo uses -0.3 for downforce); it acts at the center of mass, so it adds weight without leaning the hull.
 -- The pick is the tank's weight at 45 km/h: Stable x1.5, Steady x2, Planted x3 (half that extra at 32 km/h, a tenth at
--- 14 km/h). (Test 36's lift test, lift raised by 15.7: the tester "felt lighter than usual, but the vanilla tank already feels
+-- 14 km/h). (Test 36's lift test, lift raised by 15.7: I "felt lighter than usual, but the vanilla tank already feels
 -- light": the call reaches the physics and a positive lift lifts, so the negative one presses down; Test 32's x1.15 to
 -- x1.5 were too little to notice: Test 37 x1.5 / x2 / x3.)
 -- The torque roll and pitch factors, row +0x630 / +0x634 of the tank's 0x670-byte record (the component's +0x70), are
--- handed to the physics every frame (game.dll+0x71750D; 1 and 1 on both tanks). (Test 23, the tester: "keeping the tank on the
+-- handed to the physics every frame (game.dll+0x71750D; 1 and 1 on both tanks). (Test 23: "keeping the tank on the
 -- ground with all the extra torque") The extra drive is kept from tipping the hull back: every part but shift sets
 -- them to
---   roll  = the tank's own (Tests 24-28: x Stability; Test 29, the tester: "lets leave that at 1")
+--   roll  = the tank's own (Tests 24-28: x Stability; Test 29: "lets leave that at 1")
 --   pitch = the tank's own / (Top Speed x Engine Torque)
 -- so the extra pulling power tips the hull back no more than the game's own (all parts agree on it). (Test 24) The roll
 -- factor is no longer lowered: Test 23 (roll 0.2) still leaned 43 deg outward in a 38 km/h, 40 deg/s turn, and in 3.1.0
@@ -40,7 +40,7 @@
 -- torque (pulling power: quicker off the line and up slopes); with both, the torque is the two multiplied. Tank Grip
 -- raises every wheel's friction and max friction. The 'shift' part (in the Tank Throttle Response option, next to the
 -- VehicleMotion let-off rates of the Steering source) cuts the clutch delay, following that option's pick. (3.4.0 Test 20: Engine Torque - Tank Power until 3.3.0 - and Grip were
--- scaled in the game's VehicleMotion table, which only tanks called in afterwards used; the tester: "lets implement all of
+-- scaled in the game's VehicleMotion table, which only tanks called in afterwards used; "lets implement all of
 -- those" - now they change the tank you are in at once.)
 -- The tank is found in the networked vehicle component [game.dll+0x3326458] (map +0x40, entries +0x58, entry +0xC
 -- the physics id). The three places are read from the game's own code (pattern below), so they follow a game update
@@ -68,7 +68,7 @@ local PARTS = {
     shift = {global = 'ArmoredOverhaulShift', file = 'TankShift', title = 'Tank Throttle Response (gear changes)', what = 'clutch delay',
              follow = 'ArmoredOverhaulThrottle', choices = {'Off', 'Quick', 'Quicker', 'Instant'}, mults = {1, 0.5, 0.2, 0}},
     -- (Test 29) downforce: the tank pressed down harder the faster it goes (the multiplier is its weight at 45 km/h; see the
-    -- top). Tests 24-28 raised the roll factor instead (the tester: x2 "rolled easier"; "leave that at 1")
+    -- top). Tests 24-28 raised the roll factor instead (x2 "rolled easier"; "leave that at 1")
     stability = {global = 'ArmoredOverhaulStability', file = 'TankStability', title = 'Tank Stability', what = 'weight at 45 km/h, from downforce',
                  menu = 'stability', choices = {'Off', 'Stable', 'Steady', 'Planted'}, mults = {1, 1.5, 2, 3},   -- (Test 37: were 1.15 / 1.3 / 1.5)
                  description = 'Keeps the Bastion and Maelstrom on the ground: pressed down harder the faster they go, so they stay flat over crests and bumps instead of floating. Changes the tank you are in at once.'},
@@ -108,7 +108,7 @@ local TANK_KINDS = {[0x2B] = 'Bastion', [0x2C] = 'Maelstrom'}
 local CHECK_EVERY = 120
 local MAX_TANKS = 8
 
-local state = {version = '3.6.2', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
+local state = {version = '3.7.0', status = 'starting', game = 'unchecked', found = 'not yet', preset = 'unread',
                tanks = {}, errors = 0, last_error = 'none', frames = 0, writes = 0,
                options_menu = 'not installed (the mod manager\'s pick is used)'}
 state.part, state.live_mult = PART, 1            -- (Test 20: what this part multiplies now, for the other parts)
@@ -757,8 +757,8 @@ do
     local L = rawget(_G, 'CowboyBingusModLoader')
     if type(L) == 'table' and type(L.after_startup) == 'function' then pcall(L.after_startup, function() pcall(menu_link, true) end) end
 end
--- (3.4.0 Test 7, the tester: "2x is too fast") Top Speed's Fastest was x1.5; (Test 22, the tester: "50% is a little excessive") it is
--- x1.25 on both tanks, with Fast x1.1 and Faster x1.15; (Test 28, the tester: "fastest can be 1.3") Fastest x1.3
+-- (3.4.0 Test 7: "2x is too fast") Top Speed's Fastest was x1.5; (Test 22: "50% is a little excessive") it is
+-- x1.25 on both tanks, with Fast x1.1 and Faster x1.15; (Test 28: "fastest can be 1.3") Fastest x1.3
 local MENU_CHOICES, MENU_MULTS = P.choices, P.mults
 local MENU_PICK = 2
 for i, m in ipairs(MENU_MULTS) do if i > 1 and math.abs(m - PRESET) < 1e-6 then MENU_PICK = i end end
@@ -816,7 +816,7 @@ local function tick()
         local c = type(st) == 'table' and tonumber(st.choice)
         if c and MENU_MULTS[c] and c ~= followed then followed = c; menu_set('mult', c) end
     end
-    -- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") With Tank Core's seat, nothing runs
+    -- (3.6.2 Test 4: "same with most of the Armored Overhaul modules") With Tank Core's seat, nothing runs
     -- (not even the look-up of the game's code) until you sit in a Bastion or Maelstrom: only that tank is changed anyway
     local idle_seat = rawget(_G, 'ArmoredOverhaulSeat')
     if type(idle_seat) == 'table' and idle_seat.live ~= false and not TANK_KINDS[tonumber(idle_seat.kind) or 0] then

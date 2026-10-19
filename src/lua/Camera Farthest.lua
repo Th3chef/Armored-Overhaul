@@ -1,5 +1,5 @@
 -- HD2-Addon: mods/chef/armored_overhaul_gunner_camera
--- Armored Overhaul 3.6.2 - Gunner camera option (Farthest): how far behind the turret the tank
+-- Armored Overhaul 3.7.0 - Gunner camera option (Farthest): how far behind the turret the tank
 -- gunner's camera follows, for the TD-220 Bastion and TD-110 Maelstrom. Written from scratch.
 --
 -- How it works: the tank gunner view is one preset in the game's camera preset table (0x90-byte records numbered by
@@ -39,7 +39,7 @@ local written = {side = 0, back = 0, up = 0}   -- what this addon wrote last (ap
 -- every distance and the rise only sets the distance behind (BASE_BACK + the pick x cos 10 degrees); only the offset
 -- fallback (no camera distances, see set_want) still rises with the distance.
 local RISE, BASE_BACK, BASE_DOWN = math.rad(10), 0.5, 0.5
--- (3.4.0 Test 16) the tester: "implementing the same zoomed out camera fix for the tanks. High traverse can get wonky". The
+-- (3.4.0 Test 16) "implementing the same zoomed out camera fix for the tanks. High traverse can get wonky". The
 -- distance behind is no longer the offset (+0x34..+0x3C, in the hull's frame: turned round with the turret by this
 -- addon a quarter degree at a time, which lagged and jumped at high traverse) but the view's three camera distances
 -- (+0x24 / +0x28 / +0x2C: the game circles the camera round a point at that distance, along the line of sight, as in
@@ -52,7 +52,7 @@ local dist_own, dist_written                        -- the view's own distances;
 local distance = PRESET          -- (3.0) the pick in meters (x cos 10 degrees behind): the mod manager's, or the menu's (nil: Off)
 local CHECK_EVERY, SETTLED_EVERY = 120, 600
 
-local state = {version = '3.6.2', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
+local state = {version = '3.7.0', status = 'starting', how = 'none', game = 'unchecked', last_error = 'none',
                applied = 0, errors = 0, frames = 0, clock = 0, view = 'not found yet', where = 'none', turning = 'not in a gunner seat yet',
                turns = 0, tank = 'none',
                preset = string.format('%s (picked in the mod manager)', PRESET_NAME),
@@ -491,7 +491,7 @@ local function tt_find_tank(world, kind)
     TT.gen = TT.gen + 1
     return true
 end
--- (3.5.1 Test 14) The barrel's pitch against the hull, for Turret Core's Freelook (the tester: "can it also freeze the
+-- (3.5.1 Test 14) The barrel's pitch against the hull, for Turret Core's Freelook ("can it also freeze the
 -- tank turret elevation"), only while it asks (pub.want_pitch). The barrel's tip is the gun bone farthest out along the
 -- turning bone's forward (the bones are listed once per gun: the engine's count if it gives one, else up to the first
 -- that isn't a finite place within 12 m, as junk past the last bone isn't an error; 3.4.1 Test 6's aim probe), and the
@@ -729,7 +729,7 @@ local blocked = false        -- (2.0.1 review) the record is left alone: gave up
 local function set_want(d)
     want.side = original.side
     if d == nil then want.back, want.up, reach = original.back, original.up, 0; return end      -- (the game's own)
-    -- (Test 30, the tester: "its too high up") with the orbit, every distance sits at Close's height (1.4 m over the turret on
+    -- (Test 30: "its too high up") with the orbit, every distance sits at Close's height (1.4 m over the turret on
     -- the known build; Tests 16-29 rose 10 degrees with the distance: Farthest 3.1 m); the offset view keeps the rise
     want.up = original.up - BASE_DOWN + (dist_own and -0.5 or d) * math.sin(RISE)
     if not dist_own then                                  -- (no distances known: the offset, as before Test 16)
@@ -789,7 +789,7 @@ end
 -- sits up the slope behind the turret, as the game's own view does), since a level camera stayed down at the turret's
 -- height and the tank's own hull hid the ground ahead (a user: "impossible to see ahead of the tank when you're going
 -- downhill" with the further cameras). Roll stays levelled either way; level ground is unchanged.
--- (3.6.0 Test 3) A user's screenshots (via the tester): aiming up with the Maelstrom leaning on a slope, the camera sank
+-- (3.6.0 Test 3) A user's screenshots (sent to me): aiming up with the Maelstrom leaning on a slope, the camera sank
 -- between the missile pods, and zoomed in it sat inside one. In the orbit the camera goes back along the line of sight
 -- from the point over the turret, so aiming up swings it down behind that point by its distance x the sine of the
 -- climb (the game's own view is only 1-2 m back, so it never reached the pods), and leaning sideways tips a pod up
@@ -826,7 +826,7 @@ local function set_target_level(a, B)
     local px, py, pz = gx / l, gy / l, 0                             -- along the heading: level when climbing...
     if gz < 0 then local n = math.sqrt(l * l + gz * gz); px, py, pz = gx / n, gy / n, gz / n end   -- ...down the slope
     local ux, uy, uz = ry * pz, -rx * pz, rx * py - ry * px          -- up, square to both (straight up when level)
-    -- (3.5.1 Test 2) the tester: aiming down on a slope "blocks your view from aiming". Pointing downhill, the ground behind
+    -- (3.5.1 Test 2) aiming down on a slope "blocks your view from aiming". Pointing downhill, the ground behind
     -- the tank rises with the slope while the camera's arm back from the turret runs about level, so the farther cameras
     -- went into the hill and the game pulled them in, low behind the turret, which then hid the ground below the
     -- crosshair (Test 1 log: asked for 10.4 m back, measured 3.1 to 6.7). In the orbit the point over the turret is
@@ -961,9 +961,9 @@ end
 -- the camera's field of view is read before and 0.6 s after: if it didn't narrow, the crosshair zoom is not used for
 -- the rest of the game and the wheel moves the camera only (Test 7: steps that don't show felt like a "buffer"
 -- before the camera moved back).
-local ZOOM = {step = 1.0, min = -0.5, max = 16, max_other = 7, speed = 16, fovs = {}, glide = 16}   -- (3.4.0 Test 28, the tester: "needs to go farther back": the wheel reaches 12, was 7; Test 31: "a bit more": 16)
--- (3.5.1) the tester: the wheel was "slow to adjust": twice as fast, 1 m a notch (was 0.5), gliding there quicker (16 m/s,
--- was 8). (Test 2, the tester: "the zoom in should zoom in by 1x each time") the crosshair zoom goes up 1x a notch: x2, x3 ..
+local ZOOM = {step = 1.0, min = -0.5, max = 16, max_other = 7, speed = 16, fovs = {}, glide = 16}   -- (3.4.0 Test 28: "needs to go farther back": the wheel reaches 12, was 7; Test 31: "a bit more": 16)
+-- (3.5.1) the wheel was "slow to adjust": twice as fast, 1 m a notch (was 0.5), gliding there quicker (16 m/s,
+-- was 8). (Test 2: "the zoom in should zoom in by 1x each time") the crosshair zoom goes up 1x a notch: x2, x3 ..
 -- x10 (9 notches; Test 1: 1.5x steps, 3.5.0: 1.25x steps, 11 notches); it glides there at 16 (was 12)
 for f = 2, 10 do ZOOM.fovs[#ZOOM.fovs + 1] = f end
 local zoom = {seated = false, extra = 0, d = nil, t = nil, idx = nil, level = 0, f = 1, notches = 0}
@@ -1053,12 +1053,12 @@ local function camera_fovs()
     end
     return out
 end
--- (3.4.0 Tests 28 and 35, Tester only) The tester's diagnostics, all in DIAG (3.4.0 review: nil in a release build, so
+-- (3.4.0 Tests 28 and 35, Tester only) The Tester build's diagnostics, all in DIAG (3.4.0 review: nil in a release build, so
 -- nothing of them is made or run there, and they take one top-level local, not four).
 local DIAG = TESTER and {cm = {next_at = 0, cam = nil, text = nil, near = nil, far = nil}, ps = {next_at = 0, bins = {}, order = {}}} or nil
 if DIAG then
     local CM, PS = DIAG.cm, DIAG.ps
-    -- (Test 28) the tester: the distance "doesn't seem to match up anymore". Where the gunner camera really is, from the turret's
+    -- (Test 28) the distance "doesn't seem to match up anymore". Where the gunner camera really is, from the turret's
     -- turning point, once a second: the nearest camera to it is taken once (a search of the cameras within 30 m), then
     -- only its position is read. Logged with what this addon asked for. (3.4.0 review) The camera's unit is checked alive
     -- before every use and forgotten out of the seat (DIAG.leave; 3.4.0 tests kept it into the next mission, where it was
@@ -1113,7 +1113,7 @@ if DIAG then
             CM.text, CM.last, CM.logged = text, total, state.clock; state.cam_measured = text; log()
         end
     end
-    -- (Test 35) where the view stops on slopes: Test 34 moved the view's up/down limits by the slope and the tester still had the
+    -- (Test 35) where the view stops on slopes: Test 34 moved the view's up/down limits by the slope and I still had the
     -- problem. Five times a second in the gunner seat: the view's pitch against the horizon and against the hull, by the
     -- slope the view faces (5-degree bins); the lowest and highest of each show which frame the limit is in
     function DIAG.pitch()
@@ -1180,20 +1180,20 @@ local function fov_differs(x, y, tol)
     return not (math.abs(x.a - y.a) < tol and math.abs(x.b - y.b) < tol and math.abs(x.c - y.c) < tol)
 end
 -- the gunner view's field of view for zoom factor `f` (1 = the game's own), checked every frame while zoomed
--- (3.4.0 Test 16-17) the tester: "counter the recoil on the camera when zoomed in, as it shakes considerably". The preset's
+-- (3.4.0 Test 16-17) "counter the recoil on the camera when zoomed in, as it shakes considerably". The preset's
 -- +0x6C..+0x84 are the view's kick from a shot (two sets of three and one more: tank gunner 15/25/5 15/25/5 20; aim
 -- views: FRV 100 x7, HMG 0/0/0 3/1/1 20, AT 0/0/0 30/10/10 20, which matches how much each one shakes; Test 15's recoil
 -- test cut the AT's shake to a quarter with +0x78 at a tenth). The kick is what makes the view follow the gun's recoil
--- (Camera Shake Off in the game's options changed nothing). the tester chose a steady view when zoomed (Test 17): the kick
+-- (Camera Shake Off in the game's options changed nothing). I chose a steady view when zoomed (Test 17): the kick
 -- fades as you zoom in, so the view holds still and the crosshair moves with the recoil; at x1 it is the game's own. The
 -- Anti-Tank's aim view is already a 4x scope ("shakes tremendously"), so its scope counts as zoom. Put back with the
 -- zoom. (Test 16 divided +0x78 alone by the zoom: "largely unchanged"; Test 17 faded all of them times (1 / zoom)^3.)
--- (Test 18, the tester: "the zoomed in firing is better, but the shake still needs to be reduced") the fade is steeper:
+-- (Test 18: "the zoomed in firing is better, but the shake still needs to be reduced") the fade is steeper:
 -- (1 / zoom)^8 (x1.25: 17 %, x1.56: 3 %, x2: 0.4 %; the AT's scope: 0 from the start). Tests 18-30 faded +0x84 too;
 -- since Tests 30 and 31 only +0x78..+0x80 fade (KICK_FOLLOW below; comments brought up to date in the 3.4.0 review).
 local KICKF = {a = 0x6C, b = 0x70, c = 0x74, d = 0x78, e = 0x7C, g = 0x80, h = 0x84}
 local KICK_KEYS = {'a', 'b', 'c', 'd', 'e', 'g', 'h'}
--- (3.4.0 Test 30) the tester on Test 29: zoomed in, "the zoom camera stays where the tank initially was. the tank keeps moving
+-- (3.4.0 Test 30) my report on Test 29: zoomed in, "the zoom camera stays where the tank initially was. the tank keeps moving
 -- on". The first three (+0x6C..+0x74) are how hard the view follows its seat's movement (0 on the emplacements, which
 -- never move; 15/25/5 on the tank, 100 in the FRV): faded with the zoom (Tests 17-29), the zoomed camera stayed put
 -- while the tank drove off. They keep their own values now (Test 30 still faded +0x78..+0x84).
@@ -1435,7 +1435,7 @@ local function zb_notches(w)
     end
     return n
 end
--- (3.6.1, the tester: "the gunner camera zoom shouldnt be active when the map or pause menu is active. If i have the
+-- (3.6.1: "the gunner camera zoom shouldnt be active when the map or pause menu is active. If i have the
 -- pause menu open or the map and I want to zoom in on the map or scroll the menus, it still adjusts the camera") This
 -- frame's zoom notches, none while the game's UI holds the input (Tank Core's ui_input: the pause menu, the map). Asked
 -- only when the wheel or a zoom key moved; without Tank Core's answer the notches count as before.
@@ -1645,7 +1645,7 @@ end
 -- seat has two view presets in the same table (found by narrowing one preset at a time while sitting in each, Tests
 -- 9 and 13): its view, and its aim view while you aim (right mouse button).
 --   FRV gunner 35, aiming 74; HMG Emplacement 10, aiming 11; Anti-Tank Emplacement 12, aiming 13 (the scope)
--- (Test 14, the tester: "the zoom should only work on the frv gun when you are currently aiming" / "you should be able to zoom
+-- (Test 14: "the zoom should only work on the frv gun when you are currently aiming" / "you should be able to zoom
 -- out if youre not aiming though") Not aiming, the wheel moves the camera back (up to ZOOM.max_other m: 3.4.0 review) and in again, as far as
 -- the game's own place. (Test 15) It goes back along its own line of sight, through the view's three camera distances
 -- (+0x24 / +0x28 / +0x2C: these views circle round a point at that distance, closer when you look down, and the aim
@@ -2030,7 +2030,7 @@ end
 -- ---------------------------------------------------------------- main loop
 local phase = 'gate'
 local shown
--- (3.6.2 Test 4, the tester: "same with most of the Armored Overhaul modules") With Tank Core's seat: the preset (taken
+-- (3.6.2 Test 4: "same with most of the Armored Overhaul modules") With Tank Core's seat: the preset (taken
 -- by the game as you sit down, so it stays set from the start) is checked once a minute out of a vehicle seat, every
 -- 10 s in one, and at once as you sit down. Without the seat as before.
 local in_seat = nil
