@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.7.1
+
+Changed:
+- **Maelstrom Fire Rate menu:** the turret keeps following your aim while the fire-rate menu is open (it used to lock in place, like Freelook). A click in the menu still fires neither the gun nor the missiles.
+- **Menu titles:** the fire-rate menu says Maelstrom again, and the Bastion's hold-reload menu now says Bastion, so neither shows the other tank's name or your primary weapon's.
+- **Fire-rate menu, any way you hold it:** the mod now follows the game's own "menu open" mark, so the menu is held however you open it: key, mouse or controller.
+- **Game updates:** the pause menu, the map and the fuel gauge are now found in the game's own code, so they keep working after a game update.
+
+Fixed:
+- **Gunner camera zoom:** getting into a vehicle with your map open no longer turns the mouse-wheel zoom off until you get out and back in.
+- **Driver Panel fuel:** the fuel now reads in the game's own litres (up to 60), as its driver HUD shows it, instead of about 9,999.
+
+**Known issues:** The M-104 FRV isn't in the game yet, so its support is untested in game.
+
 ## 3.7.0
 
 New:
