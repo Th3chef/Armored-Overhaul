@@ -46,11 +46,11 @@ TANKS = {
 # turret sticks out less past the hull. A shear, not a mirror: the plates' art isn't flipped, nothing is turned inside
 # out, and the arm stays joined to the turret behind the bend. Normals are sheared with it (inverse transpose).
 ARM_MIN = 0.3              # m from the turret's middle: only the arms lean (nothing of the turret is closer there)
-# (3.4.1, the tester: "return the turret model back to 3.4.0, change the front prong on the turret back to the vanilla angle
+# (3.4.1: "return the turret model back to 3.4.0, change the front prong on the turret back to the vanilla angle
 # they were at") The lean is off: the arms keep the game's own angle (and their inner cut-aways). Tests 3-7's lip
 # removal is set aside too; Tests 8-17 below then reworked the turret's base, deck, hatches and gunner's door.
 LEAN_ARMS = False
-# (3.4.1 Test 8, the tester: "fix the lip on the turret so that its completely separated from the hull and looks like it
+# (3.4.1 Test 8: "fix the lip on the turret so that its completely separated from the hull and looks like it
 # was designed to be a 360 turret, rather than sliced off of the model") Behind the front arms, the turret's walls flare
 # out in their lowest ~30 cm (the casemate's base, out to the hull's sides): the lip. The turret is cut level LIP_CUT
 # over the roof line there, near and outside its body (its walls cut level at BODY_SECTIONS, LIP_INSET in), the part
@@ -61,7 +61,7 @@ LEAN_ARMS = False
 LIP_CUT = 0.24
 LIP_FRONT = 0.25
 OUT_CORNER = True                   # (3.6.1 Test 5) low inside triangles with a corner past the walls go with the outer walls
-# (3.4.1 Test 9, the tester: "the turret needs to not be a block into the hull, it needs to round off and have a small gap
+# (3.4.1 Test 9: "the turret needs to not be a block into the hull, it needs to round off and have a small gap
 # between it and the hull like an actual turret on a MBT") The turret now ends BASE_GAP over the deck everywhere, its
 # outer walls rounded in (ROUND_K of the rounding's height) over the last stretch down; along the arms, whose fronts come
 # down low, the cut eases to FRONT_CUT over FRONT_EASE. The turret ring shows in the gap, recessed.
@@ -71,7 +71,7 @@ FRONT_EASE = 0.30
 ROUND_K = 0.63
 ROUND_STEPS = (35, 65, 90)
 ROOM_FOR_ROUND = 14000               # (16-bit LODs: vertices left that the full round needs, with the deck and ring)
-# (3.4.1 Test 10, the tester: "theres still some jaggedness where the lip used to be", "it should be completely smooth all
+# (3.4.1 Test 10: "theres still some jaggedness where the lip used to be", "it should be completely smooth all
 # around") Behind the arms the rounded base no longer follows the cut walls' own ins and outs: every skirt runs from its
 # cut point down to one smooth curve, the body's outline at the cut with notches up to 2*BAND_BRIDGE bridged and its
 # corners rounded SMOOTH_R, drawn in by the round's depth. A cut point farther than SMOOTH_REACH past that keeps its own
@@ -79,7 +79,7 @@ ROOM_FOR_ROUND = 14000               # (16-bit LODs: vertices left that the full
 # skirts ending on one curve nothing is open without it (checked with holediff from above and just under the deck).
 SMOOTH_R = 0.30
 SMOOTH_REACH = 0.30
-DECK_PLAIN = False                  # (Test 12 tried one plain plate under the turret; Test 13, the tester: "the hull texture is
+DECK_PLAIN = False                  # (Test 12 tried one plain plate under the turret; Test 13: "the hull texture is
                                     # missing that used to be underneath. its super noticable": the copied plating is back)
 DECK_BEVEL = 0.06                   # (Test 13) flat-ish hull bevels down to this far under the roof line that reach the deck go too
 DECK_LIFT = 0.0                     # (Test 13: 1.5 mm was tried for the wedges; dropping the flat bevels fixed them, and the
@@ -193,17 +193,17 @@ def weights(bw):
 
 CAP_GAP = 0.003                            # the deck sits this far under the roof line, the turret floor this far over
 # (3.4.0) The turret ring. The hull's deck in front of the game's turret lies 11-15 cm under the roof line, so with the
-# turret moved forward (Turret Position) its front arms showed a gap over it (the tester: "the turret is still floating a
+# turret moved forward (Turret Position) its front arms showed a gap over it ("the turret is still floating a
 # bit"). Test 11 dropped the walls' cut edges straight down SKIRT m (texture stretched): "looks better, but it doesnt
-# look natural, looks like its clipping into the hull". the tester picked a recessed ring (Test 15): the walls end at the roof
+# look natural, looks like its clipping into the hull". I picked a recessed ring (Test 15): the walls end at the roof
 # line as in the game, and under them a plain band runs RING_IN m inside the walls, from the turret floor down SKIRT
 # m, in the deck plating's own color (and camo mapping), so it reads as the ring the turret sits on. It follows the
 # roof-line outline (the turret floor's) shrunk RING_IN and smoothed, so it is one clean band. At the game's place
 # and angle it is behind the hull's walls and under the deck (hidden).
-# (Test 19, the tester: "the ring under the turret of the tanks kind of clips into the taller side of the hull") The hull's
+# (Test 19: "the ring under the turret of the tanks kind of clips into the taller side of the hull") The hull's
 # deck in front of the old turret has raised parts near its sides (the Maelstrom's 5 cm under the roof line at 1.5-2 m
 # out), and the band under the whole turret outline (5 m wide, the hull's front 4.4-4.9 m) poked out past the hull's
-# sides as the turret turned. the tester picked the ring cut to a circle of RING_R round the turret's axis (2.0 m; 1.4 m, a
+# sides as the turret turned. I picked the ring cut to a circle of RING_R round the turret's axis (2.0 m; 1.4 m, a
 # real turret ring, left the arms floating again): it stays off the hull's sides at every angle, and only the outer
 # edges and arm tips overhang it.
 SKIRT, RING_IN, RING_R = 0.16, 0.05, 2.0
@@ -743,7 +743,7 @@ def lip_cut(U, li, M, G0, V, new_v, new_t, r, roof, foot, cfg, put_index, ib, id
         if any(13 <= tile(d) <= 18 for d in ds): return False      # the roof boxes hang on the walls: left whole
         cx = sum(d['pos'][0] for d in ds) / 3; cy = sum(d['pos'][1] for d in ds) / 3
         if not inside(cx, cy): return True
-        # (3.6.1 Test 5, the tester: "theres a triangle sticking out of the turret") a low triangle whose middle is inside but
+        # (3.6.1 Test 5: "theres a triangle sticking out of the turret") a low triangle whose middle is inside but
         # with a corner out past the body's walls: the old lip's ledge at the arms' root (Maelstrom: z +0.08, out to
         # x -2.39 / +2.41 where the walls stand at 2.21) sits just over the gap level, so it was kept whole: a flat wedge
         # sticking out under the turret's side once it turned. A triangle all within 1 cm over the gap with a corner
@@ -795,7 +795,7 @@ def lip_cut(U, li, M, G0, V, new_v, new_t, r, roof, foot, cfg, put_index, ib, id
         ds = [D(k) for k in tri]
         # (Test 14) small parts are dropped whole as pieces (rails, lamps: their own shells, all low, outside the body).
         # Test 8's per-triangle rule also took small low triangles of the turret's own shell, the arms' nose bevels
-        # among them, and left holes there (the tester: "make sure the turret is fully enclosed")
+        # among them, and left holes there ("make sure the turret is fully enclosed")
         if outer and loose.get(piece_of(tri[0])): return 'drop', None
         ab = [d['pos'][2] >= (zc_at(d['pos'][1]) if outer else zg) - 1e-6 for d in ds]
         if all(ab): return 'keep', None
@@ -1268,7 +1268,7 @@ def build(tank, van_b, out_b):
         report.append(f'mesh {mi}: {dropped} flat hull triangles under the new deck dropped')
         # (Test 17) the gunner's door, split at the turret's base. Test 16 took it whole onto the turret: its 31 cm under the
         # roof line hung below the turret's base, swept through the hull when the turret turned, and left the doorway's
-        # foot in the hull's back open (the tester: "the hatch will clip into the hull when you turn the turret, you can
+        # foot in the hull's back open ("the hatch will clip into the hull when you turn the turret, you can
         # then see into the model when the hatch is moved"). Now the turret's part ends at its base (BASE_GAP over the
         # roof line, closed underneath on the door's own node, so it slides up closed), and the part under the roof line
         # stays on the hull as a fixed panel (on the hull body, its top tucked under the deck), so the doorway's foot is
