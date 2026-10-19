@@ -16,7 +16,7 @@ What changes, read from each file itself:
     wheel now rests extended, so the tank sits at its own height.
   - steering ("VRS " block): +0x10 the full-steering speed (game 20; the max steering angle 23 deg at +0xC is kept).
     Above that speed the game narrows the steering angle, so a tank boosted by Tank Top Speed (up to 53 km/h in 3.4.0
-    Test 20) turned much wider at full speed. (3.4.0 Test 21, the tester: "with full speed on, turning radius suffers")
+    Test 20) turned much wider at full speed. (3.4.0 Test 21: "with full speed on, turning radius suffers")
   - chassis (Havok vehicle data, "VRD " block, in Havok's hkpVehicleData order): +0x1C torque roll factor (game 1.0:
     the wheels' friction rolls the hull at full strength), +0x34 chassis unit inertia roll (game 2, half its yaw and
     pitch 4), +0x3C friction equalizer (game 0: when one track unloads, its share of the grip lands on the other track
@@ -155,7 +155,7 @@ def retune(data, p):
     assert abs(f32(d, v + 0xC) - GAME['steer_angle']) < 1e-4, f32(d, v + 0xC)              # (the game's angle, left alone)
     if p.get('steer_speed'): put(d, v + 0x10, GAME['steer_speed'], p['steer_speed'])
     # (3.4.0 Test 25) Test 24: the tanks still rolled over outward in 30 km/h, 40-56 deg/s turns (from Test 22 on, with
-    # 30 here); the tester chose 25 plus spin damping: the "VRV " block (Havok's velocity damper: normal spin damping +0xC, collision
+    # 30 here); I chose 25 plus spin damping: the "VRV " block (Havok's velocity damper: normal spin damping +0xC, collision
     # spin damping +0x10 above the collision threshold +0x14 rad/s; game 0.1 / 10 / 2) damps the hull's turning, so a
     # lean builds more slowly (and turns a little gentler). Only the normal spin damping changes.
     w = d.find(b'VRV ')
